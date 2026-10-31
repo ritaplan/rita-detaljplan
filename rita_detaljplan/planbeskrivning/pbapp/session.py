@@ -217,6 +217,31 @@ class Session:
             return []
         return [s for s in self.analysis.sections if self.status(s) not in (RUBRIK, MOTIV)]
 
+    def motive_hits(self, section: dx.Avsnitt) -> int:
+        """Antal stycken i avsnittet (utanför motivtemat) som pekar ut en bestämmelse: kandidat för motiv om det finns några."""
+        return self.analysis.candidates.get(self.key(section), 0) if self.analysis else 0
+
+    def hosts_motive(self, section: dx.Avsnitt) -> bool:
+        """Om användaren pekat ut avsnittet (eller en rubrik ovanför det) som innehållande motiv."""
+        if self.analysis is None or section.indelning.tema == pb.MOTIV_TEMA:
+            return False
+        pointed = set(self.analysis.overrides.motiv)
+        return any(dx.path_key(section.path[:k]) in pointed for k in range(1, len(section.path) + 1))
+
+    def toggle_motive_host(self, section: dx.Avsnitt) -> bool:
+        """Pekar ut avsnittet som motiv till bestämmelser, eller ångrar det. Motiven i det kopplas inte av sig själv: det
+        görs i steg 3. Räknar om analysen (motiven ändras). Returnerar om avsnittet nu räknas som motiv."""
+        key = self.key(section)
+        pointed = self.analysis.overrides.motiv
+        on = key not in pointed
+        if on:
+            pointed.append(key)
+        else:
+            pointed.remove(key)
+        self.save()
+        self.analyse()
+        return on
+
     def set_indelning(self, section: dx.Avsnitt, tema: str, grupp: str, undergrupp: str) -> None:
         """Sparar valet för rubrikerna (gäller också nästa dokument med samma rubriker), som pluginet gör."""
         overrides = self.analysis.overrides

@@ -210,15 +210,20 @@ class Overrides:
     grupp: dict = field(default_factory=dict)
     undergrupp: dict = field(default_factory=dict)
     # grupp för text som ligger direkt under en temarubrik (utan underrubrik) har nyckeln ``h1|`` (med ett avslutande streck)
+    # rubriker (nycklar som ovan) utanför motivtemat vars text användaren pekat ut som motiv till bestämmelser
+    motiv: list = field(default_factory=list)
 
     def to_json(self) -> str:
-        return json.dumps({"tema": self.tema, "grupp": self.grupp, "undergrupp": self.undergrupp}, ensure_ascii=False)
+        return json.dumps({"tema": self.tema, "grupp": self.grupp, "undergrupp": self.undergrupp, "motiv": self.motiv},
+                          ensure_ascii=False)
 
     @classmethod
     def from_json(cls, text: str) -> "Overrides":
         try:
             data = json.loads(text) if text else {}
-            return cls(**{k: dict(data.get(k) or {}) for k in ("tema", "grupp", "undergrupp")})
+            found = cls(**{k: dict(data.get(k) or {}) for k in ("tema", "grupp", "undergrupp")})
+            found.motiv = [str(k) for k in (data.get("motiv") or [])]
+            return found
         except (ValueError, TypeError, AttributeError):
             return cls()
 
@@ -313,6 +318,7 @@ class Motiv:
     key: Optional[str] = None  # den matchade bestämmelsen (``Provision.key``), None = ej matchad
     motiv: str = ""  # styckena efter det första: motivet (stycken skilda med en tom rad)
     i_lopande_text: bool = False  # hittat i löpande text i stället för i en tabell
+    host: bool = False  # hittat i ett avsnitt utanför motivtemat som användaren pekat ut: kopplas bara av användaren
 
 
 @dataclass
@@ -339,13 +345,15 @@ class Analys:
     parts_override: dict = field(default_factory=dict)  # delar som ändrats av analysen (pluginets egna kommentarer borttagna)
     uncovered: list = field(default_factory=list)  # motivavsnitt med innehåll där inga motiv kändes igen
     front: int = 0  # avsnitt med text före första rubriken (försättsblad m.m.), som inte taggas
+    # rubriker utanför motivtemat med stycken som pekar ut en bestämmelse: nyckel -> antal stycken (kandidater för motiv)
+    candidates: dict = field(default_factory=dict)
 
     def refresh(self) -> None:
         """Räknar om indelningen efter att ``overrides`` ändrats."""
         for section in self.sections:
             section.indelning = resolve(section.path, self.overrides, self.cutoff)
         for motive in self.motives:
-            if motive.key is None:
+            if motive.key is None and not motive.host:  # ett motiv i ett pekat avsnitt kopplas bara av användaren
                 motive.key = _match_provision(motive, self.provisions)
 
 
@@ -414,10 +422,12 @@ def _find_anchor(text: str, provisions: list) -> Optional[tuple["Provision", str
 
 
 def _text_motives(xml: str, elements: list, kinds: list, texts: list, in_motive: list, heading_of: list,
-                  headings: list, provisions: list) -> list:
+                  headings: list, provisions: list, hosted: Optional[list] = None) -> list:
     """Motiv i löpande text: ett stycke (eller en rubrik) som pekar ut en bestämmelse och stycken efter det, fram till nästa
     stycke som pekar ut en bestämmelse, nästa rubrik eller en tabell. Bara avsnitt med temat "Motiv till detaljplanens
-    regleringar" söks, och bara bestämmelser som inte redan hittats."""
+    regleringar" söks (och avsnitt som användaren pekat ut, ``hosted``: där kopplas motivet inte av sig själv), och bara
+    bestämmelser som inte redan hittats."""
+    hosted = hosted or [False] * len(elements)
     taken: set = set()
     found = []
     j = 0
@@ -441,11 +451,12 @@ def _text_motives(xml: str, elements: list, kinds: list, texts: list, in_motive:
         first_p = _edge_paragraph(xml, *elements[j], last=False)
         last_p = _edge_paragraph(xml, *elements[last], last=True)
         if first_p and last_p and body:
-            taken.add(provision.key)
+            if not hosted[j]:
+                taken.add(provision.key)
             path = tuple(t for _, t in _path_at(headings, heading_of[j])) if heading_of[j] is not None else ()
             found.append(Motiv(path, provision.label, " ".join([texts[j]] + body[1:] if rest.strip() else [texts[j]] + body),
                                _paragraph_start(xml, first_p[0]), _paragraph_end(xml, *last_p), texts[j],
-                               provision.key, "\n\n".join(body), True))
+                               None if hosted[j] else provision.key, "\n\n".join(body), True, host=hosted[j]))
         j = last + 1
     return found
 
@@ -609,17 +620,29 @@ def analyse(path: str | Path, provisions: list, overrides: Optional[Overrides] =
             kinds.append("t" if name == "w:tbl" else "o")
             texts.append("")
     current_n = None
-    current_motive = False
+    current_motive = current_hosted = False
+    pointed = set(analysis.overrides.motiv)  # rubriker utanför motivtemat som användaren pekat ut
+    hosted = [False] * len(elements)
     for j in range(len(elements)):
         if j in heading_at:
             current_n = heading_at[j]
             section = next((s for s in sections if s.start >= elements[j][1]), None)
             current_motive = bool(section and section.indelning.tema == pb.MOTIV_TEMA)
+            current_hosted = bool(section and not current_motive and any(
+                path_key(section.path[:k]) in pointed for k in range(1, len(section.path) + 1)))
         heading_of[j] = current_n
-        in_motive[j] = current_motive
+        in_motive[j] = current_motive or current_hosted
+        hosted[j] = current_hosted
+    # kandidater: stycken utanför motivtemat som pekar ut en bestämmelse, per rubrik (för att användaren ska kunna peka ut dem)
+    for j in range(len(elements)):
+        if in_motive[j] or kinds[j] != "p" or heading_of[j] is None:
+            continue
+        if _find_anchor(texts[j], provisions):
+            key = path_key(tuple(t for _, t in _path_at(headings, heading_of[j])))
+            analysis.candidates[key] = analysis.candidates.get(key, 0) + 1
     table_keys = {m.key for m in analysis.motives if m.key is not None}
     analysis.motives += _text_motives(xml, elements, kinds, texts, in_motive, heading_of, headings,
-                                      [p for p in provisions if p.key not in table_keys])
+                                      [p for p in provisions if p.key not in table_keys], hosted)
     analysis.motives.sort(key=lambda m: m.start)
     analysis.refresh()
     analysis.uncovered = _uncovered(sections, analysis.motives)

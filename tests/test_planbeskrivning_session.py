@@ -62,6 +62,29 @@ class SessionTest(unittest.TestCase):
         self.assertFalse(any(f.var == "MEDVERKANDE" for f in s.findings()))
         self.assertEqual(self.open().status(self.section(self.open(), "MEDVERKANDE")), ss.HOPPAS)
 
+    def test_a_section_outside_the_motive_theme_can_be_pointed_out_as_motive_and_it_is_remembered(self):
+        from docx_case import make_docx, para, wrap
+        s = self.session
+        provision = next(p for p in s.provisions if p.refs and p.label)
+        path = self.folder / "beskrivning.docx"
+        make_docx(path, wrap(para("BESKRIVNING AV DETALJPLANEN", "Rubrik1") + para("Användning", "Rubrik2")
+                             + para(f"{provision.label} {provision.text}") + para("Syftet är att möjliggöra bad.")))
+        s.load_docx(path)
+        section = self.section(s, "Användning")
+        self.assertEqual((s.motive_hits(section), s.hosts_motive(section), s.analysis.motives), (1, False, []))
+        self.assertTrue(s.toggle_motive_host(section))
+        section = self.section(s, "Användning")
+        self.assertTrue(s.hosts_motive(section))
+        (motive,) = s.analysis.motives
+        self.assertEqual((motive.host, motive.key, s.motive_status(motive)), (True, None, ss.EJ_KOPPLAT))
+        again = self.open()
+        again.load_docx(path)
+        self.assertTrue(again.hosts_motive(self.section(again, "Användning")), "valet sparades")
+        s.link(motive, provision.key)
+        self.assertEqual(s.motive_status(motive), ss.KOPPLAT)
+        self.assertFalse(s.toggle_motive_host(self.section(s, "Användning")))
+        self.assertEqual(s.analysis.motives, [])
+
     def test_linking_a_motive_by_hand_survives_a_new_analysis(self):
         s = self.session
         k = self.motive(s, "k")

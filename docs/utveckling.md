@@ -87,6 +87,14 @@ python tools/skapa_exempel.py      # exemplet kv. Lärkan i exempel/ (knappen Ö
 Testerna (`tests/test_planbeskrivning*.py`) körs med resten av sviten. Kärnans och fönstrets tester behöver inte QGIS
 men körs då med PySide6. Den klickbara skissen av gränssnittet finns i `docs/planbeskrivning-skiss.html`.
 
+## Speglade filer mellan Rita Detaljplan och Rita Översiktsplan
+
+Några moduler finns i båda pluginen med nästan samma innehåll (arkivpaketet, NGP-klienten, dialogerna för leverans och
+inställningar m.fl.). `python tools/check_mirror.py` jämför dem (efter att pluginens namn bytts mot ett gemensamt) med
+skillnaderna som godkändes sist (`tools/mirror_baseline.json`) och säger till om bara den ena ändrats. Ändra båda, kör
+med `--show` för att se skillnaderna och sedan med `--update` för att godkänna nuläget. Rita Översiktsplan ska ligga i
+`../rita-oversiktsplan` (eller anges med `--other`).
+
 ## Datamodellen och NGP
 
 Leveransen till NGP är JSON (GeoJSON-baserad `FeatureCollection`, mediatyp

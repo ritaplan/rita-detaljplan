@@ -99,6 +99,21 @@ class GuiTest(unittest.TestCase):
         self.assertFalse(paragraph.is_clipped(), "och dubbelklick igen visar hela stycket")
         paragraph.close()
 
+    def test_a_candidate_heading_gets_a_button_to_count_it_as_motive_and_others_do_not(self):
+        tag, session = self.window.tag, self.window.session
+        tag.refresh()
+        candidate = self.index_of("Syfte")
+        other = self.index_of("Buller")
+        session.analysis.candidates[session.key(session.analysis.sections[candidate])] = 2
+        tag.select(candidate, scroll=False)
+        self.process_events()
+        self.assertFalse(tag.motive_button.isHidden(), "en rubrik med stycken som pekar ut en bestämmelse är en kandidat")
+        self.assertEqual(tag.motive_button.text(), "Räkna som motiv")
+        self.assertIn("2 stycken", tag.motive_hint.text())
+        tag.select(other, scroll=False)
+        self.process_events()
+        self.assertTrue(tag.motive_button.isHidden(), "andra rubriker får ingen knapp")
+
     def test_a_short_paragraph_is_shown_whole_without_a_handle(self):
         from rita_detaljplan.planbeskrivning.pbapp.widgets import ParagraphText
         paragraph = ParagraphText("Ett kort stycke som får plats.")

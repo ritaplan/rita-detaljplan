@@ -238,6 +238,65 @@ class AnchorTests(unittest.TestCase):
         self.assertEqual(self.find("Byggnad av trä", provisions), ("b", ""))
 
 
+def described_body() -> str:
+    """En beskrivning av planen där motiven står under användningen och inte under motivtemat."""
+    return wrap(
+        para("BESKRIVNING AV DETALJPLANEN", "Rubrik1") + para("Användning", "Rubrik2")
+        + para("Här beskrivs användningen.")
+        + para("R1 Badanläggning") + para("Syftet är att möjliggöra bad.")
+        + para("Marken får inte förses med byggnad") + para("Syftet är att behålla gatan fri.")
+        + para("Genomförande", "Rubrik2") + para("Text som inte pekar ut någon bestämmelse."))
+
+
+class MotivesOutsideTheMotiveThemeTests(Base):
+    """Motiv under andra teman: rubriken pekas ut av användaren, och motiven kopplas aldrig av sig själva."""
+
+    def setUp(self):
+        super().setUp()
+        self.src = make_docx(self.dir / "beskrivning.docx", described_body())
+        self.key = dx.path_key(("BESKRIVNING AV DETALJPLANEN", "Användning"))
+
+    def analyse(self, pointed=()):
+        overrides = dx.Overrides()
+        overrides.motiv = list(pointed)
+        return dx.analyse(self.src, TEXT_PROVISIONS, overrides)
+
+    def test_outside_the_motive_theme_nothing_is_taken_as_a_motive_but_the_heading_is_a_candidate(self):
+        analysis = self.analyse()
+        self.assertEqual(analysis.motives, [])
+        self.assertEqual(analysis.candidates, {self.key: 2}, "två stycken pekar ut en bestämmelse, i en rubrik")
+
+    def test_a_pointed_out_heading_gets_its_motives_found_but_not_linked(self):
+        analysis = self.analyse([self.key])
+        self.assertEqual([(m.label, m.host, m.key) for m in analysis.motives], [("R1", True, None), ("", True, None)])
+        self.assertEqual([m.motiv for m in analysis.motives],
+                         ["Syftet är att möjliggöra bad.", "Syftet är att behålla gatan fri."])
+        self.assertEqual(analysis.candidates, {}, "en utpekad rubrik är inte längre en kandidat")
+
+    def test_the_heading_above_covers_the_headings_below_it(self):
+        analysis = self.analyse([dx.path_key(("BESKRIVNING AV DETALJPLANEN",))])
+        self.assertEqual(len(analysis.motives), 2)
+        self.assertTrue(all(m.host and m.key is None for m in analysis.motives))
+
+    def test_a_motive_in_a_pointed_out_heading_is_not_matched_by_the_automatic_refresh(self):
+        analysis = self.analyse([self.key])
+        analysis.refresh()
+        self.assertEqual([m.key for m in analysis.motives], [None, None])
+
+    def test_the_choice_is_saved_with_the_other_overrides(self):
+        overrides = dx.Overrides()
+        overrides.motiv = [self.key]
+        again = dx.Overrides.from_json(overrides.to_json())
+        self.assertEqual(again.motiv, [self.key])
+        self.assertEqual(dx.Overrides.from_json('{"tema": {"a": "b"}}').motiv, [], "äldre sparade val saknar motiv")
+
+    def test_the_motive_theme_itself_is_unchanged_and_has_no_candidates(self):
+        src = make_docx(self.dir / "lopande.docx", running_text_body())
+        analysis = dx.analyse(src, TEXT_PROVISIONS)
+        self.assertEqual([(m.key, m.host) for m in analysis.motives], [("k1", False), ("k2", False), ("k3", False)])
+        self.assertEqual(analysis.candidates, {})
+
+
 class RunningTextMotiveTests(Base):
     def setUp(self):
         super().setUp()

@@ -4,6 +4,16 @@ Formatet följer [Keep a Changelog](https://keepachangelog.com/sv/1.1.0/), versi
 
 ## Ej utgivet
 
+## [0.1.69] – motiv under andra rubriker, och en kontroll av de speglade filerna
+
+- **Tagga planbeskrivning: motiv under andra rubriker än motivtemat.** En rubrik utanför motivtemat som har stycken som
+  pekar ut en bestämmelse får knappen *Räkna som motiv* (med antalet stycken). Då söks motiv under den (och under
+  rubrikerna under den), men de kopplas **inte** av sig själva: du kopplar dem till bestämmelser i steg 3, så att inget
+  hamnar fel. Valet sparas till nästa dokument med samma rubrik och kan ångras.
+- **`tools/check_mirror.py`** jämför de moduler som finns i både Rita Detaljplan och Rita Översiktsplan och säger till om
+  bara den ena ändrats sedan sist (se [Utveckling](docs/utveckling.md)).
+- Kända begränsningar: pluginet är också testat på Fedora Linux 45 (Workstation Edition).
+
 ## [0.1.68] – en knapp som exporterar plankartan som PDF och kontrollerar den
 
 - **Exportera PDF** i layoutläget (bredvid teckenförklaringsknappen): exporterar layouten som vektor-PDF utan georeferens

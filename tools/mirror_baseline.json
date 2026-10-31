@@ -1,0 +1,46 @@
+{
+ "core/archive.py": {
+  "fingerprint": "d9638b51dceab851",
+  "lines": 39
+ },
+ "core/importer.py": {
+  "fingerprint": "00b763d5e54ccf6b",
+  "lines": 41
+ },
+ "core/kommuner.py": {
+  "fingerprint": "1bc5052d168e8585",
+  "lines": 4
+ },
+ "core/ngp_client.py": {
+  "fingerprint": "a98ff01415a542a4",
+  "lines": 30
+ },
+ "gui/about_dialog.py": {
+  "fingerprint": "e3b0c44298fc1c14",
+  "lines": 0
+ },
+ "gui/delivery_dialog.py": {
+  "fingerprint": "bd04f7fdb90f4f97",
+  "lines": 2
+ },
+ "gui/import_dialog.py": {
+  "fingerprint": "2563f543ba93f045",
+  "lines": 14
+ },
+ "gui/kommun_combo.py": {
+  "fingerprint": "e3b0c44298fc1c14",
+  "lines": 0
+ },
+ "gui/messages.py": {
+  "fingerprint": "e3b0c44298fc1c14",
+  "lines": 0
+ },
+ "gui/postgis_plan_dialog.py": {
+  "fingerprint": "477f8774b496c688",
+  "lines": 30
+ },
+ "gui/settings_dialog.py": {
+  "fingerprint": "689e460bd57ca363",
+  "lines": 3
+ }
+}

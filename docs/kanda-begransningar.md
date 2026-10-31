@@ -17,7 +17,8 @@ Pluginet har automatiska tester (se [Utveckling](utveckling.md)), men flera dela
   först på en testplan och gör säkerhetskopia av schemat innan du checkar in en viktig plan.
 - **Layoutdesignern.** Knapparna för teckenförklaring i layoutläget har testats med en låtsasdesigner, inte i alla
   QGIS-versioner. Rapportera om verktygsfältet eller menyposten saknas hos dig.
-- **QGIS-version och system.** Testat med QGIS 4.2.2 på Windows. Andra versioner och Linux/macOS är inte provade.
+- **QGIS-version och system.** Testat med QGIS 4.2.2 på Windows och på Fedora Linux 45 (Workstation Edition). Andra versioner
+  och macOS är inte provade.
 - **Arkivpaket.** Bevarandemetadatan (`metadata/PREMIS.xml`) är giltig mot Library of Congress schema för PREMIS 3.0 och följer
   Boverkets dataelementkatalog (maj 2026), dess värdelistor och obligatoriska element, men är inte provad mot något e-arkiv.
   Boverkets två exempelfiler är inte giltiga mot schemat (de har bland annat ett `objectCategory`-element som schemat inte
@@ -52,10 +53,13 @@ Pluginet har automatiska tester (se [Utveckling](utveckling.md)), men flera dela
   lagren tills planen öppnats på det sättet; knappen för att rita egenskapspunkter är då grå och säger det.
   Uppgraderingen av ett PostGIS-schema är skriven men inte provad mot en riktig databas, som resten av PostGIS-delen.
 
-- **Tagga planbeskrivning söker bara motiv under rubriker med temat *Motiv till detaljplanens regleringar*.** Motiv som står
-  utspridda under andra teman (till exempel under varje användning i beskrivningen av planen) hittas inte automatiskt. En
-  motivrubrik som skrivits på ett annat sätt känns igen om den liknar de vanliga (*Motiv*, *Motiveringar*, *Skäl till
-  bestämmelserna* …); annars väljer du temat för rubriken i listan. Specifikationen kräver inte den avgränsningen.
+- **Tagga planbeskrivning söker av sig själv bara motiv under rubriker med temat *Motiv till detaljplanens regleringar*.**
+  Motiv som står utspridda under andra teman (till exempel under varje användning i beskrivningen av planen) hittas inte
+  automatiskt, för att undvika felkopplingar: en rubrik med stycken som pekar ut en bestämmelse får i stället knappen
+  *Räkna som motiv*, och motiven under den kopplas bara av dig, i steg 3. Motiven får då egna bokmärken inuti rubrikens
+  eget; det är inte provat mot Lantmäteriets validering att bokmärkena ligger inuti varandra. En motivrubrik som skrivits
+  på ett annat sätt känns igen om den liknar de vanliga (*Motiv*, *Motiveringar*, *Skäl till bestämmelserna* …);
+  annars väljer du temat för rubriken i listan. Specifikationen kräver inte den avgränsningen.
 
 - Endast 2D. Volymgeometri (kropp) stöds inte än.
 - Endast användnings- och egenskapsbestämmelser stöds (inga pågående bestämmelser i katalogen är administrativa).

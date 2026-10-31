@@ -410,6 +410,9 @@ class TagPage(QWidget):
         self.approve_button.clicked.connect(self.approve)
         self.skip_button = button("Tagga inte")
         self.skip_button.clicked.connect(self.toggle_skip)
+        self.motive_button = button("Räkna som motiv", "small")
+        self.motive_button.clicked.connect(self.toggle_motive_host)
+        self.motive_hint = label("", "hint", wrap=True)
         self.next_button = button("Nästa att granska  →", "ghost")
         self.next_button.clicked.connect(lambda: self.next_to_review(quiet=False))
         self.inspector = QWidget()
@@ -419,6 +422,7 @@ class TagPage(QWidget):
             label("Undergrupp", "muted"), self.undergrupp, 6, label("Läge: vad texten gäller", "muted"),
             self.lage_all, self.lage_some, box("h", self.lage_text, self.lage_button), 8,
             box("h", self.approve_button, self.skip_button, None), self.next_button,
+            self.motive_button, self.motive_hint,
             label("Tangenter: J och K bläddrar, Enter godkänner.", "hint", wrap=True), None,
             spacing=6, margins=(16, 16, 16, 16)))
         self.empty_inspector = label("Välj ett avsnitt i listan eller i texten.", "muted", wrap=True)
@@ -571,6 +575,15 @@ class TagPage(QWidget):
         self.lage_button.setEnabled(bool(session.provisions))
         self.approve_button.setEnabled(status in (ss.AUTO, ss.EGEN, ss.OSAKER))
         self.skip_button.setText("Tagga igen" if status == ss.HOPPAS else "Tagga inte")
+        hits, hosts = session.motive_hits(section), session.hosts_motive(section)
+        self.motive_button.setVisible(bool(hits or hosts) and status != ss.MOTIV)
+        self.motive_hint.setVisible(self.motive_button.isVisible())
+        self.motive_button.setText("Räknas som motiv: ångra" if hosts else "Räkna som motiv")
+        self.motive_hint.setText(
+            "Motiven under den här rubriken hittas som under motivtemat, men kopplas inte av sig själv: du kopplar dem i steg 3."
+            if hosts else
+            f"{hits} stycken här pekar ut en bestämmelse. Är det motiv? Peka ut rubriken så söks motiv under den, och du "
+            "kopplar dem själv i steg 3.")
         self._loading = False
 
     def _fill_groups(self, tema) -> None:
@@ -619,6 +632,18 @@ class TagPage(QWidget):
         self.session.approve(section)
         self._after_change(f"Godkänt: {section.path[-1]}")
         self.next_to_review(quiet=True)
+
+    def toggle_motive_host(self) -> None:
+        section = self.current()
+        if section is None:
+            return
+        index = self.selected
+        on = self.session.toggle_motive_host(section)
+        self.refresh()  # analysen räknades om: korten byggs om
+        if index is not None and self.session.analysis and index < len(self.session.analysis.sections):
+            self.select(index, scroll=False)
+        self.changed.emit()
+        self.toast("Motiv söks nu under rubriken. Koppla dem i steg 3." if on else "Rubriken räknas inte längre som motiv.")
 
     def toggle_skip(self) -> None:
         section = self.current()

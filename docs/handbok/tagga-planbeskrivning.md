@@ -59,4 +59,15 @@ Hittas inga motiv:
 2. Välj temat *Motiv till detaljplanens regleringar* för rubriken i listan.
 3. Motiven hittas. Valet sparas till nästa dokument med samma rubrik.
 
-> Motiv som står utspridda under andra rubriker, till exempel under varje användning, hittas inte automatiskt.
+#### Motiv under andra rubriker
+
+Står motiven utspridda under andra rubriker, till exempel under varje användning i beskrivningen av planen, söks de inte
+av sig själva: då riskerar de att kopplas till fel bestämmelse. I stället pekar du ut rubriken:
+
+1. Markera en rubrik i listan. Har den stycken som pekar ut en bestämmelse (till exempel börjar med bestämmelsens
+   beteckning) visas knappen **Räkna som motiv** och hur många stycken som hittades.
+2. Klicka på den. Motiven under rubriken (och under rubrikerna under den) hittas nu som motiv.
+3. De är **inte kopplade** ännu. Du kopplar dem själv till bestämmelser i steg 3.
+
+Du kan ångra med **Räknas som motiv: ångra**. Valet sparas till nästa dokument med samma rubrik. Rubriken taggas
+fortfarande som det tema den har, med motiven som egna bokmärken inuti.
