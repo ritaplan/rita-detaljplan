@@ -31,6 +31,13 @@ Gäller steg 3 (validering) och steg 4 (export). "Stoppar" = leveransen stoppas 
   utfartsförbud och stängsel, och punkter för markens höjd över eller under nollplanet (samt tolkningsbestämmelser för
   äldre planer). Punkterna levereras som `bestammelsegeometri` av typen `punkt` (GeoJSON `Point`), en per punkt.
   Vertikal avgränsning får bara anges för ytor (DP-0015), inte för linjer och punkter.
+- **Höjd (3D)**, vägledningen avsnitt 3.2.2: begränsas en bestämmelse vertikalt åt båda hållen ska den vara en
+  **kropp** (`typ` kropp, GeoJSON `MultiPolygon` av ytor med tre koordinater, `dimension` 3, `hojdsystem` EPSG:5613);
+  åt ett håll ska den vara en **yta med höjdvärde** och `vertikalAvgransning` (uppåt = gäller inte ovanför). En kropp får
+  inte ha vertikal avgränsning (DP-0015, DP-0016), och multikropp är förbjuden (DP-0004, DP-0018): en yta med flera
+  delar ger en kropp per del. Bestämmelsernas geometrier får överlappa, och användningsytor som gäller på olika höjd får
+  därför ligga över varandra (DP-Krav-0013 gäller bara ytor som delar höjdled). Pluginet lagrar höjderna som
+  `hojdUnderkant` och `hojdOverkant` på bestämmelsen (bara pluginet) och bygger geometrin och avgränsningen vid export.
 
 ## Bestämmelser (planbestämmelsekatalogen)
 - `bestammelseformulering` = katalogens exakta text med variablerna kvar (`[höjd:decimaltal]`). Värdena skickas som

@@ -14,6 +14,7 @@ from typing import Any, Iterable, Optional
 
 from . import bestammelse as bm
 from . import catalog as cat
+from . import vertical
 
 # Attribut som beskriver en bestämmelse (kommer från ``bestammelse.feature_attributes``).
 ATTRIBUTE_KEYS = ("planbestammelsekatalogreferens", "bestammelsekod", "anvandningsform", "farg", "symbol",
@@ -164,7 +165,10 @@ def display_text(row: dict) -> str:
 
 
 def describe(row: dict) -> str:
-    """Kort text till listor: "R1 – Motorsportbana"."""
+    """Kort text till listor: "R1 – Motorsportbana". Har bestämmelsen en höjd står den sist: "G – Garage (−6,0 till 0,0 m)"."""
     label = (row.get("beteckning") or "").strip()
     text = display_text(row)
+    extent = vertical.extent_of(row)
+    if extent.limited:
+        text += f" ({extent.text()})"
     return f"{label} – {text}" if label else text

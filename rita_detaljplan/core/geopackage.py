@@ -126,7 +126,7 @@ def read_meta(path: str | Path) -> dict[str, str]:
 
 
 def upgrade(path: str | Path) -> bool:
-    """Uppgraderar en äldre plan (schema 3–9) till nuvarande schema. Returnerar True om något ändrades."""
+    """Uppgraderar en äldre plan (schema 3–10) till nuvarande schema. Returnerar True om något ändrades."""
     path = Path(path)
     version = read_meta(path).get("schema_version")
     if not version or not version.isdigit() or not 3 <= int(version) < model.SCHEMA_VERSION:
@@ -150,6 +150,9 @@ def upgrade(path: str | Path) -> bool:
         rows_layer = ds.GetLayerByName(model.BESTAMMELSE.name)  # schema 6: ordning
         if rows_layer.GetLayerDefn().GetFieldIndex(model.ORDNING.name) < 0:
             rows_layer.CreateField(ogr.FieldDefn(model.ORDNING.name, ogr.OFTInteger))
+        for field in model.HEIGHT_FIELDS:  # schema 11: bestämmelsens höjd
+            if rows_layer.GetLayerDefn().GetFieldIndex(field.name) < 0:
+                rows_layer.CreateField(ogr.FieldDefn(field.name, ogr.OFTReal))
     finally:
         ds = None
     con = sqlite3.connect(str(path))

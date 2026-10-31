@@ -18,6 +18,7 @@ from typing import Any, Optional
 from qgis.core import QgsGeometry, QgsPointXY
 
 from . import catalog as cat
+from . import vertical
 
 USE_TYPE = "användningsbestämmelse"
 PROPERTY_TYPE = "egenskapsbestämmelse"
@@ -36,6 +37,8 @@ class ImportedProvision:
     motiv: Optional[str] = None
     giltighetstid: Optional[int] = None
     borjar_galla_efter: Optional[int] = None
+    extent: vertical.Extent = field(default_factory=vertical.Extent)  # höjd (kropp eller yta med höjdvärde)
+    vertikal_avgransning: Optional[str] = None  # uppåt/nedåt för en yta utan höjdvärde
 
 
 @dataclass
@@ -59,7 +62,8 @@ class ImportedPlan:
 
 # -- geometri ---------------------------------------------------------------------------------
 def _points(coordinates) -> list[QgsPointXY]:
-    return [QgsPointXY(float(x), float(y)) for x, y in coordinates]
+    """Punkterna i planet: höjden (en tredje koordinat) hör inte till ytan och läses separat."""
+    return [QgsPointXY(float(c[0]), float(c[1])) for c in coordinates]
 
 
 def _part_geometry(position: dict) -> Optional[QgsGeometry]:
@@ -77,14 +81,44 @@ def _part_geometry(position: dict) -> Optional[QgsGeometry]:
     return None
 
 
+@dataclass
+class _Part:
+    """En del av en geometri i leveransen: ytan i planet, och höjden om delen är en kropp eller en yta med höjdvärde."""
+    geometry: QgsGeometry
+    lower: Optional[float] = None  # kropp: underkant
+    upper: Optional[float] = None  # kropp: överkant
+    height: Optional[float] = None  # yta med höjdvärde
+    simplified: bool = False  # en kropp som inte är ett lodrätt prisma, förenklad till ett
+
+
+def _height_of(position: dict) -> Optional[float]:
+    """Höjdvärdet på en yta (tredje koordinaten på första punkten), om ytan har ett."""
+    for ring in position.get("coordinates") or []:
+        for point in ring:
+            return vertical.number(point[2]) if len(point) > 2 else None
+    return None
+
+
+def _part(description: dict) -> Optional[_Part]:
+    geometry = description.get("geometri") or {}
+    position = geometry.get("position") or {}
+    if geometry.get("typ") == "kropp" or (geometry.get("typ") is None and position.get("type") == "MultiPolygon"
+                                          and any(len(p) > 2 for f in position.get("coordinates") or []
+                                                  for ring in f for p in ring)):
+        lower, upper, rings, prism = vertical.read_solid(position.get("coordinates") or [])
+        outline = QgsGeometry.fromPolygonXY([_points(ring) for ring in rings]) if rings and rings[0] else None
+        return _Part(outline, lower, upper, simplified=not prism) if outline is not None and not outline.isEmpty() \
+            else None
+    flat = _part_geometry(position)
+    if flat is None or flat.isEmpty():
+        return None
+    return _Part(flat, height=_height_of(position) if position.get("type") == "Polygon" else None)
+
+
 def build_geometry(descriptions: list[dict]) -> Optional[QgsGeometry]:
     """Slår ihop delarna av en ``plangeometri``/``bestammelsegeometri`` (en post per del, se ``export_ngp``) till en
-    enda (multi-)geometri. Ger None om den saknar giltiga delar."""
-    parts = []
-    for item in descriptions or []:
-        part = _part_geometry((item.get("geometri") or {}).get("position") or {})
-        if part is not None and not part.isEmpty():
-            parts.append(part)
+    enda (multi-)geometri. Ger None om den saknar giltiga delar. Höjder ignoreras (se ``build_area``)."""
+    parts = [part.geometry for part in (_part(item) for item in descriptions or []) if part is not None]
     if not parts:
         return None
     geometry = QgsGeometry.unaryUnion(parts) if len(parts) > 1 else parts[0]
@@ -92,10 +126,44 @@ def build_geometry(descriptions: list[dict]) -> Optional[QgsGeometry]:
     return geometry
 
 
+def build_area(descriptions: list[dict], limit: Optional[str] = None) -> tuple[Optional[QgsGeometry], vertical.Extent,
+                                                                           list[str]]:
+    """Som ``build_geometry`` för en bestämmelse, men också höjden: (ytan i planet, höjderna, anmärkningar).
+
+    En kropp ger underkant och överkant. En yta med höjdvärde ger underkant (``limit`` nedåt) eller överkant (uppåt);
+    utan vertikal avgränsning vet man inte åt vilket håll den gäller, så höjdvärdet ignoreras (med en anmärkning).
+    Har delarna olika höjder gäller det de tillsammans täcker (``vertical.hull``)."""
+    parts = [part for part in (_part(item) for item in descriptions or []) if part is not None]
+    notes: list[str] = []
+    extents = []
+    for part in parts:
+        if part.lower is not None:
+            extents.append(vertical.Extent(part.lower, part.upper))
+            if part.simplified:
+                notes.append("En kropp som inte är ett lodrätt prisma förenklades till ett: ytan i botten och höjderna behölls.")
+        elif part.height is not None and limit in (vertical.UPWARD, vertical.DOWNWARD):
+            extents.append(vertical.Extent(None, part.height) if limit == vertical.UPWARD
+                           else vertical.Extent(part.height, None))
+        else:
+            if part.height is not None:
+                notes.append("Ett höjdvärde utan vertikal avgränsning ignorerades (det går inte att se åt vilket håll "
+                             "bestämmelsen gäller).")
+            extents.append(vertical.Extent())
+    extent = vertical.hull(extents) if extents else vertical.Extent()
+    if len({(e.lower, e.upper) for e in extents}) > 1:
+        notes.append("Delarna av en bestämmelse har olika höjd: den gäller nu över hela spannet.")
+    return build_geometry(descriptions), extent, notes
+
+
 # -- planbestämmelseobjekt ----------------------------------------------------------------------
-def _provision(properties: dict) -> ImportedProvision:
+def _provision(properties: dict, extent: Optional[vertical.Extent] = None) -> ImportedProvision:
     motiv = ((properties.get("planbestammelsebeskrivning") or {}).get("motiv") or "").strip() or None
+    extent = extent or vertical.Extent()
+    limit = properties.get("vertikalAvgransning")
     return ImportedProvision(
+        extent=extent,
+        # en avgränsning utan höjd sparas som den är; med höjd härleds den ur höjden, och en kropp får ingen
+        vertikal_avgransning=limit if not extent.limited and limit in (vertical.UPWARD, vertical.DOWNWARD) else None,
         catalog_id=properties.get("planbestammelsekatalogreferens") or "",
         formulering=properties.get("bestammelseformulering") or "",
         values=[v for v in properties.get("bestammelsevarde") or [] if isinstance(v, dict)],
@@ -110,7 +178,8 @@ def _table(properties: dict, descriptions: list[dict]) -> Optional[str]:
     if is_use:
         return cat.USE_LAYER
     kind = ((descriptions or [{}])[0].get("geometri") or {}).get("typ")
-    return {"yta": "egenskap_yta", "linje": "egenskap_linje", "punkt": "egenskap_punkt"}.get(kind)
+    return {"yta": "egenskap_yta", "kropp": "egenskap_yta", "linje": "egenskap_linje",
+            "punkt": "egenskap_punkt"}.get(kind)
 
 
 # -- beslut och dokument ------------------------------------------------------------------------
@@ -201,17 +270,18 @@ def parse(collection: dict) -> ImportedPlan:
             continue
         descriptions = properties.get("bestammelsegeometri") or []
         table = _table(properties, descriptions)
-        geometry = build_geometry(descriptions)
+        geometry, extent, notes = build_area(descriptions, properties.get("vertikalAvgransning"))
         if table is None or geometry is None or geometry.isEmpty():
             plan.warnings.append("En bestämmelse utan giltig geometri hoppades över.")
             continue
-        key = (table, geometry.asWkt(3))
+        plan.warnings += [note for note in notes if note not in plan.warnings]
+        key = (table, geometry.asWkt(3))  # ytan i planet: bestämmelser med olika höjd delar yta, höjden ligger på raden
         if key not in grouped:
             grouped[key] = ImportedArea(table=table, geometry=geometry)
             order.append(key)
         area = grouped[key]
         if table == "egenskap_yta" and properties.get("sekundarEgenskapsgrans"):
             area.sekundar = True
-        area.provisions.append(_provision(properties))
+        area.provisions.append(_provision(properties, extent))
     plan.areas = [grouped[key] for key in order]
     return plan

@@ -22,7 +22,7 @@ from . import bestammelse as bm
 from . import catalog as cat
 from . import codelists as cl
 from . import documents as documents_module
-from . import kommuner, rules
+from . import kommuner, rules, vertical
 from .assignments import read_rows
 from .project import find_layer, is_digitising
 from .requirements import REQUIRED_PLAN_FIELDS
@@ -280,7 +280,32 @@ def check_position_data(data: PlanData) -> list[Issue]:
             kind = "linjer" if table == "egenskap_linje" else "punkter"
             issues.append(Issue(ERROR, "DP-0015", f"Vertikal avgränsning får bara anges för ytor, inte {kind}.",
                                 table, found.fid if found else None))
+        issues += _check_height(row, by_identity.get((table, row.get("yta"))))
     return issues
+
+
+def _check_height(row: dict, found: Optional[Area]) -> list[Issue]:
+    """Bestämmelsens höjd (``core.vertical``): underkanten under överkanten, bara ytor, och ingen vertikal avgränsning
+    som säger emot höjderna (en kropp får ingen: DP-0015, DP-0016)."""
+    extent = vertical.extent_of(row)
+    if not extent.limited:
+        return []
+    table, fid = row.get("tabell"), found.fid if found else None
+    if table in ("egenskap_linje", "egenskap_punkt"):
+        kind = "linjer" if table == "egenskap_linje" else "punkter"
+        return [Issue(WARNING, "", f"Höjd kan bara anges för ytor, inte {kind}: höjderna följer inte med i leveransen.",
+                      table, fid)]
+    if not extent.consistent:
+        return [Issue(ERROR, "", f"Underkanten ({extent.lower:g} m) ligger inte under överkanten ({extent.upper:g} m).",
+                      table, fid)]
+    stored = row.get("vertikalAvgransning")
+    if _blank(stored) or stored == extent.limit:
+        return []
+    if extent.kind == vertical.SOLID:
+        return [Issue(WARNING, "DP-0015", "Vertikal avgränsning får inte anges när både underkant och överkant finns "
+                      "(bestämmelsen levereras som kropp): den följer inte med i leveransen.", table, fid)]
+    return [Issue(WARNING, "", f"Vertikal avgränsning {stored} stämmer inte med höjden: leveransen använder "
+                  f"{extent.limit}, som följer av om bestämmelsen har underkant eller överkant.", table, fid)]
 
 
 def check_geometry(data: PlanData) -> list[Issue]:
@@ -318,8 +343,8 @@ def check_geometry(data: PlanData) -> list[Issue]:
                 issues.append(Issue(ERROR, "DP-0003", f"{_m2(outside)} av användningen ligger utanför planområdet.",
                                     use.table, use.fid))
     issues += _pairwise(uses, is_use=True, near=NEAR_NEW if is_new_plan(data) else NEAR_OLD,
-                        near_code="DP-Krav-0011" if is_new_plan(data) else "DP-Krav-0012")
-    issues += _pairwise(data.of("egenskap_yta"), is_use=False, near=None, near_code="")
+                        near_code="DP-Krav-0011" if is_new_plan(data) else "DP-Krav-0012", rows=data.rows)
+    issues += _pairwise(data.of("egenskap_yta"), is_use=False, near=None, near_code="", rows=data.rows)
 
     for prop in data.of("egenskap_yta"):
         if use_union is None:
@@ -347,13 +372,21 @@ def check_geometry(data: PlanData) -> list[Issue]:
     return issues
 
 
-def _pairwise(areas: list[Area], is_use: bool, near: Optional[float], near_code: str) -> list[Issue]:
-    """Överlapp mellan ytor i samma lager, och (för användning) glapp som är smalare än ``near`` meter."""
+def _pairwise(areas: list[Area], is_use: bool, near: Optional[float], near_code: str,
+              rows: Optional[list[dict]] = None) -> list[Issue]:
+    """Överlapp mellan ytor i samma lager, och (för användning) glapp som är smalare än ``near`` meter. Ytor som gäller
+    på olika höjd (garaget under gården, se ``core.vertical``) delar inte plats: de får ligga över varandra i planet."""
+    by_area: dict = {}
+    for row in rows or []:
+        by_area.setdefault((row.get("tabell"), row.get("yta")), []).append(row)
+    extents = {id(a): vertical.area_extent(by_area.get((a.table, a.identity), [])) for a in areas}
     issues = []
     for i, a in enumerate(areas):
         for b in areas[i + 1:]:
             ga, gb = a.geometry, b.geometry
             if ga.isEmpty() or gb.isEmpty():
+                continue
+            if not extents[id(a)].overlaps(extents[id(b)]):
                 continue
             overlap = ga.intersection(gb).area() if ga.boundingBoxIntersects(gb) else 0.0
             if overlap > MIN_AREA:

@@ -113,4 +113,5 @@ obligatoriska fält är markerade och att kodlistorna är aktuella.
 4. ✅ Export till NGP-JSON (`detaljplan-4.1`) + mot schemat
 5. ✅ Uppladdning till NGP (VER) med statusuppföljning och valideringsrapport (overifierad mot NGP)
 6. ✅ Teckenförklaring som verktyg i layoutläget (plankartemallen gör användaren själv)
-7. ⬜ Ändringsplaner, 3D (kropp), import från andra system
+7. ✅ 3D (kropp och yta med höjdvärde, schema 11)
+8. ⬜ Ändringsplaner, 3D-vy i QGIS

@@ -83,16 +83,19 @@ Viktiga kolumner i `bestammelse`:
 | `bestammelsevarde` | Ifyllda värden som JSON, enligt schemats `variabelvarde`. |
 | `beteckning`, `beteckningsindex` | Beteckningen på plankartan (till exempel `e1`) och dess siffra. |
 | `ordning` | Ordningen bland ytans bestämmelser. Styr ordningen i beteckningen. |
+| `hojdUnderkant`, `hojdOverkant` | Bestämmelsens höjd i meter RH2000 (valfri). Se [Höjd och kroppar](bestammelser.md#höjd-och-kroppar-3d). |
 | `motiv` | Motivet (planbestämmelsebeskrivningen). |
 
 ### Kolumner som bara pluginet använder
 
 Några kolumner finns bara för att pluginet ska kunna rita och hålla ordning, och följer aldrig med i leveransen:
 `tabell`, `yta`, `beteckning`, `beteckningsindex`, `bestammelsekod`, `anvandningsform`, `farg`, `symbol`, `avviker`,
-`bestammelser`, `label_x`, `label_y`, `label_w`, `sekundar` och `ordning`.
+`bestammelser`, `label_x`, `label_y`, `label_w`, `sekundar`, `ordning`, `hojdUnderkant` och `hojdOverkant`.
 
 - `beteckning`, `farg`, `symbol` och `anvandningsform` på ytorna räknas fram ur ytans bestämmelser varje gång de
   ändras. Symbologin och etiketterna läser dem.
+- `hojdUnderkant` och `hojdOverkant` levereras inte som fält utan som koordinater: en kropp (båda höjderna) eller en yta
+  med höjdvärde (en höjd), se exporten nedan.
 - `label_x`, `label_y` och `label_w` sparar en text som du flyttat eller formats om med textverktyget. Tomt betyder
   automatisk placering.
 
@@ -118,6 +121,7 @@ automatiskt. Kolumner och tabeller läggs till, men ingenting tas bort.
 | 8 | PostGIS-schemat delas mellan flera planer. |
 | 9 | Hjälpytor och hjälppunkter. |
 | 10 | Egenskapspunkter (`egenskap_punkt`). |
+| 11 | Bestämmelsens höjd (`hojdUnderkant`, `hojdOverkant`). |
 
 ## Lagring i GeoPackage
 
@@ -326,6 +330,9 @@ Under exporten
 - räknas **`reglerarAnvandningsbestammelse`** fram ur geometrin: vilka användningsbestämmelser en egenskap ligger på.
 - skrivs **koordinaterna** som [öst, nord] med millimeters precision och ytterringarna **moturs**.
 - utelämnas tomma fält, pluginets egna kolumner och hjälplagren.
+- får en yta med **höjd** tre koordinater och `dimension` 3: en **kropp** av ytan (bottenyta, lock och en sidoyta per
+  kant, normalerna utåt) när båda höjderna finns, annars en yta med höjdvärde. Den vertikala avgränsningen härleds ur
+  höjderna och utelämnas för en kropp (`core/vertical.py`).
 
 Exporten ändrar ingenting i planen. **Importera leverans (JSON)** gör samma sak åt andra hållet.
 

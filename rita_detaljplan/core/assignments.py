@@ -14,12 +14,15 @@ from qgis.core import NULL, QgsExpressionContext, QgsExpressionContextUtils, Qgs
 
 from . import bestammelse as bm
 from . import catalog as cat
-from . import model, rows, rules
+from . import model, rows, rules, vertical
 from .project import apply_attributes, find_layer
 
 ROWS_TABLE = "bestammelse"
 _FORMS = ("Kvartersmark", "Allmän plats", "Vattenområde")
 _ROW_KEYS = (*rows.ATTRIBUTE_KEYS, "beteckning", "beteckningsindex")
+# höjden hör till bestämmelsens läge, inte innehåll: den följer med när en yta delas eller bestämmelser kopieras, men
+# ändras inte när bestämmelsen byts (``update`` skriver bara ``_ROW_KEYS``)
+_HEIGHT_KEYS = tuple(field.name for field in model.HEIGHT_FIELDS) + ("vertikalAvgransning",)
 
 
 class AssignmentError(RuntimeError):
@@ -62,7 +65,7 @@ def copy_rows(project: QgsProject, table: str, from_identity: str, to_identity: 
         if not rows_lyr.isEditable() and not rows_lyr.startEditing():
             break
         attributes = {**{k: row.get(k) for k in _ROW_KEYS}, "tabell": table, "yta": to_identity,
-                      "ordning": row.get("ordning")}
+                      "ordning": row.get("ordning"), **{k: row.get(k) for k in _HEIGHT_KEYS}}
         if rows_lyr.addFeature(_new_row_feature(rows_lyr, attributes)):
             copied += 1
     return copied
@@ -265,7 +268,8 @@ def copy_provisions(project: QgsProject, table: str, from_fid: int, to_fid: int)
             report.skipped.append(f"{rows.display_text(row)}: {link.problems[0]}")
             continue
         new = _new_row_feature(rows_lyr, {**{k: row.get(k) for k in _ROW_KEYS}, "tabell": table,
-                                          "yta": target["objektidentitet"], "ordning": order + 1})
+                                          "yta": target["objektidentitet"], "ordning": order + 1,
+                                          **{k: row.get(k) for k in _HEIGHT_KEYS}})
         if not rows_lyr.addFeature(new):
             report.skipped.append(f"{rows.display_text(row)}: kunde inte läggas till.")
             continue
@@ -342,6 +346,34 @@ def set_quality(project: QgsProject, row_fid: int, values: dict) -> None:
         raise AssignmentError("Kan inte redigera tabellen för bestämmelser.")
     changed = {name: (values[name] if values.get(name) not in ("", None) else None)
               for name in model.QUALITY_FIELDS if name in values}
+    apply_attributes(rows_lyr, [row_fid], changed)
+
+
+def height_values(project: QgsProject, row_fid: int) -> dict:
+    """Bestämmelsens höjd i meter (RH2000): ``{"hojdUnderkant": ..., "hojdOverkant": ...}``, se ``core.vertical``.
+    Ett eget läs/skriv-par som kvaliteten: höjden är bestämmelsens läge i höjdled, inte dess innehåll."""
+    row = next((r for r in read_rows(project) if r["_fid"] == row_fid), None)
+    return {field.name: vertical.number(row.get(field.name)) if row else None for field in model.HEIGHT_FIELDS}
+
+
+def set_height(project: QgsProject, row_fid: int, lower: Optional[float], upper: Optional[float]) -> None:
+    """Sparar bestämmelsens höjd (tomt = obegränsat åt det hållet). Underkanten måste ligga under överkanten.
+    Den vertikala avgränsningen följer höjden: med en höjd härleds den (bara överkant = uppåt, bara underkant = nedåt)
+    och med båda är bestämmelsen en kropp som inte får någon, så en gammal avgränsning rensas."""
+    rows_lyr = rows_layer(project)
+    current = next((r for r in read_rows(project) if r["_fid"] == row_fid), None)
+    if rows_lyr is None or current is None:
+        raise AssignmentError("Bestämmelsen finns inte längre.")
+    extent = vertical.Extent(vertical.number(lower), vertical.number(upper))
+    if not extent.consistent:
+        raise AssignmentError("Underkanten måste ligga under överkanten.")
+    if extent.limited and current["tabell"] in ("egenskap_linje", "egenskap_punkt"):
+        raise AssignmentError("Höjd kan bara anges för ytor (användning och egenskapsytor), inte för linjer och punkter.")
+    if not rows_lyr.isEditable() and not rows_lyr.startEditing():
+        raise AssignmentError("Kan inte redigera tabellen för bestämmelser.")
+    changed = {"hojdUnderkant": extent.lower, "hojdOverkant": extent.upper}
+    if extent.limited:
+        changed["vertikalAvgransning"] = extent.limit
     apply_attributes(rows_lyr, [row_fid], changed)
 
 

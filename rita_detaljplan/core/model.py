@@ -20,9 +20,9 @@ from . import codelists as cl
 
 SPEC_VERSION = "4.1"
 MEDIATYP = "application/vnd.lm.detaljplan.v4+json"
-SCHEMA_VERSION = 10  # schemaversion (3: ytor + bestämmelsetabell; 4: + hjälplinjer; 5: + textens läge; 6: + ordning;
+SCHEMA_VERSION = 11  # schemaversion (3: ytor + bestämmelsetabell; 4: + hjälplinjer; 5: + textens läge; 6: + ordning;
 # 7: + textens bredd och sekundär egenskapsgräns; 8: PostGIS-schemat delas mellan flera planer, se storage.py;
-# 9: + hjälpytor och hjälppunkter; 10: + egenskapspunkter)
+# 9: + hjälpytor och hjälppunkter; 10: + egenskapspunkter; 11: + höjd (underkant och överkant) på bestämmelserna)
 
 # Fälttyper
 TEXT, INT, REAL, DATE, DATETIME, BOOL = "text", "int", "real", "date", "datetime", "bool"
@@ -161,7 +161,8 @@ BESLUTSINFORMATION = LayerDef(
 
 # Kolumner som bara pluginet använder (ingår inte i leveransen till NGP).
 PLUGIN_ONLY_FIELDS = ("tabell", "yta", "beteckning", "beteckningsindex", "bestammelsekod", "anvandningsform", "farg",
-                      "symbol", "avviker", "bestammelser", "label_x", "label_y", "label_w", "sekundar", "ordning")
+                      "symbol", "avviker", "bestammelser", "label_x", "label_y", "label_w", "sekundar", "ordning",
+                      "hojdUnderkant", "hojdOverkant")
 
 
 # Textens läge på plankartan när användaren flyttat den (tomt = automatisk placering). Bara för pluginet.
@@ -208,6 +209,16 @@ EGENSKAP_PUNKT = LayerDef("egenskap_punkt", "Egenskap (punkt)", "MultiPoint", _a
 # Bestämmelsernas inbördes ordning på en yta (styr ordningen i beteckningen). Bara för pluginet.
 ORDNING = FieldDef("ordning", INT, "Ordning", comment="Ordning bland ytans bestämmelser. Sätts av pluginet.")
 
+# Bestämmelsens höjd (tredje dimensionen), i meter i höjdsystemet RH2000 (EPSG:5613). Bara underkant: bestämmelsen gäller
+# inte under höjden (yta med höjdvärde och vertikal avgränsning nedåt); bara överkant: gäller inte över (uppåt); båda:
+# en kropp. Inga höjder: gäller obegränsat i höjdled, som en vanlig yta. Se core.vertical. Bara för pluginet: höjderna
+# levereras som koordinater, inte som egna fält.
+HOJD_UNDERKANT = FieldDef("hojdUnderkant", REAL, "Underkant (m, RH2000)",
+                          comment="Bestämmelsen gäller inte under den här höjden (RH2000). Tom = obegränsat nedåt.")
+HOJD_OVERKANT = FieldDef("hojdOverkant", REAL, "Överkant (m, RH2000)",
+                         comment="Bestämmelsen gäller inte över den här höjden (RH2000). Tom = obegränsat uppåt.")
+HEIGHT_FIELDS = (HOJD_UNDERKANT, HOJD_OVERKANT)
+
 BESTAMMELSE = LayerDef(
     name="bestammelse",
     alias="Planbestämmelser",
@@ -236,6 +247,7 @@ BESTAMMELSE = LayerDef(
         FieldDef("motiv", TEXT, "Motiv (planbestämmelsebeskrivning)", multiline=True),
         *_kvalitet(required=False),
         FieldDef("vertikalAvgransning", TEXT, "Vertikal avgränsning", codelist=cl.AVGRANSNING),
+        *HEIGHT_FIELDS,
         FieldDef("giltighetstid", INT, "Giltighetstid (månader)", comment="Endast användningsbestämmelser."),
         FieldDef("borjarGallaEfter", INT, "Börjar gälla efter (månader)", comment="Endast användningsbestämmelser."),
         FieldDef("sekundarEgenskapsgrans", BOOL, "Sekundär egenskapsgräns", comment="Endast egenskapsbestämmelser."),

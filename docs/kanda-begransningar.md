@@ -37,13 +37,20 @@ Pluginet har automatiska tester (se [Utveckling](utveckling.md)), men flera dela
 
 ## Funktioner som saknas
 
-- Ändringsplaner, 3D (kropp) och import från andra system.
+- Ändringsplaner och import från andra system än Lantmäteriets JSON (Geosecma och Sokigo Focus levererar det formatet).
+- **3D-vy i QGIS**: bestämmelsernas höjd (kropp och yta med höjdvärde) sparas, kontrolleras och levereras, men ritas
+  inte i QGIS 3D-vy. Plankartan är fortfarande en 2D-karta.
 - Plankartan som helhet: pluginet skapar teckenförklaringen och exempellayouter (A1–A4, liggande och stående, med karta,
   norrpil, skalstock och titelruta) att utgå från. Kommunens egen plankartemall, med grafisk profil och grundkarta, gör
   du själv i layoutläget.
 
 ## Funktionella begränsningar
 
+- **Höjd och kroppar** (schema 11) följer Lantmäteriets vägledning (avsnitt 3.2.2) men är inte provade i NGP:s
+  verifieringsmiljö, som inte kan strukturkontrollera kroppar. Höjden gäller bestämmelsen och anges i meter RH2000;
+  en kropp är alltid ett lodrätt prisma av ytan (snedställda kroppar från en import förenklas till ett prisma, med en
+  anmärkning). En ny användning som ritas över en användning som bara är begränsad i höjdled klipps inte; ger man den
+  ingen höjd efteråt säger kontrollen till om överlappet.
 - **Egenskapspunkter** (schema 10) är nya och inte provade i NGP:s verifieringsmiljö. Exporten följer schemat
   (`bestammelsegeometri` av typen `punkt`). Markens höjd visas med höjden som beteckning ("+31,8") och som en enda rad
   i teckenförklaringen ("+0,0 Markens höjd över nollplanet"); det är pluginets tolkning av hur höjder brukar visas på

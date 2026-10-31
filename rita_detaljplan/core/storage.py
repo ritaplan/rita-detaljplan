@@ -151,6 +151,10 @@ def postgis_upgrade(schema: str, version: int, epsg: int) -> list[str]:
         statements += _table_ddl(schema, model.HJALPPUNKT, epsg)
     if version < 10:  # egenskapspunkter
         statements += _table_ddl(schema, model.EGENSKAP_PUNKT, epsg)
+    if version < 11:  # bestämmelsens höjd
+        for field in model.HEIGHT_FIELDS:
+            statements.append(f"ALTER TABLE {quote(schema)}.{quote(model.BESTAMMELSE.name)} "
+                              f"ADD COLUMN IF NOT EXISTS {_column(field)}")
     statements.append(f"UPDATE {quote(schema)}.{quote(SCHEMA_TABLE)} SET \"value\" = "
                       f"{literal(str(model.SCHEMA_VERSION))} WHERE \"key\" = 'schema_version'")
     return statements

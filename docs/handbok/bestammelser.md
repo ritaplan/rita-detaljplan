@@ -111,10 +111,44 @@ I dialogen finns knappar för de bestämmelser som ytan redan har:
 | **Ta bort** | Tar bort bestämmelsen från ytan. |
 | **Anpassa formulering…** | Låter dig bläddra bland alla bestämmelser och ändra ordalydelsen. Du får en varning om att texten då avviker från katalogen. |
 | **Kvalitet…** | Bestämmelsens kvalitetsbeskrivning och användbarhet. Krävs vid laga kraft, men är redan ifyllt med vanliga värden. |
+| **Höjd…** | Underkant och överkant i meter (RH2000) för en bestämmelse på en yta. Se [Höjd och kroppar](#höjd-och-kroppar-3d) nedan. |
 | **Reglerar annan plan…** | Bara för egenskapsbestämmelser. Anger att bestämmelsen hör ihop med en annan detaljplan, till exempel vid samordning med en grannplan. Valfritt. |
 
 > **Motiven skrivs inte här.** De skrivs på fliken *Motiv till planbestämmelser* i
 > [Planens uppgifter](planens-uppgifter.md#motiv-till-planbestämmelser).
+
+## Höjd och kroppar (3D)
+
+En bestämmelse gäller som standard på alla höjder, som en vanlig yta. Behöver den begränsas i höjdled, till exempel ett
+garage under en gård, ger du den en höjd med knappen **Höjd…**. Höjden hör till **bestämmelsen**, inte till ytan, så en
+yta kan ha flera bestämmelser med olika höjd. Höjderna anges i meter i höjdsystemet RH2000.
+
+| Du anger | Det betyder | Så levereras den |
+|---|---|---|
+| ingen höjd | gäller på alla höjder | yta, som vanligt |
+| bara **överkant** | gäller inte ovanför höjden | yta med höjdvärde och vertikal avgränsning *uppåt* |
+| bara **underkant** | gäller inte under höjden | yta med höjdvärde och vertikal avgränsning *nedåt* |
+| **båda** | gäller bara mellan höjderna | **kropp** (ett lodrätt prisma av ytan), utan vertikal avgränsning |
+
+Pluginet sätter den vertikala avgränsningen åt dig: Lantmäteriet kräver att en kropp inte har någon, och att en
+yta med bara en höjd har rätt riktning. Höjd går bara att ange för ytor, inte för linjer och punkter. Har en yta flera
+delar blir varje del en egen kropp, eftersom leveransen inte tillåter samlingar av kroppar.
+
+### Användningar ovanpå varandra
+
+Två användningsytor får inte överlappa, **utom** när de gäller på olika höjd. Garaget (underkant −6 m, överkant 0 m)
+och gården (underkant 0 m) delar bara en gräns, och får därför ligga över varandra i planen. Så här gör du:
+
+1. Ge den användning som redan finns en höjd, till exempel underkant 0 m, så att pluginet vet att den inte gäller
+   under marken.
+2. Rita den nya ytan över den. Den klipps inte bort så länge den äldre användningen är begränsad i höjdled.
+3. Ge den nya ytan sin bestämmelse och sedan dess höjd (−6 m till 0 m).
+
+Ger du den nya ytan ingen höjd gäller den på alla höjder och överlappar då, och kontrollen av planen säger till
+(DP-Krav-0013). Det gör den också om höjderna överlappar varandra.
+
+> **Kontroll i NGP.** Lantmäteriets plattform kan inte kontrollera kroppar strukturellt. Leveransen följer
+> specifikationen, men kroppar är inte provade mot NGP:s verifieringsmiljö.
 
 ## Planbestämmelsekatalogen
 

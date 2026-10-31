@@ -22,7 +22,7 @@ from qgis.core import (NULL, Qgis, QgsExpressionContext, QgsExpressionContextUti
                        QgsProviderRegistry, QgsRectangle, QgsVectorLayer, QgsVectorLayerUtils)
 from qgis.PyQt.QtCore import QObject, QTimer, pyqtSignal
 
-from .core import assignments, export_ngp, model, requirements, rows, rules, settings, topology, validation
+from .core import assignments, export_ngp, model, requirements, rows, rules, settings, topology, validation, vertical
 from .core import catalog as cat
 from .core import bestammelse as bm
 from .core import import_ngp as import_ngp_module
@@ -632,7 +632,10 @@ class PlanController(QObject):
                     continue
                 provisions += 1
                 extra = {name: value for name, value in (("giltighetstid", provision.giltighetstid),
-                                                          ("borjarGallaEfter", provision.borjar_galla_efter))
+                                                          ("borjarGallaEfter", provision.borjar_galla_efter),
+                                                          ("hojdUnderkant", provision.extent.lower),
+                                                          ("hojdOverkant", provision.extent.upper),
+                                                          ("vertikalAvgransning", provision.vertikal_avgransning))
                         if value is not None}
                 if extra:
                     row_fid = row["_fid"]
@@ -933,9 +936,20 @@ class PlanController(QObject):
         self._modify(adopt)
         self._warn("Planen har nu fler än ett planområde. De hör till samma plan och kan markeras och tas bort var för sig.")
 
+    def _conflicting_uses(self, layer: QgsVectorLayer, fid: Optional[int] = None) -> Optional[QgsGeometry]:
+        """De användningsytor som ytan ``fid`` (eller en ny yta, utan ``fid``) inte får överlappa: bara de som gäller på
+        samma höjd (se ``rules.use_geometry_in_conflict``). En yta utan bestämmelse har ännu ingen känd höjd."""
+        rows_ = assignments.read_rows(self.project, cat.USE_LAYER)
+        extent = None
+        feature = layer.getFeature(fid) if fid is not None else None
+        if feature is not None and feature.isValid():
+            mine = [r for r in rows_ if r.get("yta") == _clean(feature["objektidentitet"])]
+            extent = vertical.area_extent(mine) if mine else None
+        return rules.use_geometry_in_conflict(layer, rows_, extent, exclude_fid=fid)
+
     def _handle_use(self, layer: QgsVectorLayer, feature):
         plan = rules.plan_geometry(self.layer(PLAN_LAYER))
-        result = rules.constrain_use(feature.geometry(), plan, rules.use_geometry(layer, exclude_fid=feature.id()))
+        result = rules.constrain_use(feature.geometry(), plan, self._conflicting_uses(layer, feature.id()))
         if result.problems:
             self._reject(layer, feature.id(), f"Användningsytan togs bort: {result.problems[0]}")
             return
@@ -1048,7 +1062,7 @@ class PlanController(QObject):
 
     def _recheck_use(self, layer: QgsVectorLayer, fid: int, geometry: QgsGeometry):
         plan = rules.plan_geometry(self.layer(PLAN_LAYER))
-        result = rules.constrain_use(geometry, plan, rules.use_geometry(layer, exclude_fid=fid))
+        result = rules.constrain_use(geometry, plan, self._conflicting_uses(layer, fid))
         if result.problems:
             self._warn(f"{result.problems[0]} Flytta tillbaka den eller ta bort den, annars stoppas leveransen.")
             return
@@ -1205,7 +1219,7 @@ class PlanController(QObject):
         (med bestämmelsens användningsform när den är känd)."""
         if table == cat.USE_LAYER:
             return rules.constrain_use(geometry, rules.plan_geometry(self.layer(PLAN_LAYER)),
-                                       rules.use_geometry(self.layer(cat.USE_LAYER)))
+                                       self._conflicting_uses(self.layer(cat.USE_LAYER)))
         use_layer = self.layer(cat.USE_LAYER)
         if use_layer is not None and entry.anvandningsform in rules.KNOWN_FORMS:
             return rules.constrain_property_to_form(geometry, use_layer, entry.anvandningsform)
@@ -1403,6 +1417,15 @@ class PlanController(QObject):
 
     def set_bestammelse_quality(self, row_fid: int, values: dict) -> None:
         self._modify(lambda: assignments.set_quality(self.project, row_fid, values))
+        self._changed()
+
+    def bestammelse_height(self, row_fid: int) -> dict:
+        """Bestämmelsens höjd i meter (RH2000), se ``assignments.height_values``."""
+        return assignments.height_values(self.project, row_fid)
+
+    def set_bestammelse_height(self, row_fid: int, lower: Optional[float], upper: Optional[float]) -> None:
+        """Sparar bestämmelsens underkant och överkant. Kastar ``AssignmentError`` (med förklaring) om de inte går ihop."""
+        self._modify(lambda: assignments.set_height(self.project, row_fid, lower, upper))
         self._changed()
 
     def plan_identity(self) -> Optional[str]:

@@ -31,6 +31,8 @@ gärna fel under [Issues](https://github.com/ritaplan/rita-detaljplan/issues).
   konsekventa medan du ritar. Egenskaper kan vara ytor, linjer (utfartsförbud, stängsel) och punkter (markens höjd).
 - **Bestämmelser ur Boverkets katalog:** välj bland pågående planbestämmelser, fyll i värden och tilldela en eller flera
   bestämmelser per yta. Beteckningar (a1, e2 …) sätts automatiskt.
+- **Höjd (3D):** en bestämmelse kan begränsas i höjdled med underkant och överkant (RH2000) och levereras som kropp
+  eller yta med höjdvärde, så att till exempel ett garage under en gård kan ligga över samma mark.
 - **Symbologi enligt Boverkets föreskrifter** med färger, mönster, gränser och etiketter, dimensionerade för vald
   referensskala.
 - **Kontrollerar planen** mot Lantmäteriets regler (fel, varningar och sådant som återstår) och visar var i kartan.

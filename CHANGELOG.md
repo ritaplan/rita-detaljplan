@@ -4,6 +4,26 @@ Formatet följer [Keep a Changelog](https://keepachangelog.com/sv/1.1.0/), versi
 
 ## Ej utgivet
 
+## [0.1.71] – höjd och kroppar (3D)
+
+- **Höjd för bestämmelser.** Knappen **Höjd…** i dialogen *Planbestämmelser* ger en bestämmelse en underkant och/eller en
+  överkant i meter (RH2000). Ingen höjd: gäller på alla höjder, som förut. En höjd: yta med höjdvärde och vertikal
+  avgränsning (bara överkant = uppåt, bara underkant = nedåt). Båda: en **kropp** (lodrätt prisma av ytan) utan vertikal
+  avgränsning, som Lantmäteriets vägledning kräver (DP-0015, DP-0016). Varje del av en yta med flera delar blir en egen
+  kropp (DP-0004, DP-0018). Höjden hör till bestämmelsen, inte ytan, och står sist i bestämmelsens rad i listan.
+- **Användningar ovanpå varandra.** Två användningsytor får överlappa i planen om de gäller på olika höjd (garaget under
+  gården). En ny användning som ritas över en som är begränsad i höjdled klipps inte; kontrollen (DP-Krav-0013) räknar bara
+  överlapp mellan ytor som delar höjdled, och gränser som bara möts (0 m) är inget överlapp. En egenskap reglerar bara de
+  användningar som gäller på dess höjd.
+- **Import** läser kroppar och ytor med höjdvärde ur en leverans (förut hoppades de över eller gav fel) och återskapar
+  höjderna på bestämmelserna. Vertikal avgränsning utan höjd läses också nu.
+- **Kontroll:** underkanten ska ligga under överkanten (fel), höjd på linjer och punkter följer inte med (varning), och en
+  sparad vertikal avgränsning som säger emot höjderna ersätts i leveransen (varning).
+- **Schema 11:** två nya kolumner i `bestammelse` (`hojdUnderkant`, `hojdOverkant`). Äldre planer i GeoPackage och
+  PostGIS uppgraderas automatiskt när de öppnas. Höjderna följer med när en yta delas och när bestämmelser kopieras.
+- Ny ren modul `core/vertical.py`. Kropparna är inte provade mot NGP (som inte kan strukturkontrollera dem), och ritas
+  inte i QGIS 3D-vy (se [Kända begränsningar](docs/kanda-begransningar.md)).
+
 ## [0.1.70] – Exportera PDF fungerar
 
 - **Rättat: knappen Exportera PDF gav ett Pythonfel.** Två fel: rutan med kontrollens fynd använde `QMessageBox.Critical`

@@ -14,6 +14,8 @@ from dataclasses import dataclass, field
 
 from qgis.core import NULL, Qgis, QgsFeatureRequest, QgsGeometry, QgsPointXY, QgsVectorLayer
 
+from . import vertical
+
 TOLERANCE = 0.10  # meter
 MIN_OVERLAP = 0.01  # m²: mindre överlapp räknas inte som koppling (avrundningsfel i gränser)
 KNOWN_FORMS = ("Kvartersmark", "Allmän plats", "Vattenområde")
@@ -143,6 +145,28 @@ def use_geometry(use_layer: QgsVectorLayer, exclude_fid: int | None = None) -> Q
     return _merged(f.geometry() for f in use_layer.getFeatures() if f.id() != exclude_fid)
 
 
+def use_geometry_in_conflict(use_layer: QgsVectorLayer, rows: list[dict], extent: vertical.Extent | None,
+                             exclude_fid: int | None = None) -> QgsGeometry | None:
+    """Unionen av de användningsytor som ``extent`` (höjden bestämmelsen gäller på) inte får överlappa. Användningar på
+    olika höjd (garaget under gården) får ligga över varandra i planet, så bara de som delar höjdled räknas.
+
+    ``extent`` None betyder att ytan ännu inte har någon bestämmelse, så höjden är okänd (en nyritad yta): då räknas bara
+    de användningar som gäller på alla höjder, så att man kan rita en yta under eller över en användning som begränsats
+    i höjdled och sedan ge den sin höjd. Överlappar de ändå, när höjden är satt, anmäler valideringen det.
+    ``rows`` är bestämmelserna för användningslagret (``assignments.read_rows``)."""
+    by_area: dict = {}
+    for row in rows:
+        by_area.setdefault(row.get("yta"), []).append(row)
+    found = []
+    for feature in use_layer.getFeatures():
+        if feature.id() == exclude_fid:
+            continue
+        other = vertical.area_extent(by_area.get(feature["objektidentitet"], []))
+        if (not other.limited) if extent is None else other.overlaps(extent):
+            found.append(feature.geometry())
+    return _merged(found)
+
+
 def use_geometry_for_form(use_layer: QgsVectorLayer, form: str) -> QgsGeometry | None:
     """Unionen av användningsytor som har (eller ännu inte fått) användningsformen ``form``: de andra formerna
     räknas inte med. Används för att klippa en egenskap som blivit fel efter att en användning fått sin form."""
@@ -151,10 +175,11 @@ def use_geometry_for_form(use_layer: QgsVectorLayer, form: str) -> QgsGeometry |
 
 
 def constrain_use(geometry: QgsGeometry, plan: QgsGeometry | None, other_uses: QgsGeometry | None) -> Constrained:
-    """En användningsyta ska ligga inom planområdet och får inte överlappa andra användningsytor.
+    """En användningsyta ska ligga inom planområdet och får inte överlappa andra användningsytor på samma höjd.
 
     Det som ligger utanför planområdet eller över en annan användning klipps bort. Ligger hela ytan utanför
-    (eller helt inom en annan användning) kan den inte behållas.
+    (eller helt inom en annan användning) kan den inte behållas. ``other_uses`` är de användningar som ytan inte får
+    överlappa: de på en annan höjd ingår inte (se ``use_geometry_in_conflict``).
     """
     result = Constrained(geometry=geometry)
     if plan is None or plan.isEmpty():

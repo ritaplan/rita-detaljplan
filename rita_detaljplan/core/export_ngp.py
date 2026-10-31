@@ -15,6 +15,8 @@ Avvikelser från lagringen i pluginet, som exporten löser (se docs/ngp-regler.m
   * Hjälplinjer exporteras aldrig.
 
 Koordinater skrivs som [x, y] = [öst, nord] (som i GeoJSON) med millimeters precision, med ytterringar moturs.
+En bestämmelse med höjd (``hojdUnderkant``/``hojdOverkant``) får [x, y, z] med z i RH2000: en kropp av ytan när båda
+höjderna finns, annars en yta med höjdvärde (se ``core.vertical``).
 Exporten läser bara planen och ändrar ingenting.
 """
 from __future__ import annotations
@@ -25,7 +27,7 @@ from typing import Any, Optional
 from qgis.core import Qgis, QgsGeometry
 
 from . import documents as documents_module
-from . import model, rules
+from . import model, rules, vertical
 from .validation import Area, PlanData, _blank, _clean, _to_date
 
 MEDIATYP = model.MEDIATYP
@@ -142,14 +144,29 @@ def geometry_metadata(attrs: dict) -> dict:
     return meta
 
 
-def geometry_descriptions(geometry: Optional[QgsGeometry], attrs: dict, epsg: int) -> list[dict]:
-    """``plangeometri``/``bestammelsegeometri``: en post per del av geometrin."""
+def _three_dimensional(kind: str, position: dict, extent: vertical.Extent) -> tuple[str, dict]:
+    """En yta med höjd som yta med höjdvärde (en höjd) eller som kropp (två höjder), se ``core.vertical``."""
+    rings = position["coordinates"]
+    if extent.kind == vertical.SOLID:
+        return "kropp", {"type": "MultiPolygon", "coordinates": vertical.solid_faces(rings, extent.lower, extent.upper)}
+    height = _round(extent.height)
+    return kind, {"type": "Polygon", "coordinates": [vertical.surface_ring(ring, height) for ring in rings]}
+
+
+def geometry_descriptions(geometry: Optional[QgsGeometry], attrs: dict, epsg: int,
+                          extent: Optional[vertical.Extent] = None) -> list[dict]:
+    """``plangeometri``/``bestammelsegeometri``: en post per del av geometrin. Med ``extent`` (bara för ytor) får
+    ytorna höjd: en yta med höjdvärde och dimension 3, eller en kropp med båda höjderna (varje del av en multiyta blir
+    en egen kropp, eftersom multikroppar inte godtas)."""
     metadata = geometry_metadata(attrs)
     result = []
     for kind, position in geometry_parts(geometry):
-        result.append({"geometri": {"typ": kind, "position": position, "koordinatsystemPlan": f"EPSG:{epsg}",
-                                    "dimension": 2},
-                       "geometrimetadata": dict(metadata)})
+        description = {"typ": kind, "position": position, "koordinatsystemPlan": f"EPSG:{epsg}", "dimension": 2}
+        if kind == "yta" and extent is not None and extent.limited and extent.consistent:
+            description["typ"], description["position"] = _three_dimensional(kind, position, extent)
+            description["dimension"] = 3
+            description["hojdsystem"] = vertical.HEIGHT_SYSTEM
+        result.append({"geometri": description, "geometrimetadata": dict(metadata)})
     return result
 
 
@@ -254,13 +271,18 @@ def plan_feature(data: PlanData) -> dict:
     return _feature(properties)
 
 
-def regulated_uses(area: Area, data: PlanData) -> list[str]:
-    """``reglerarAnvandningsbestammelse``: användningsbestämmelserna på de användningsytor som egenskapen ligger på."""
+def regulated_uses(area: Area, data: PlanData, extent: Optional[vertical.Extent] = None) -> list[str]:
+    """``reglerarAnvandningsbestammelse``: användningsbestämmelserna på de användningsytor som egenskapen ligger på
+    (och, när egenskapen har en höjd, bara de som gäller på den höjden)."""
     if area.geometry is None or area.geometry.isEmpty():
         return []
     ids: list[str] = []
     for use in data.of("anvandning_yta"):
         if use.geometry.isEmpty():
+            continue
+        if extent is not None and not vertical.area_extent(
+                r for r in data.rows if r.get("tabell") == "anvandning_yta" and r.get("yta") == use.identity
+        ).overlaps(extent):
             continue
         if area.is_area:
             touching = use.geometry.intersection(area.geometry).area() > rules.MIN_OVERLAP
@@ -287,8 +309,13 @@ def provision_feature(row: dict, area: Area, data: PlanData) -> dict:
     _put(properties, "kvalitetsbeskrivning", quality(row))
     _put(properties, "anvandbarhet", row.get("anvandbarhet"))
     _put(properties, "beskrivningAnvandbarhet", row.get("beskrivningAnvandbarhet"))
-    properties["bestammelsegeometri"] = geometry_descriptions(area.geometry, area.attrs, data.epsg)
-    _put(properties, "vertikalAvgransning", row.get("vertikalAvgransning") if area.is_area else None)
+    extent = vertical.extent_of(row) if area.is_area else vertical.Extent()  # höjd gäller bara ytor
+    if not extent.consistent:
+        extent = vertical.Extent()  # underkanten över överkanten: valideringen stoppar leveransen, exporten skriver 2D
+    properties["bestammelsegeometri"] = geometry_descriptions(area.geometry, area.attrs, data.epsg, extent)
+    # med höjd härleds avgränsningen ur den (bara en höjd: uppåt eller nedåt; en kropp får ingen), annars gäller det sparade
+    _put(properties, "vertikalAvgransning",
+         extent.limit if extent.limited else (row.get("vertikalAvgransning") if area.is_area else None))
     if not _blank(row.get("motiv")):
         properties["planbestammelsebeskrivning"] = {"motiv": row["motiv"]}
     if is_use:
@@ -297,7 +324,7 @@ def provision_feature(row: dict, area: Area, data: PlanData) -> dict:
     else:
         if row.get("sekundarEgenskapsgrans") is not None:
             properties["sekundarEgenskapsgrans"] = _as_bool(row.get("sekundarEgenskapsgrans"))
-        _put(properties, "reglerarAnvandningsbestammelse", regulated_uses(area, data))
+        _put(properties, "reglerarAnvandningsbestammelse", regulated_uses(area, data, extent if extent.limited else None))
         _put(properties, "reglerarDetaljplan", row.get("reglerarDetaljplan"))
     return _feature(properties)
 

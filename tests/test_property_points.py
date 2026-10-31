@@ -193,13 +193,13 @@ class PointUpgradeTests(unittest.TestCase):
         return gpkg
 
     def test_schema_10_adds_the_point_layer(self):
-        self.assertEqual(model.SCHEMA_VERSION, 10)
+        self.assertGreaterEqual(model.SCHEMA_VERSION, 10)
         gpkg = self.old_plan()
         self.assertTrue(geopackage.upgrade(gpkg))
         ds = ogr.Open(str(gpkg))
         self.assertIsNotNone(ds.GetLayerByName("egenskap_punkt"))
         ds = None
-        self.assertEqual(geopackage.read_meta(gpkg)["schema_version"], "10")
+        self.assertEqual(geopackage.read_meta(gpkg)["schema_version"], str(model.SCHEMA_VERSION))
 
     def test_an_old_plan_can_be_opened_and_drawn_on_afterwards(self):
         project = QgsProject()  # måste finnas kvar: lagren försvinner med projektet

@@ -30,6 +30,7 @@ from ..core import bestammelse as bm
 from ..core import catalog as cat
 from ..core import rows, settings
 from .bestammelse_dialog import BestammelseDialog
+from .height_dialog import HeightDialog
 from .quality_panel import QualityDialog
 from .regulates_dialog import RegulatesPlanDialog
 from .variable_form import VariableForm
@@ -106,6 +107,9 @@ class AssignDialog(QDialog):
         self.btn_quality = QPushButton("Kvalitet…")
         self.btn_quality.setToolTip("Kvalitetsbeskrivning och användbarhet för den här bestämmelsen (krävs vid "
                                     "laga kraft).")
+        self.btn_height = QPushButton("Höjd…")
+        self.btn_height.setToolTip("Underkant och överkant i meter (RH2000) för bestämmelsen. Utan höjd gäller den på "
+                                   "alla höjder. Gäller bara ytor.")
         self.btn_regulates = QPushButton("Reglerar annan plan…")
         self.btn_regulates.setToolTip("Anger att den här egenskapsbestämmelsen reglerar (hör ihop med) en annan "
                                       "detaljplan, t.ex. vid samordning mellan grannplaner. Valfritt.")
@@ -116,6 +120,7 @@ class AssignDialog(QDialog):
         rows_buttons.addSpacing(12)
         rows_buttons.addWidget(self.btn_edit)
         rows_buttons.addWidget(self.btn_quality)
+        rows_buttons.addWidget(self.btn_height)
         rows_buttons.addWidget(self.btn_regulates)
         rows_buttons.addWidget(self.btn_remove)
         rows_buttons.addStretch(1)
@@ -227,6 +232,7 @@ class AssignDialog(QDialog):
         self.btn_details.clicked.connect(self.add_with_details)
         self.btn_edit.clicked.connect(self.edit_selected)
         self.btn_quality.clicked.connect(self.edit_quality)
+        self.btn_height.clicked.connect(self.edit_height)
         self.btn_regulates.clicked.connect(self.edit_regulates)
         self.btn_remove.clicked.connect(self.remove_selected)
         self.btn_up.clicked.connect(lambda: self.move_selected(-1))
@@ -480,6 +486,8 @@ class AssignDialog(QDialog):
         self.btn_edit.setEnabled(selected)
         self.btn_quality.setEnabled(selected)
         selected_row = self._selected_row()
+        self.btn_height.setEnabled(selected_row is not None and selected_row.get("tabell") in
+                                   (cat.USE_LAYER, "egenskap_yta"))
         self.btn_regulates.setEnabled(selected_row is not None and selected_row.get("tabell") in cat.PROPERTY_LAYERS)
         self.btn_remove.setEnabled(selected)
         row = self.rows_list.currentRow()
@@ -590,6 +598,15 @@ class AssignDialog(QDialog):
         if row is None:
             return
         QualityDialog(row["_fid"], self.controller, self).exec()
+
+    def edit_height(self):
+        """Höjd (underkant och överkant) för den markerade bestämmelsen (se ``HeightDialog``). Listan läses om, så att
+        höjden syns i raden."""
+        row = self._selected_row()
+        if row is None:
+            return
+        if HeightDialog(row["_fid"], self.controller, self).exec():
+            self._reload_rows()
 
     def edit_regulates(self):
         """Vilken annan detaljplan den markerade egenskapsbestämmelsen reglerar (se ``RegulatesPlanDialog``) –

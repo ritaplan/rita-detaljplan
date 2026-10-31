@@ -188,21 +188,21 @@ class SqlTests(unittest.TestCase):
         self.assertEqual(text.count('"label_w"'), 3)
         self.assertEqual(text.count('"sekundar"'), 1)
         self.assertNotIn('"label_x"', text)
-        self.assertEqual(len([s for s in sql if "hjalp" not in s and "egenskap_punkt" not in s]), 6,
-                         "utom hjälplagren (schema 9) och egenskapspunkterna (schema 10)")
+        self.assertEqual(len([s for s in sql if "hjalp" not in s and "egenskap_punkt" not in s and "hojd" not in s]), 6,
+                         "utom hjälplagren (schema 9), egenskapspunkterna (schema 10) och höjdkolumnerna (schema 11)")
 
     def test_upgrade_from_schema_6_only_adds_the_schema_7_columns(self):
         sql = storage.postgis_upgrade("dp_test", 6, 3006)
-        self.assertEqual(len([s for s in sql if "hjalp" not in s and "egenskap_punkt" not in s]), 5,
-                         "utom hjälplagren (schema 9) och egenskapspunkterna (schema 10)")
+        self.assertEqual(len([s for s in sql if "hjalp" not in s and "egenskap_punkt" not in s and "hojd" not in s]), 5,
+                         "utom hjälplagren (schema 9), egenskapspunkterna (schema 10) och höjdkolumnerna (schema 11)")
         self.assertNotIn('"ordning"', " ".join(sql))
         self.assertIn(f'"dp_schema" SET "value" = \'{model.SCHEMA_VERSION}\'', sql[-1])
 
-    def test_upgrade_from_schema_9_only_creates_the_property_points(self):
+    def test_upgrade_from_schema_9_only_creates_the_property_points_and_adds_the_height_columns(self):
         sql = storage.postgis_upgrade("dp_test", 9, 3006)
         self.assertIn('CREATE TABLE IF NOT EXISTS "dp_test"."egenskap_punkt"', sql[0])
-        self.assertNotIn("ALTER TABLE", " ".join(sql))
-        self.assertTrue(all("egenskap_punkt" in s for s in sql[:-1]))
+        self.assertEqual(len([s for s in sql if "ALTER TABLE" in s]), 2, "bara höjdkolumnerna (schema 11)")
+        self.assertTrue(all("egenskap_punkt" in s or "hojd" in s for s in sql[:-1]))
         self.assertIn(f'"dp_schema" SET "value" = \'{model.SCHEMA_VERSION}\'', sql[-1])
 
 
