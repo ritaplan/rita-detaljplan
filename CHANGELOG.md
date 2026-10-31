@@ -4,6 +4,12 @@ Formatet följer [Keep a Changelog](https://keepachangelog.com/sv/1.1.0/), versi
 
 ## Ej utgivet
 
+## [0.1.72] – Exportera PDF fungerar på riktigt
+
+- **Knappen Exportera PDF** gav fortfarande Pythonfel: filrutan hämtade layoutens namn från ett objekt som saknar namn
+  (`AttributeError: 'QgsLayout' object has no attribute 'name'`). Namnet hämtas nu från huvudlayouten, så förslaget
+  till filnamn blir layoutens namn. Testet kör nu filfrågan på riktigt i stället för att byta ut den.
+
 ## [0.1.71] – höjd och kroppar (3D)
 
 - **Höjd för bestämmelser.** Knappen **Höjd…** i dialogen *Planbestämmelser* ger en bestämmelse en underkant och/eller en

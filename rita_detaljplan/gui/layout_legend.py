@@ -148,7 +148,9 @@ class LayoutLegendTool:
         settings = QgsSettings()
         layout = designer.layout()
         folder = settings.value(KEY_PDF_DIR, "", type=str) or str(Path(layout.project().absolutePath() or "."))
-        name = (layout.name() or "plankarta").replace("/", "_").replace("\\", "_")
+        # layout() är ett QgsLayout och har inget namn; namnet sitter på huvudlayouten (QgsMasterLayoutInterface)
+        master = designer.masterLayout() if hasattr(designer, "masterLayout") else None
+        name = ((master.name() if master is not None else "") or "plankarta").replace("/", "_").replace("\\", "_")
         path, _filter = QFileDialog.getSaveFileName(designer.window() if hasattr(designer, "window") else None,
                                                     "Exportera plankartan som PDF", str(Path(folder) / f"{name}.pdf"),
                                                     "PDF (*.pdf)")

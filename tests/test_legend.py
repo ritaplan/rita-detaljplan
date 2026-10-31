@@ -394,6 +394,10 @@ class FakeDesigner:
     def layout(self):
         return self._layout
 
+    def masterLayout(self):
+        """Namnet finns bara här, inte på layout() (det är ett QgsLayout utan name())."""
+        return mock.Mock(**{"name.return_value": "A2 Plankarta"})
+
     def messageBar(self):
         return self._bar
 
@@ -903,6 +907,17 @@ class ExportButtonTests(ToolSetup, LayoutCase):
         frame.setLayers([raster])
         self.layout.addLayoutItem(frame)
         self.assertEqual(layout_export.blend_mode_layers(self.layout), [])
+
+    def test_the_real_file_dialog_step_uses_the_master_layout_name(self):
+        """Filfrågan körs på riktigt (bara själva rutan ersätts): ``designer.layout().name()`` finns inte i verkligheten."""
+        from qgis.core import QgsLayout
+        from qgis.PyQt.QtWidgets import QFileDialog
+        plain = QgsLayout(self.project)
+        self.assertFalse(hasattr(plain, "name"))
+        self.designer.layout = lambda: plain  # som i verkligheten: layout() är ett QgsLayout, huvudlayouten har namnet
+        with mock.patch.object(QFileDialog, "getSaveFileName", return_value=("", "")) as ask:
+            self.assertEqual(self.tool._ask_pdf_path(self.designer), "")
+        self.assertTrue(ask.call_args.args[2].endswith("A2 Plankarta.pdf"), ask.call_args.args[2])
 
     def test_the_report_box_is_built_with_qt6_enums_for_every_level(self):
         """Rutan med fynden byggs på riktigt (inte ersatt): ``QMessageBox.Critical`` finns inte i Qt 6."""
