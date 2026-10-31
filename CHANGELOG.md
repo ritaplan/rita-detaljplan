@@ -4,6 +4,15 @@ Formatet följer [Keep a Changelog](https://keepachangelog.com/sv/1.1.0/), versi
 
 ## Ej utgivet
 
+## [0.1.68] – en knapp som exporterar plankartan som PDF och kontrollerar den
+
+- **Exportera PDF** i layoutläget (bredvid teckenförklaringsknappen): exporterar layouten som vektor-PDF utan georeferens
+  och kontrollerar filen. Kontrollen (`core/pdfcheck.py`, ren Python) säger till om Acrobat inte kan spara sidan som bild
+  (strecksatser med fler än 6 tal eller värden nära noll), om kartan blev en bild i stället för vektorgrafik, om filen
+  innehåller genomskinlighet eller georeferens som en PDF/A-konvertering måste hantera, och om filen redan är PDF/A.
+  Har kartan ett lager med blandningsläge (användningens Multiplicera) påpekas att det saknas i en vektor-PDF.
+  Pluginet gör fortfarande inte filen till PDF/A.
+
 ## [0.1.67] – exempellayouter i åtta format
 
 - **Exempellayouter i åtta format** (uppföljning av [ärende 2](https://github.com/ritaplan/rita-detaljplan/issues/2)):

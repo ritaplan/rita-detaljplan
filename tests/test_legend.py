@@ -18,6 +18,7 @@ if HAVE_QGIS:
     from qgis.PyQt.QtCore import QObject, pyqtSignal
     from qgis.PyQt.QtWidgets import QMainWindow, QMenu, QToolBar
     from rita_detaljplan.core import legend as lg
+    from rita_detaljplan.core import layout_export
     from rita_detaljplan.core import legend_layout as ll
     from rita_detaljplan.core import symbology
     from rita_detaljplan.core import validation
@@ -437,12 +438,12 @@ class ToolTests(ToolSetup, LayoutCase):
         tool = LayoutLegendTool(FakeIface([second]), self.controller, lambda: self.catalog)
         tool.attach()
         self.addCleanup(tool.detach)
-        self.assertEqual(len(second.buttons()), 2)
+        self.assertEqual(len(second.buttons()), 3)
 
     def test_the_button_is_added_once_and_removed_when_the_designer_closes(self):
         self.fake.layoutDesignerOpened.emit(self.designer)
         self.fake.layoutDesignerOpened.emit(self.designer)
-        self.assertEqual(len(self.designer.buttons()), 2)
+        self.assertEqual(len(self.designer.buttons()), 3)
         self.fake.layoutDesignerWillBeClosed.emit(self.designer)
         self.assertEqual(self.designer.buttons(), [])
 
@@ -539,7 +540,7 @@ class ToolTests(ToolSetup, LayoutCase):
         plain = Plain(self.layout)
         self.fake.layoutDesignerOpened.emit(plain)
         self.assertEqual([a.text() for a in plain.actionsToolbar().actions()],
-                         ["Teckenförklaring", "Inställningar för teckenförklaring"])
+                         ["Teckenförklaring", "Inställningar för teckenförklaring", "Exportera PDF"])
         self.fake.layoutDesignerWillBeClosed.emit(plain)
         self.assertEqual(plain.actionsToolbar().actions(), [])
 
@@ -832,12 +833,80 @@ class LegendSettingsDialogTests(StyleCase):
         self.assertEqual(ll.LegendStyle.load().text_size, 10.0)
 
 
+class ExportButtonTests(ToolSetup, LayoutCase):
+    """Knappen Exportera PDF: en knapp som exporterar plankartan som vektor-PDF och kontrollerar filen."""
+
+    def add_map(self):
+        from qgis.core import QgsLayoutItemMap, QgsRectangle
+        frame = QgsLayoutItemMap(self.layout)
+        frame.attemptMove(QgsLayoutPoint(10, 10, Qgis.LayoutUnit.Millimeters))
+        frame.attemptResize(QgsLayoutSize(400, 300, Qgis.LayoutUnit.Millimeters))
+        frame.setExtent(QgsRectangle(-10, -10, 110, 110))
+        self.layout.addLayoutItem(frame)
+
+    def export(self, name="karta.pdf"):
+        import tempfile
+        folder = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
+        self.addCleanup(folder.cleanup)
+        path = Path(folder.name) / name
+        shown = []
+        self.tool._ask_pdf_path = lambda designer: str(path)
+        self.tool._show_report = lambda designer, report: shown.append(report)
+        self.fake.layoutDesignerOpened.emit(self.designer)
+        return path, shown
+
+    def test_the_button_exports_a_vector_pdf_and_checks_it(self):
+        self.add_map()
+        path, shown = self.export()
+        report = self.tool.export_pdf(self.designer)
+        self.assertTrue(path.is_file())
+        self.assertTrue(report.vector)
+        self.assertTrue(report.ok, report.text())
+        self.assertFalse(report.georeferenced, "ingen georeferens: den ger anmärkningar i en PDF/A-kontroll")
+        text, level = self.designer.messageBar().messages[-1]
+        self.assertIn("Exporterade karta.pdf", text)
+        self.assertEqual(shown, [report], "fynden visas i en ruta")
+
+    def test_cancelling_the_file_dialog_exports_nothing(self):
+        self.add_map()
+        path, shown = self.export()
+        self.tool._ask_pdf_path = lambda designer: ""
+        self.assertIsNone(self.tool.export_pdf(self.designer))
+        self.assertFalse(path.exists())
+        self.assertEqual(self.designer.messageBar().messages, [])
+
+    def test_a_file_that_cannot_be_written_is_reported_in_the_message_bar(self):
+        self.add_map()
+        path, shown = self.export()
+        self.tool._ask_pdf_path = lambda designer: str(path.parent)  # en mapp går inte att skriva som fil
+        self.assertIsNone(self.tool.export_pdf(self.designer))
+        text, level = self.designer.messageBar().messages[-1]
+        self.assertEqual(level, Qgis.MessageLevel.Critical)
+        self.assertIn("kunde inte skrivas", text)
+
+    def test_a_layer_with_a_blend_mode_in_the_map_is_pointed_out(self):
+        from qgis.core import QgsLayoutItemMap, QgsVectorLayer
+        from qgis.PyQt.QtGui import QPainter
+        layer = QgsVectorLayer("Polygon?crs=EPSG:3006", "Användning (yta)", "memory")
+        layer.setBlendMode(QPainter.CompositionMode.CompositionMode_Multiply)
+        frame = QgsLayoutItemMap(self.layout)
+        frame.setLayers([layer])
+        self.layout.addLayoutItem(frame)
+        self.assertEqual([l.name() for l in layout_export.blend_mode_layers(self.layout)], ["Användning (yta)"])
+
+    def test_the_export_button_is_the_third_button(self):
+        self.fake.layoutDesignerOpened.emit(self.designer)
+        self.assertEqual(self.designer.buttons()[2].text(), "Exportera PDF")
+
+
 class SettingsButtonTests(ToolSetup, LayoutCase):
     def test_the_designer_gets_a_settings_button_next_to_the_legend_button(self):
         self.fake.layoutDesignerOpened.emit(self.designer)
         actions = self.designer.buttons()
-        self.assertEqual([a.text() for a in actions], ["Teckenförklaring", "Inställningar för teckenförklaring"])
+        self.assertEqual([a.text() for a in actions], ["Teckenförklaring", "Inställningar för teckenförklaring",
+                                                       "Exportera PDF"])
         self.assertFalse(actions[1].icon().isNull())
+        self.assertFalse(actions[2].icon().isNull())
         self.fake.layoutDesignerWillBeClosed.emit(self.designer)
         self.assertEqual(self.designer.buttons(), [])
 

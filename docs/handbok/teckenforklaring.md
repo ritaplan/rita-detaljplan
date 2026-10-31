@@ -52,6 +52,21 @@ när du ändrat i planen.
 
 > Syns inte verktygsfältet? Det kan döljas under menyn *Visa* eller med högerklick på verktygsfälten i layoutfönstret.
 
+## Exportera plankartan som PDF
+
+Klicka på **Exportera PDF** bredvid teckenförklaringsknappen när layouten är klar och välj var filen ska sparas. Det är
+hela exporten: knappen sköter inställningarna och kontrollerar filen efteråt.
+
+- **Vektorgrafik:** kartan blir ritade linjer och ytor, inte en bild, så att filen går att göra om till PDF/A.
+- **Ingen georeferens:** en plankarta behöver den inte, och den ger anmärkningar i en strikt PDF/A-kontroll.
+- **Kontrollen** läser den färdiga filen och säger till om Acrobat inte kan spara sidan som bild (felet ”Streckargument
+  är ogiltiga”), om kartan blev en bild, om filen innehåller genomskinlighet eller georeferens som en PDF/A-konvertering
+  måste hantera, och om filen redan är PDF/A.
+
+Pluginet gör inte filen till PDF/A. Konvertera den i till exempel Acrobat (helst till PDF/A-2b) och kontrollera resultatet
+med en PDF/A-validerare som veraPDF. I en PDF med vektorutskrift finns inget blandningsläge: användningens färg täcker
+då grundkartan. Vill du att grundkartan ska synas genom planens färger, lägg den överst i lagerpanelen.
+
 ## Vad som kommer med
 
 - Rubrikerna **PLANBESTÄMMELSER**, **GRÄNSLINJER**, **ANVÄNDNING AV …** och **EGENSKAPSBESTÄMMELSER FÖR …**, med

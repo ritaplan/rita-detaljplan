@@ -12,10 +12,11 @@ from typing import Callable
 
 from qgis.core import Qgis, QgsSettings
 from qgis.PyQt.QtGui import QIcon
-from qgis.PyQt.QtWidgets import QAction, QMainWindow, QToolBar
+from qgis.PyQt.QtWidgets import QAction, QFileDialog, QMainWindow, QMessageBox, QToolBar
 
 from ..controller import PlanController
 from ..core import catalog as cat
+from ..core import layout_export
 from ..core import legend_layout as ll
 from .legend_settings_dialog import LegendSettingsDialog
 from .messages import push
@@ -24,6 +25,9 @@ ICONS = Path(__file__).resolve().parent.parent / "icons"
 TITLE = "Rita Detaljplan"
 KEY_VISIBLE = "detaljplan_ngp/layout_toolbar_visible"
 SETTINGS_TIP = "Inställningar för teckenförklaringen: teckensnitt, storlekar, rutor och avstånd."
+EXPORT_TIP = ("Exportera plankartan som PDF och kontrollera den: vektorgrafik utan georeferens, och en kontroll av att "
+              "Acrobat kan spara sidan som bild och vad som återstår för PDF/A.")
+KEY_PDF_DIR = "detaljplan_ngp/last_pdf_dir"
 TIP = ("Teckenförklaring: skapa detaljplanens teckenförklaring i layouten. Markera en yta först för att fylla den, "
        "annars läggs den längst till höger på sidan. En tidigare teckenförklaring ersätts.")
 
@@ -72,8 +76,12 @@ class LayoutLegendTool:
         options = QAction(QIcon(str(ICONS / "legend_settings.svg")), "Inställningar för teckenförklaring", bar)
         options.setToolTip(SETTINGS_TIP)
         options.triggered.connect(lambda _checked=False, d=designer: self.configure(d))
+        export = QAction(QIcon(str(ICONS / "export_pdf.svg")), "Exportera PDF", bar)
+        export.setToolTip(EXPORT_TIP)
+        export.triggered.connect(lambda _checked=False, d=designer: self.export_pdf(d))
         bar.addAction(action)
         bar.addAction(options)
+        bar.addAction(export)
         toggle = None
         if own:
             toggle = bar.toggleViewAction()
@@ -82,7 +90,7 @@ class LayoutLegendTool:
             menu = designer.viewMenu() if hasattr(designer, "viewMenu") else None
             if menu is not None:
                 menu.addAction(toggle)
-        self.actions[designer] = [action, options]
+        self.actions[designer] = [action, options, export]
         self.bars[designer] = (bar if own else None, toggle)
         return action
 
@@ -133,6 +141,46 @@ class LayoutLegendTool:
         if ll.existing_legends(designer.layout()):
             self.generate(designer, replace_existing=True)
         return True
+
+    # -- exportera plankartan som PDF och kontrollera den ------------------------------------------------------
+    def _ask_pdf_path(self, designer) -> str:
+        """Frågar var PDF:en ska sparas. Tom text = avbrutet."""
+        settings = QgsSettings()
+        layout = designer.layout()
+        folder = settings.value(KEY_PDF_DIR, "", type=str) or str(Path(layout.project().absolutePath() or "."))
+        name = (layout.name() or "plankarta").replace("/", "_").replace("\\", "_")
+        path, _filter = QFileDialog.getSaveFileName(designer.window() if hasattr(designer, "window") else None,
+                                                    "Exportera plankartan som PDF", str(Path(folder) / f"{name}.pdf"),
+                                                    "PDF (*.pdf)")
+        if path:
+            settings.setValue(KEY_PDF_DIR, str(Path(path).parent))
+        return path
+
+    def _show_report(self, designer, report) -> None:
+        """Visar kontrollens fynd i klartext (en ruta, eftersom det kan vara flera rader)."""
+        box = QMessageBox.Critical if not report.ok else (QMessageBox.Warning if any(
+            f.level == "varning" for f in report.findings) else QMessageBox.Information)
+        QMessageBox(box, TITLE, report.text(), QMessageBox.StandardButton.Ok,
+                    designer.window() if hasattr(designer, "window") else None).exec()
+
+    def export_pdf(self, designer):
+        """Exporterar layouten som PDF (vektor, utan georeferens) och kontrollerar filen. Returnerar kontrollen, eller None
+        om det avbröts eller misslyckades."""
+        path = self._ask_pdf_path(designer)
+        if not path:
+            return None
+        try:
+            report = layout_export.export_pdf(designer.layout(), path)
+        except layout_export.ExportError as exc:
+            self._say(designer, str(exc), Qgis.MessageLevel.Critical)
+            return None
+        problems = [f for f in report.findings if f.level in ("fel", "varning")]
+        level = (Qgis.MessageLevel.Critical if not report.ok
+                 else Qgis.MessageLevel.Warning if problems else Qgis.MessageLevel.Success)
+        self._say(designer, "Exporterade " + report.summary() + (" Se anmärkningarna." if report.findings else ""), level)
+        if report.findings:
+            self._show_report(designer, report)
+        return report
 
     def generate(self, designer, replace_existing: bool = False):
         """Skapar teckenförklaringen i designerns layout. Returnerar resultatet, eller None om det inte gick."""
