@@ -31,8 +31,9 @@ def map_layers(layout) -> list:
 def blend_mode_layers(layout) -> list:
     """Kartans lager med ett blandningsläge (till exempel Multiplicera): de finns inte i en PDF med vektorutskrift."""
     normal = QPainter.CompositionMode.CompositionMode_SourceOver
+    # featureBlendMode finns bara på vektorlager: raster- och kartbladslager (grundkartan) har bara blendMode
     return [layer for layer in map_layers(layout)
-            if layer.blendMode() != normal or layer.featureBlendMode() != normal]
+            if layer.blendMode() != normal or getattr(layer, "featureBlendMode", lambda: normal)() != normal]
 
 
 def export_pdf(layout, path, vector: bool = True) -> pdfcheck.PdfReport:

@@ -158,9 +158,9 @@ class LayoutLegendTool:
 
     def _show_report(self, designer, report) -> None:
         """Visar kontrollens fynd i klartext (en ruta, eftersom det kan vara flera rader)."""
-        box = QMessageBox.Critical if not report.ok else (QMessageBox.Warning if any(
-            f.level == "varning" for f in report.findings) else QMessageBox.Information)
-        QMessageBox(box, TITLE, report.text(), QMessageBox.StandardButton.Ok,
+        icon = QMessageBox.Icon.Critical if not report.ok else (QMessageBox.Icon.Warning if any(
+            f.level == "varning" for f in report.findings) else QMessageBox.Icon.Information)
+        QMessageBox(icon, TITLE, report.text(), QMessageBox.StandardButton.Ok,
                     designer.window() if hasattr(designer, "window") else None).exec()
 
     def export_pdf(self, designer):

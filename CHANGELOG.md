@@ -4,6 +4,12 @@ Formatet följer [Keep a Changelog](https://keepachangelog.com/sv/1.1.0/), versi
 
 ## Ej utgivet
 
+## [0.1.70] – Exportera PDF fungerar
+
+- **Rättat: knappen Exportera PDF gav ett Pythonfel.** Två fel: rutan med kontrollens fynd använde `QMessageBox.Critical`
+  och liknande, som inte finns i Qt 6 (ska vara `QMessageBox.Icon.…`), och kontrollen av blandningslägen frågade rasterlager
+  (grundkartan) efter `featureBlendMode`, som bara finns på vektorlager. Båda har fått test som inte ersätter rutan.
+
 ## [0.1.69] – motiv under andra rubriker, och en kontroll av de speglade filerna
 
 - **Tagga planbeskrivning: motiv under andra rubriker än motivtemat.** En rubrik utanför motivtemat som har stycken som

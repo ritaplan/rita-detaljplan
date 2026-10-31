@@ -894,6 +894,28 @@ class ExportButtonTests(ToolSetup, LayoutCase):
         self.layout.addLayoutItem(frame)
         self.assertEqual([l.name() for l in layout_export.blend_mode_layers(self.layout)], ["Användning (yta)"])
 
+    def test_a_raster_base_map_in_the_map_does_not_break_the_check(self):
+        """Grundkartan är ofta ett rasterlager, som saknar featureBlendMode (det gav ett Pythonfel i verkligheten)."""
+        from qgis.core import QgsLayoutItemMap, QgsRasterLayer
+        raster = QgsRasterLayer("", "Grundkarta", "gdal")  # ogiltigt lager räcker: det är klassen som saknar metoden
+        self.assertFalse(hasattr(raster, "featureBlendMode"))
+        frame = QgsLayoutItemMap(self.layout)
+        frame.setLayers([raster])
+        self.layout.addLayoutItem(frame)
+        self.assertEqual(layout_export.blend_mode_layers(self.layout), [])
+
+    def test_the_report_box_is_built_with_qt6_enums_for_every_level(self):
+        """Rutan med fynden byggs på riktigt (inte ersatt): ``QMessageBox.Critical`` finns inte i Qt 6."""
+        from qgis.PyQt.QtWidgets import QMessageBox
+        from rita_detaljplan.core import pdfcheck
+        cases = {"fel": [pdfcheck.Finding(pdfcheck.FEL, "x")], "varning": [pdfcheck.Finding(pdfcheck.VARNING, "x")],
+                 "info": [pdfcheck.Finding(pdfcheck.INFO, "x")]}
+        for name, findings in cases.items():
+            report = pdfcheck.PdfReport(path=Path("karta.pdf"), findings=findings)
+            with self.subTest(name), mock.patch.object(QMessageBox, "exec", return_value=0) as run:
+                self.tool._show_report(self.designer, report)
+                run.assert_called_once()
+
     def test_the_export_button_is_the_third_button(self):
         self.fake.layoutDesignerOpened.emit(self.designer)
         self.assertEqual(self.designer.buttons()[2].text(), "Exportera PDF")
