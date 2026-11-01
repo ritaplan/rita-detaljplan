@@ -2,7 +2,7 @@
 
 Här installerar du pluginet, skapar din första plan och lär känna verktygsfälten.
 
-<!-- FILM: kom-igang | Från installation till ett ritat planområde, ca 3 min -->
+[![Film: Från installation till ett ritat planområde (3 min)](https://ritaplan.xyz/film/detaljplan/kom-igang.jpg)](https://ritaplan.xyz/film/detaljplan/kom-igang.mp4)
 
 ## Innan du börjar
 

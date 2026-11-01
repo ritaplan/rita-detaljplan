@@ -70,7 +70,7 @@ Tips:
 | Sida | Bilder | Filmer |
 |---|---|---|
 | [Startsidan](../anvandning.md) | | oversikt |
-| [Kom igång](kom-igang.md) | installera-pluginkalla, ny-plan-dialog, verktygsfalt-oversikt, flytande-verktygsfalt | kom-igang |
+| [Kom igång](kom-igang.md) | installera-pluginkalla, ny-plan-dialog, verktygsfalt-oversikt, flytande-verktygsfalt | |
 | [Rita planen](rita-planen.md) | hierarki, egenskapspunkt, importera-geometrier | rita-planen, fyll-resten, flytta-texter |
 | [Bestämmelser](bestammelser.md) | tilldela-dialog | tilldela-bestammelser |
 | [Planens uppgifter](planens-uppgifter.md) | planens-uppgifter | planens-uppgifter |
