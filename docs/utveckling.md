@@ -95,6 +95,12 @@ skillnaderna som godkändes sist (`tools/mirror_baseline.json`) och säger till 
 med `--show` för att se skillnaderna och sedan med `--update` för att godkänna nuläget. Rita Översiktsplan ska ligga i
 `../rita-oversiktsplan` (eller anges med `--other`).
 
+**Varför det inte finns en gemensam kärna (beslut 2026-11-01).** De 11 speglade filerna är ungefär 1 900 rader av
+35 000 och ändras sällan, och `check_mirror.py` fångar redan om den ena glider ifrån den andra. En gemensam kärna
+(eget paket som läggs in i varje zip, med relativa importer så att pluginen inte krockar) kostar mer än den sparar.
+Byt till en kärna om ett tredje plugin tillkommer, om de speglade filerna börjar ändras ofta eller om skillnaderna växer.
+Förarbetet, att göra skillnaderna till inställningar, har inte gjorts.
+
 ## Datamodellen och NGP
 
 Leveransen till NGP är JSON (GeoJSON-baserad `FeatureCollection`, mediatyp
