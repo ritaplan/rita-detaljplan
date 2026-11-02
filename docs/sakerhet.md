@@ -4,30 +4,48 @@ Det här dokumentet är till för dig som ska bedöma om Rita Detaljplan kan anv
 kommuns IT-säkerhetsfunktion. Det beskriver vad pluginet gör, vilka data som rör sig vart, vad som är granskat och vad
 som inte är det. Rapportera säkerhetsbrister enligt [SECURITY.md](../SECURITY.md).
 
-**Omfattning:** version 0.1.44, genomgången 2026-10-02.
+**Omfattning:** version 0.1.75. Första genomgången gjordes för 0.1.44 (2026-10-02). Den uppdaterades 2026-11-03 för
+0.1.75: sökningarna nedan kördes om över hela koden, och filhanteringen i det som tillkommit sedan 0.1.44
+(taggningsprogrammet `planbeskrivning/`, arkivpaketet `core/archive.py`) lästes igenom.
 
 ## Läs det här först: vad dokumentet är och inte är
 
 - Pluginet är skrivet med AI-stöd och underhålls av en enskild person på fritiden. Det är en experimentell
   utvecklingsversion.
 - Genomgången nedan är en **statisk kodgranskning** (läsning och sökning i källkoden, utförd av underhållaren med AI-stöd).
-  Det är **ingen oberoende säkerhetsgranskning**, inget penetrationstest och ingen beroendeanalys med verktyg.
+  Det är **ingen oberoende säkerhetsgranskning** och inget penetrationstest. Sedan 0.1.75 körs dessutom automatisk
+  kodanalys (CodeQL och ruff) på GitHub vid varje ändring. De hittar en annan sorts fel än en människa som läser, men
+  ersätter inte en oberoende granskning.
 - Testsviten (se `tests/`) kontrollerar att funktionerna beter sig rätt och att leveransen följer Lantmäteriets scheman.
   Den bevisar inte att koden är säker.
 - En organisation som har krav på säkerhetsgranskning bör låta en oberoende person gå igenom koden. Se
   [Rekommendationer](#rekommendationer-för-en-organisation).
+
+## Kort version för IT-säkerhetsfunktionen
+
+| Fråga | Svar |
+| --- | --- |
+| Skickas data ut från datorn? | Bara när användaren själv väljer det: hämta Boverkets planbestämmelsekatalog, eller leverera en plan till Lantmäteriet (eller en adress användaren skrivit in). Ingen telemetri, inga analysverktyg, inga uppdateringskontroller i pluginet. |
+| Vilka rättigheter behövs? | Inga särskilda. Pluginet körs i QGIS med den inloggade användarens rättigheter. Det installerar inget och ändrar inga systeminställningar. Det startar inga program, förutom att webbläsaren eller filhanteraren öppnas när användaren klickar på en länk (hemsidan, en sparad fil eller mapp). |
+| Körs kod som hämtats utifrån? | Nej. Koden använder inte `eval`, `exec`, `subprocess`, `pickle` eller liknande. |
+| Vilka beroenden finns? | Bara QGIS (med dess Python, Qt och GDAL). Se materiallistan (SBOM) som följer med varje release. |
+| Var lagras lösenord och nycklar? | I QGIS autentiseringsdatabas, aldrig av pluginet. Databaslösenord hanteras av QGIS egna anslutningar. |
+| Finns personuppgifter? | Inga i pluginet. Vid utcheckning från PostGIS lagras användarnamn och datornamn i planens metadata (fynd 2). Planbeskrivningens text kan i sig innehålla personuppgifter, men den stannar på användarens dator. |
+| Hur kommer pluginet till användaren? | Som zip-fil från GitHub Releases eller via en pluginkälla som pekar på GitHub. Zip-filen byggs reproducerbart, och en kontrollsumma och en materiallista följer med varje release. |
+| Är koden granskad? | Av underhållaren med AI-stöd, och automatiskt med CodeQL. **Inte** av en oberoende part. Ingen certifiering finns. |
+| Vem svarar vid en sårbarhet? | Underhållaren, via GitHubs privata rapportering (se [SECURITY.md](../SECURITY.md)). Målet är ett första svar inom 14 dagar. Det är en enskild person på fritiden. |
 
 ## Sammanfattning
 
 | Område | Bedömning |
 | --- | --- |
 | Körning av kod från indata (`eval`, `exec`, `subprocess`, `pickle`) | Förekommer inte i pluginets kod |
-| Beroenden utanför QGIS och Pythons standardbibliotek | Inga (se [Beroenden](#beroenden)) |
+| Beroenden utanför QGIS och Pythons standardbibliotek | Inga i QGIS. Det fristående taggningsprogrammet kan valfritt köras med PySide6 (se [Beroenden](#beroenden)) |
 | Nätverksmål | Tre: Boverket, Lantmäteriet (verifiering/produktion) och en adress som användaren själv anger |
 | Hemligheter | Sparas inte av pluginet, utan i QGIS autentiseringsdatabas |
 | Databasåtkomst | Via QGIS sparade anslutningar, med användarens egna databasrättigheter |
-| Öppna fynd | 4 informativa (se [Fynd](#fynd)). Ett lågt fynd är åtgärdat i 0.1.44 |
-| Distribution | Osignerade zip-filer och en pluginkälla som pekar på GitHub (se [Leveranskedja](#leveranskedja-och-distribution)) |
+| Öppna fynd | 4 informativa (fynd 2–5) och 2 nya informativa (fynd 7–8). Två låga fynd är åtgärdade: fynd 1 i 0.1.44 och fynd 6 i 0.1.75 |
+| Distribution | Osignerade zip-filer med kontrollsumma och materiallista, och en pluginkälla som pekar på GitHub (se [Leveranskedja](#leveranskedja-och-distribution)) |
 
 ## Vad pluginet är och vilka rättigheter det har
 
@@ -35,7 +53,8 @@ Pluginet är ett Python-plugin i QGIS (QGIS 4.0 eller senare). Det körs i QGIS 
 den inloggade användaren**. QGIS har ingen sandlåda för plugin, så detta gäller varje QGIS-plugin, oavsett hur det är
 skrivet. Pluginet gör inget vid installation utom att QGIS importerar modulen; ingen kod körs från installationsskript.
 
-Omfång: cirka 13 000 rader Python under `rita_detaljplan/` (utan tester).
+Omfång: cirka 21 000 rader Python under `rita_detaljplan/` (utan tester), varav ungefär en femtedel är taggningen av
+planbeskrivningen (`planbeskrivning/`) som också kan köras som ett fristående program utanför QGIS.
 
 ## Dataflöden
 
@@ -46,6 +65,8 @@ Omfång: cirka 13 000 rader Python under `rita_detaljplan/` (utan tester).
 | Planleverans (fil) | Lokal plan | En JSON-fil som användaren pekar ut | Skrivs av användaren själv |
 | Importerad leverans | JSON-fil som användaren väljer | Ny lokal plan | Läses som JSON, tolkas av `core/import_ngp.py` |
 | Plandata | Lokal GeoPackage eller PostGIS-schema | QGIS lager | GDAL/SQLite respektive QGIS PostgreSQL-leverantör |
+| Taggning av planbeskrivningen | Word-fil, plankarta (`.qgz`) och GeoPackage som användaren väljer | Ny Word-fil som användaren sparar (originalet ändras inte) | Läses lokalt med Pythons `zipfile`, `xml.etree` och `sqlite3` (skrivskyddat). Inget nätverk. Se fynd 6 och 7 |
+| Arkivpaket | Filer som användaren väljer | En ny mapp med kopior, PREMIS-metadata och scheman | Skrivs lokalt av `core/archive.py`. Originalen rörs inte. Kontroll av ett paket (`verify_package`) räknar bara om kontrollsummor och läser inte utanför paketmappen |
 
 Nätverksanrop finns bara i `core/ngp_client.py` och `core/catalog_store.py`. Pythons `urllib` används enbart för att tolka
 och kontrollera adresser (`urllib.parse`), inte för att hämta något. Pluginet skickar ingen telemetri, och det finns
@@ -79,10 +100,14 @@ Pluginet skriver:
 - en lokal arbetskopia (GeoPackage) vid utcheckning från PostGIS,
 - katalogcachen `planbestammelsekatalog.json` i QGIS-profilen (skrivs först till en `.tmp`-fil och byter sedan namn),
 - leveransfilen som användaren själv väljer att spara,
-- inställningar via `QgsSettings`.
+- en taggad Word-fil, en CSV-översikt och en utbytesfil från taggningsprogrammet, på den plats användaren väljer
+  (originalfilen skrivs inte över),
+- arkivpaket (en ny mapp med kopior och metadata) under en mapp användaren väljer,
+- inställningar via `QgsSettings` (det fristående taggningsprogrammet använder Qts `QSettings` under namnet *Planbeskrivning*).
 
-Pluginet raderar filer bara i en situation: den lokala arbetskopian när en plan checkas in eller utcheckningen hävs
-(`core/checkout.py`).
+Pluginet raderar filer i två situationer: den lokala arbetskopian när en plan checkas in eller utcheckningen hävs
+(`core/checkout.py`), och en halvfärdig arkivpaketmapp som pluginet självt just skapade när bygget av paketet
+misslyckades (`core/archive.py`). Det raderar aldrig filer som användaren valt.
 
 ## Databaser
 
@@ -110,9 +135,20 @@ redigering, inte en säkerhetsfunktion.
 ## Beroenden
 
 Pluginet importerar bara QGIS (`qgis`, `osgeo`/GDAL) och Pythons standardbibliotek (bland annat `json`, `re`, `sqlite3`,
-`uuid`, `getpass`, `platform`, `urllib.parse`). Det installerar inga paket med `pip` och har ingen `requirements`-fil.
-Uppdateringar av beroenden följer därför QGIS egna. En medföljande kopia av planbestämmelsekatalogen och kommunlistan
-ligger som JSON i `rita_detaljplan/data/` (cirka 0,9 MB, genererad av skript i `tools/`).
+`uuid`, `getpass`, `platform`, `zipfile`, `xml.etree`, `urllib.parse`). Det installerar inga paket med `pip` och har
+ingen `requirements`-fil. Uppdateringar av beroenden följer därför QGIS egna.
+
+Ett enda annat paket nämns i koden: **PySide6**, och bara för det fristående taggningsprogrammet
+(`python -m rita_detaljplan.planbeskrivning`, se `planbeskrivning/pbapp/qt/`). I QGIS används PyQt6 från QGIS och PySide6
+behövs inte. Den som kör programmet fristående installerar PySide6 själv och ansvarar för dess uppdateringar.
+
+En medföljande kopia av planbestämmelsekatalogen, kommunlistan, Lantmäteriets JSON-scheman, PREMIS-schemat och
+stilbiblioteket ligger som filer i `rita_detaljplan/data/` (se [NOTICE.md](../NOTICE.md)).
+
+**Materiallista (SBOM).** `tools/build_sbom.py` skapar en materiallista i CycloneDX-format
+(`rita_detaljplan-<version>.sbom.cdx.json`) med pluginet, de medföljande datafilerna (med kontrollsummor) och det som
+krävs men inte levereras (QGIS med Python, PyQt och GDAL). Skriptet läser alla importer i koden och avbryter om ett nytt
+paket dyker upp som inte är listat, så listan kan inte tyst bli ofullständig. Den följer med varje release.
 
 Testerna kräver bara QGIS och Pythons `unittest`.
 
@@ -120,11 +156,17 @@ Testerna kräver bara QGIS och Pythons `unittest`.
 
 - Koden ligger öppet på GitHub under GPL-2.0-eller-senare. Commits och taggar är **inte signerade**.
 - Release-filen (`rita_detaljplan-<version>.zip`) byggs reproducerbart av `tools/build_zip.py` (samma innehåll ger samma
-  zip), men det publiceras **ingen kontrollsumma eller signatur** och det finns **ingen automatisk bygg- eller
-  säkerhetskontroll (CI)** i repot.
+  zip). Från och med 0.1.75 följer en **SHA-256-kontrollsumma** (`.zip.sha256`) och en **materiallista** (`.sbom.cdx.json`)
+  med varje release. Zip-filen är **inte signerad**. Du kan själv kontrollera den: kontrollera taggen i repot, kör
+  `python tools/build_zip.py` och jämför kontrollsumman med den som publicerats.
+- Det finns automatiska kontroller på GitHub (`.github/workflows/`): CodeQL (statisk kodanalys, vid varje ändring och en
+  gång i veckan), ruff (kodkontroll), en kontroll att zip-filen blir identisk vid två byggen och att koden inte fått nya
+  beroenden, samt OpenSSF Scorecard. Dependabot håller de fastlåsta versionerna av dessa verktyg uppdaterade. Testsviten
+  (`tests/`) kräver QGIS 4 och körs inte på GitHub utan lokalt före varje release.
 - Pluginkällan (`plugins.xml`) läses från `main` på GitHub. Den som kan skriva till repot kan alltså få kod installerad hos
-  alla som uppdaterar via pluginkällan. Skyddet är kontot på GitHub (rekommendation: tvåfaktorsinloggning och skyddad
-  `main`).
+  alla som uppdaterar via pluginkällan. Skyddet är kontot på GitHub. Vid kontrollen 2026-11-03 var `main` **inte** en
+  skyddad gren och GitHubs hemlighetsskanning var avstängd; rekommendation: tvåfaktorsinloggning, skyddad `main` och
+  hemlighetsskanning med push-skydd (se [Rekommendationer](#rekommendationer-för-en-organisation)).
 - Pluginet är **inte** publicerat i QGIS officiella pluginarkiv och har därför inte genomgått dess granskning.
 
 ## Fynd
@@ -169,11 +211,43 @@ samma mottagning. En manipulerad projektfil skulle kunna peka en senare leverans
 lyckas avgörs av Lantmäteriets behörighetskontroll mot användarens nyckel; det har inte testats här. Öppna därför inte
 projektfiler från okända källor och leverera, som alltid, först till verifieringsmiljön.
 
+### 6. Påhittat antal punkter i en geometri kunde frysa taggningsprogrammet (låg, åtgärdad i 0.1.75)
+
+Taggningsprogrammet läser plankartans ytor direkt ur GeoPackage-filen med egen kod (`planbeskrivning/pbkarna/geometri.py`)
+för att rita en enkel karta. En geometri som i sitt huvud påstod sig ha upp till fyra miljarder punkter, men saknade data,
+fick läsaren att bygga en läsmall i flera gigabyte innan den upptäckte att filen var för kort. En geometrisamling i en
+samling i en samling (tusentals nivåer) kunde på samma sätt gå över Pythons rekursionsgräns.
+
+*Effekt:* Den som öppnar en manipulerad GeoPackage i taggningsprogrammet kan få programmet att frysa eller ta slut på
+minne. Ingen kod körs och inga data läcker; det är en driftstörning på den egna datorn och kräver att användaren själv
+öppnar filen. Provat: den gamla koden hängde i över två minuter på ett sådant indata.
+*Åtgärd:* antalet punkter kontrolleras mot hur mycket data som finns innan något byggs, och samlingar får högst åtta
+nivåer. Felaktig geometri hoppas över, som tidigare. Det finns ett test med båda fallen.
+
+### 7. Filer läses utan storleksgräns (information)
+
+Taggningsprogrammet och arkivpaketet läser filer som användaren själv valt: Word-filer och projektfiler (zip-filer) läses
+helt till minnet (`planbeskrivning_docx.py`, `plankarta.py`, `archive.py`) och deras XML tolkas med Pythons
+`xml.etree.ElementTree`. En avsiktligt konstruerad fil (en zip-bomb eller en mycket stor XML-del) kan därför ta mycket
+minne och tid. `ElementTree` hämtar inga externa entiteter eller dokumenttyper, så filer kan inte få programmet att läsa andra filer eller
+anropa nätverket. Skyddet mot "entitetsexplosioner" ligger i XML-biblioteket expat (version 2.4 och senare har gränser);
+vilken version som följer med din QGIS har inte kontrollerats här. Ingenting skrivs ut ur en zip-fil till disk (inga `extractall`), så
+sökvägsangrepp via filnamn i zip-filen är inte möjliga.
+*Rekommendation:* öppna inte Word-filer, projekt eller GeoPackage från okända avsändare. Ingen åtgärd planeras.
+
+### 8. Fristående program med eget beroende (information)
+
+Det fristående taggningsprogrammet kräver PySide6 (se [Beroenden](#beroenden)). Det är ingen del av pluginet i QGIS,
+men finns i samma paket och körs bara om någon startar `python -m rita_detaljplan.planbeskrivning`. PySide6 installeras
+då av användaren och hålls uppdaterat av den som installerade det. Ett eventuellt skydd mot sårbarheter i PySide6 ligger
+utanför det här dokumentet.
+
 ## Det som inte omfattas
 
-- Ingen dynamisk analys, ingen fuzzning och inget penetrationstest.
-- Ingen automatisk beroende- eller sårbarhetsskanning (se [Beroenden](#beroenden): det finns inga externa beroenden att
-  skanna, men QGIS, GDAL och PostgreSQL ligger utanför pluginets kontroll).
+- Ingen dynamisk analys, ingen fuzzning och inget penetrationstest. (Fynd 6 hittades genom att läsa koden och bekräftades
+  med ett enda handgjort indata; en riktig fuzzning av filläsarna skulle troligen hitta mer.)
+- Ingen skanning av beroenden i verktyg: det finns inga externa Python-beroenden i QGIS att skanna, men QGIS, GDAL och
+  PostgreSQL ligger utanför pluginets kontroll. Materiallistan gör att en organisation kan göra den kontrollen själv.
 - QGIS och GDAL:s egna sårbarheter, till exempel vid inläsning av hotfyllda filer, bedöms inte här.
 - Dataskydd (GDPR) bedöms inte, förutom att fynd 2 pekar på att användarnamn kan lagras.
 - Tillgänglighet, drift och support.
@@ -182,7 +256,8 @@ projektfiler från okända källor och leverera, som alltid, först till verifie
 
 1. **Låt en oberoende person granska koden** innan produktionsanvändning. Börja med `core/ngp_client.py`,
    `core/storage.py`, `core/checkout.py`, `core/catalog_store.py` och `core/settings.py`. Det är där nätverk,
-   inloggning och databas finns.
+   inloggning och databas finns. Fortsätt med filläsarna (`planbeskrivning/pbkarna/`, `core/archive.py`), som tolkar filer
+   från andra (fynd 6 och 7).
 2. **Installera en fast, granskad version** centralt (zip-filen), och använd inte den öppna pluginkällan i
    produktionsmiljön. Jämför filens innehåll med taggen i repot innan den godkänns.
 3. **Börja i Lantmäteriets verifieringsmiljö** (`api-ver`), inte i produktion, och kontrollera leveransen där först.
@@ -192,8 +267,20 @@ projektfiler från okända källor och leverera, som alltid, först till verifie
    eller en organisation som tar över repot minskar den.
 6. **Skydda GitHub-kontot** med tvåfaktorsinloggning om ni använder repot som källa, och överväg en egen kopia (fork)
    som ni själva kontrollerar.
+7. **Läs in materiallistan** (`.sbom.cdx.json`) i ert eget verktyg för sårbarhetsbevakning, så att QGIS-versionen som
+   pluginet körs i följs upp tillsammans med övriga program.
 
 ## Så kan du verifiera uppgifterna
+
+Kontrollera att en nedladdad zip-fil är den som publicerats (från och med 0.1.75, i PowerShell):
+
+```
+Get-FileHash rita_detaljplan-<version>.zip -Algorithm SHA256
+```
+
+Värdet ska vara detsamma som i filen `rita_detaljplan-<version>.zip.sha256` på releasesidan. Vill du inte lita på att filen
+är oförändrad sedan den laddades upp, hämta taggen `v<version>` från repot, kör `python tools/build_zip.py` och jämför
+kontrollsumman: bygget är reproducerbart, så samma källkod ger exakt samma zip-fil.
 
 Sökningar mot källkoden (kör i repots rot):
 

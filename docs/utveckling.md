@@ -33,7 +33,11 @@ python tools/build_zip.py     # skapar dist/rita_detaljplan-<version>.zip
 
 Versionen läses ur `rita_detaljplan/metadata.txt`. Så gör du en ny version: uppdatera `version` där och i
 [CHANGELOG](../CHANGELOG.md), kör testerna, bygg zip-filen, generera pluginkällan (`python tools/build_plugins_xml.py`,
-skriver `plugins.xml` som checkas in med versionen), tagga (`git tag v0.1.0`) och lägg zip-filen på en Release.
+skriver `plugins.xml` som checkas in med versionen), skapa kontrollsumma och materiallista (`python tools/build_sbom.py`,
+skriver `dist/rita_detaljplan-<version>.zip.sha256` och `.sbom.cdx.json`), tagga (`git tag v0.1.0`) och lägg zip-filen,
+kontrollsumman och materiallistan på en Release. Skriptet stoppar om koden fått ett beroende som inte är listat; då
+uppdateras listan och [säkerhetsbeskrivningen](sakerhet.md) medvetet. Rättar releasen ett säkerhetsfel, ange det under
+rubriken *Säkerhet* i ändringsloggen.
 `plugins.xml` är det QGIS pluginhanterare läser när repot används som pluginkälla (se [README](../README.md)); den pekar
 på zip-filen i Releasen, så skapa Releasen direkt efter att du pushat.
 

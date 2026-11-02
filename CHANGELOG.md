@@ -4,6 +4,18 @@ Formatet följer [Keep a Changelog](https://keepachangelog.com/sv/1.1.0/), versi
 
 ## Ej utgivet
 
+## [0.1.75] – säkerhetsgenomgång
+
+- **Säkerhet:** en GeoPackage med en avsiktligt felaktig geometri (ett påstått antal punkter som filen inte rymmer, eller
+  samlingar i samlingar tusentals nivåer ner) kunde få taggningsprogrammets karta att frysa eller ta slut på minne.
+  Sådan geometri hoppas nu över. Ingen kod kunde köras och inga data läckte.
+- **Säkerhetsbeskrivningen** (docs/sakerhet.md) är genomgången på nytt för 0.1.75 och har fått en kort version för
+  IT-säkerhetsfunktionen. [SECURITY.md](SECURITY.md) anger hur en sårbarhet rapporteras och vad rapportören kan vänta sig.
+- **Kontrollsumma och materiallista** (SBOM, CycloneDX) följer med varje release, skapade av `tools/build_sbom.py`. Skriptet
+  stoppar om koden får ett beroende som inte är listat.
+- **Automatiska kontroller på GitHub:** statisk kodanalys (CodeQL), kodkontroll (ruff), kontroll att zip-filen blir
+  identisk vid två byggen, OpenSSF Scorecard och Dependabot för verktygens versioner. Pluginets funktion är oförändrad.
+
 ## [0.1.74] – egenskapspunktens text kan inte flyttas
 
 - **Egenskapspunkter:** texten (till exempel +46) står alltid intill punkten och går inte att flytta med textverktyget.

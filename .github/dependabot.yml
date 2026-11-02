@@ -1,0 +1,8 @@
+# Håller de fastlåsta versionerna av GitHub Actions (se .github/workflows/) uppdaterade. Pluginet självt har inga
+# Python-paket att uppdatera: det använder bara QGIS och Pythons standardbibliotek.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

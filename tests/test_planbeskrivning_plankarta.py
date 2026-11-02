@@ -136,6 +136,16 @@ class KartaTest(unittest.TestCase):
         self.assertEqual(shape.parts, [[(0, 0), (1, 0), (1, 1), (0, 0)]])
         self.assertIsNone(geo.parse_gpkg_geometry(b"inte"))
 
+    def test_a_crafted_geometry_is_refused_quickly_instead_of_exhausting_memory(self):
+        import struct
+        import time
+        claims_four_billion_points = b"\x01" + struct.pack("<II", 2, 0xFFFFFFFF)
+        nested_collections = (b"\x01" + struct.pack("<II", 7, 1)) * 5000
+        started = time.monotonic()
+        self.assertIsNone(geo.parse_wkb(claims_four_billion_points))
+        self.assertIsNone(geo.parse_wkb(nested_collections))
+        self.assertLess(time.monotonic() - started, 2)
+
 
 class ExampleTest(unittest.TestCase):
     """Hela flödet med exemplet kv. Lärkan: läsa plankartan, analysera dokumentet, skriva en leveranskopia."""

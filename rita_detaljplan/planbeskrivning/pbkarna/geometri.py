@@ -43,6 +43,9 @@ class Karta:
         return (min(b[0] for b in boxes), min(b[1] for b in boxes), max(b[2] for b in boxes), max(b[3] for b in boxes))
 
 
+MAX_NESTING = 8  # samlingar i samlingar; riktiga planer har en eller två nivåer
+
+
 class _Reader:
     def __init__(self, data: bytes, offset: int):
         self.data, self.pos = data, offset
@@ -52,7 +55,9 @@ class _Reader:
         self.pos += struct.calcsize(fmt)
         return values
 
-    def geometry(self) -> tuple[list, bool]:
+    def geometry(self, depth: int = 0) -> tuple[list, bool]:
+        if depth > MAX_NESTING:
+            raise ValueError("geometrin är för djupt nästlad")
         order = "<" if self.read("B")[0] == 1 else ">"
         kind = self.read(order + "I")[0]
         dims = 2
@@ -66,6 +71,8 @@ class _Reader:
 
         def points():
             n = self.read(order + "I")[0]
+            if n * dims * 8 > len(self.data) - self.pos:  # ett påstått antal som filen inte rymmer: bygg inte formeln först
+                raise ValueError("geometrin är avkortad")
             values = self.read(order + "d" * (n * dims))
             return [(values[i], values[i + 1]) for i in range(0, len(values), dims)]
 
@@ -79,7 +86,7 @@ class _Reader:
         if base in (4, 5, 6, 7):
             parts, closed = [], base in (6,)
             for _ in range(self.read(order + "I")[0]):
-                sub, sub_closed = self.geometry()
+                sub, sub_closed = self.geometry(depth + 1)
                 parts += sub
                 closed = closed or sub_closed
             return parts, closed

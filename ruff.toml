@@ -1,0 +1,7 @@
+# Kodkontroll (linter) som körs i .github/workflows/build-check.yml. Bara regler som hittar riktiga fel: syntaxfel och
+# pyflakes-reglerna (oanvända och saknade namn, felaktiga jämförelser med mera). Stilregler ingår inte.
+target-version = "py312"
+extend-exclude = ["dist", "floorplan", "exempel", "spec"]
+
+[lint]
+select = ["E9", "F"]
