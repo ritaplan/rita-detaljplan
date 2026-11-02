@@ -3,7 +3,7 @@
 Planen ritas i en bestämd ordning: först planområdet, sedan användningsområden och sist egenskapsområden. Pluginet
 håller ordning på hierarkin åt dig medan du ritar.
 
-<!-- FILM: rita-planen | Rita planområde, användningsområden och egenskapsområden, ca 4 min -->
+[![Film: Rita planområde, användningsområden och egenskapsområden (8 min)](https://ritaplan.xyz/film/detaljplan/rita-planen.jpg)](https://ritaplan.xyz/film/detaljplan/rita-planen.mp4)
 
 ## Börja och avsluta redigeringen
 
