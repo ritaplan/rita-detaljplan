@@ -42,6 +42,7 @@ from qgis.core import (
     QgsSimpleMarkerSymbolLayer,
     QgsSingleSymbolRenderer,
     QgsStyle,
+    QgsSymbolLayer,
     QgsTextFormat,
     QgsVectorLayer,
     QgsVectorLayerSimpleLabeling,
@@ -529,11 +530,17 @@ def style_property_line(layer: QgsVectorLayer, style: QgsStyle, layers: dict[str
 
 def style_property_point(layer: QgsVectorLayer, style: QgsStyle, layers: dict[str, QgsVectorLayer],
                          reference_scale: float = 1000) -> None:
-    """Egenskapspunkter: en liten svart punkt med beteckningen bredvid, för markens höjd höjden ("+31,8"). Punkter som
-    saknar bestämmelse ritas som ett orange kryss."""
+    """Egenskapspunkter: beteckningen intill punkten, för markens höjd höjden ("+31,8"). Själva punkten (en liten svart
+    prick) ritas bara när texten flyttats, som startpunkt för ledlinjen. Punkter som saknar bestämmelse ritas som ett
+    orange kryss."""
     def dot():
-        return _tidy(QgsMarkerSymbol.createSimple({"name": "circle", "color": "0,0,0", "outline_style": "no",
-                                                   "size": str(POINT_MARKER_MM)}))
+        symbol = _tidy(QgsMarkerSymbol.createSimple({"name": "circle", "color": "0,0,0", "outline_style": "no",
+                                                     "size": str(POINT_MARKER_MM)}))
+        # Punkten syns bara när texten flyttats bort från den (ledlinjen börjar i punkten). Står texten kvar intill
+        # punkten behövs ingen markering.
+        symbol.symbolLayer(0).setDataDefinedProperty(QgsSymbolLayer.Property.LayerEnabled, QgsProperty.fromExpression(
+            '"label_x" IS NOT NULL AND "label_y" IS NOT NULL'))
+        return symbol
 
     categories = [QgsRendererCategory(UNASSIGNED, _tidy(QgsMarkerSymbol.createSimple(
         {"name": "cross", "color": "220,90,40", "outline_color": "220,90,40", "outline_width": "0.5", "size": "2.6"})),

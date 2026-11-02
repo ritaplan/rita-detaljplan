@@ -4,6 +4,11 @@ Formatet följer [Keep a Changelog](https://keepachangelog.com/sv/1.1.0/), versi
 
 ## Ej utgivet
 
+## [0.1.73] – egenskapspunkten utan prick
+
+- **Egenskapspunkter:** pricken på kartan syns nu bara när texten flyttats bort från punkten (då är den ledlinjens
+  startpunkt). Står texten kvar intill punkten visas bara texten, till exempel +46.
+
 ## [0.1.72] – Exportera PDF fungerar på riktigt
 
 - **Knappen Exportera PDF** gav fortfarande Pythonfel: filrutan hämtade layoutens namn från ett objekt som saknar namn

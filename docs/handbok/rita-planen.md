@@ -74,8 +74,9 @@ För bestämmelser som gäller i en punkt, framför allt **markens höjd över (
 3. Ge punkten en bestämmelse med **Planbestämmelser**, till exempel *Markens höjd över nollplanet ska vara … meter*,
    och fyll i höjden.
 
-På kartan visas punkten som en liten svart prick med höjden bredvid, till exempel **+31,8**. Under nollplanet visas
-höjden med minustecken. I teckenförklaringen blir alla höjder en enda rad: **+0,0 Markens höjd över nollplanet**.
+På kartan visas höjden intill punkten, till exempel **+31,8**, utan någon prick. Flyttar du texten med textverktyget
+visas en liten svart prick på punkten och en tunn ledlinje till texten. Under nollplanet visas höjden med minustecken.
+I teckenförklaringen blir alla höjder en enda rad: **+0,0 Markens höjd över nollplanet**.
 
 <!-- BILD: egenskapspunkt.png | En egenskapspunkt med höjden +31,8 på kvartersmark -->
 

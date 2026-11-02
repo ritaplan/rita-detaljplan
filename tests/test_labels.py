@@ -335,6 +335,27 @@ class LabelPlacementTests(RenderCase):
         self.assertGreater(moved[1], default[1] + 40, "flyttad nedåt (bildens y växer nedåt)")
 
 
+class PropertyPointDotTests(RenderCase):
+    """Egenskapspunktens prick syns bara när texten flyttats (ledlinjen börjar i den)."""
+
+    def visible(self, **attrs):
+        from qgis.core import QgsSymbolLayer
+        feature = self.add("egenskap_punkt", "MultiPoint((20 30))", beteckning="+47,25", bestammelser=1, **attrs)
+        dot = next(c for c in self.layers["egenskap_punkt"].renderer().categories() if c.value() == "")
+        layer = dot.symbol().symbolLayer(0)
+        prop = layer.dataDefinedProperties().property(QgsSymbolLayer.Property.LayerEnabled)
+        self.assertTrue(prop.isActive())
+        context = QgsExpressionContext(QgsExpressionContextUtils.globalProjectLayerScopes(self.layers["egenskap_punkt"]))
+        context.setFeature(feature)
+        return bool(QgsExpression(prop.expressionString()).evaluate(context))
+
+    def test_an_unmoved_point_shows_only_its_text(self):
+        self.assertFalse(self.visible())
+
+    def test_a_point_with_a_moved_text_shows_the_dot_the_leader_starts_in(self):
+        self.assertTrue(self.visible(label_x=35.0, label_y=40.0))
+
+
 class LabelToolCase(GuiCase):
     def setUp(self):
         super().setUp()
