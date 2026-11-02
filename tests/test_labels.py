@@ -335,25 +335,38 @@ class LabelPlacementTests(RenderCase):
         self.assertGreater(moved[1], default[1] + 40, "flyttad nedåt (bildens y växer nedåt)")
 
 
-class PropertyPointDotTests(RenderCase):
-    """Egenskapspunktens prick syns bara när texten flyttats (ledlinjen börjar i den)."""
+class PropertyPointLabelTests(RenderCase):
+    """En egenskapspunkts text står alltid intill punkten: ingen prick, ingen ledlinje, ingen flytt."""
 
-    def visible(self, **attrs):
-        from qgis.core import QgsSymbolLayer
-        feature = self.add("egenskap_punkt", "MultiPoint((20 30))", beteckning="+47,25", bestammelser=1, **attrs)
+    def settings(self):
+        labeling = self.layers["egenskap_punkt"].labeling()  # måste hållas vid liv så länge inställningarna används
+        return labeling, labeling.settings()
+
+    def test_the_text_cannot_be_moved_by_position_fields(self):
+        _labeling, settings = self.settings()
+        props = settings.dataDefinedProperties()
+        self.assertFalse(props.isActive(QgsPalLayerSettings.Property.PositionX))
+        self.assertFalse(props.isActive(QgsPalLayerSettings.Property.PositionY))
+
+    def test_there_is_no_leader_line(self):
+        _labeling, settings = self.settings()
+        callout = settings.callout()
+        self.assertTrue(callout is None or not callout.enabled())
+
+    def test_the_dot_is_not_drawn(self):
         dot = next(c for c in self.layers["egenskap_punkt"].renderer().categories() if c.value() == "")
-        layer = dot.symbol().symbolLayer(0)
-        prop = layer.dataDefinedProperties().property(QgsSymbolLayer.Property.LayerEnabled)
-        self.assertTrue(prop.isActive())
-        context = QgsExpressionContext(QgsExpressionContextUtils.globalProjectLayerScopes(self.layers["egenskap_punkt"]))
-        context.setFeature(feature)
-        return bool(QgsExpression(prop.expressionString()).evaluate(context))
+        self.assertFalse(dot.symbol().symbolLayer(0).enabled())
 
-    def test_an_unmoved_point_shows_only_its_text(self):
-        self.assertFalse(self.visible())
+    def test_points_are_not_among_the_movable_texts(self):
+        from rita_detaljplan.controller import LABEL_TABLES
+        self.assertNotIn("egenskap_punkt", LABEL_TABLES)
 
-    def test_a_point_with_a_moved_text_shows_the_dot_the_leader_starts_in(self):
-        self.assertTrue(self.visible(label_x=35.0, label_y=40.0))
+
+class PropertyPointMoveTests(SplitCase):
+    def test_the_controller_refuses_to_move_a_points_text(self):
+        point = self.draw("egenskap_punkt", "MultiPoint((20 30))")
+        self.assertIsNone(self.controller.move_label("egenskap_punkt", point.id(), QgsPointXY(35, 40)))
+        self.assertIsNone(self.layers["egenskap_punkt"].getFeature(point.id())["label_x"])
 
 
 class LabelToolCase(GuiCase):

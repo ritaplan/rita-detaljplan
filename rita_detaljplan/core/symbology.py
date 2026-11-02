@@ -42,7 +42,6 @@ from qgis.core import (
     QgsSimpleMarkerSymbolLayer,
     QgsSingleSymbolRenderer,
     QgsStyle,
-    QgsSymbolLayer,
     QgsTextFormat,
     QgsVectorLayer,
     QgsVectorLayerSimpleLabeling,
@@ -361,7 +360,8 @@ def _labeling(reference_scale: float = 1000, *, bold: bool = True, is_use: bool 
     fmt.buffer().setSize(0.25)
     fmt.buffer().setColor(QColor(255, 255, 255))
     settings.setFormat(fmt)
-    _move_by_fields(settings)
+    if not is_point:  # en egenskapspunkts text kan inte flyttas: den står alltid intill punkten
+        _move_by_fields(settings)
     if is_point:
         # texten intill punkten (helst snett ovanför till höger), som höjder på en plankarta
         settings.fieldName = _POINT_LABEL_EXPRESSION
@@ -370,7 +370,6 @@ def _labeling(reference_scale: float = 1000, *, bold: bool = True, is_use: bool 
         settings.distUnits = Qgis.RenderUnit.Millimeters
         settings.priority = 4
         settings.obstacleSettings().setIsObstacle(False)
-        settings.setCallout(_leader_callout(0.0))
         return QgsVectorLayerSimpleLabeling(settings)
     if is_line:
         settings.placement = Qgis.LabelPlacement.Line
@@ -530,16 +529,13 @@ def style_property_line(layer: QgsVectorLayer, style: QgsStyle, layers: dict[str
 
 def style_property_point(layer: QgsVectorLayer, style: QgsStyle, layers: dict[str, QgsVectorLayer],
                          reference_scale: float = 1000) -> None:
-    """Egenskapspunkter: beteckningen intill punkten, för markens höjd höjden ("+31,8"). Själva punkten (en liten svart
-    prick) ritas bara när texten flyttats, som startpunkt för ledlinjen. Punkter som saknar bestämmelse ritas som ett
-    orange kryss."""
+    """Egenskapspunkter: bara beteckningen intill punkten, för markens höjd höjden ("+31,8"), utan prick. Texten kan inte
+    flyttas (ingen ledlinje). Punkter som saknar bestämmelse ritas som ett orange kryss."""
     def dot():
+        # Ingen prick: texten står alltid intill punkten och kan inte flyttas, så varken punkt eller ledlinje behövs.
         symbol = _tidy(QgsMarkerSymbol.createSimple({"name": "circle", "color": "0,0,0", "outline_style": "no",
                                                      "size": str(POINT_MARKER_MM)}))
-        # Punkten syns bara när texten flyttats bort från den (ledlinjen börjar i punkten). Står texten kvar intill
-        # punkten behövs ingen markering.
-        symbol.symbolLayer(0).setDataDefinedProperty(QgsSymbolLayer.Property.LayerEnabled, QgsProperty.fromExpression(
-            '"label_x" IS NOT NULL AND "label_y" IS NOT NULL'))
+        symbol.symbolLayer(0).setEnabled(False)
         return symbol
 
     categories = [QgsRendererCategory(UNASSIGNED, _tidy(QgsMarkerSymbol.createSimple(

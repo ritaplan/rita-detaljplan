@@ -50,7 +50,7 @@ _SPLIT_NAMES = {cat.USE_LAYER: ("användningsyta", "användningsytor"), "egenska
 TITLES = {cat.USE_LAYER: "Användningsområde", "egenskap_yta": "Egenskapsområde", "egenskap_linje": "Egenskapslinje",
           "egenskap_punkt": "Egenskapspunkt", PLAN_LAYER: "Planområde", HELPER_LAYER: "Hjälplinje",
           HELPER_AREA: "Hjälpyta", HELPER_POINT: "Hjälppunkt"}
-LABEL_TABLES = ("anvandning_yta", "egenskap_yta", "egenskap_linje", "egenskap_punkt")  # objekt vars text kan flyttas
+LABEL_TABLES = ("anvandning_yta", "egenskap_yta", "egenskap_linje")  # objekt vars text kan flyttas (egenskapspunktens står alltid intill punkten)
 ASSIGNABLE = ("egenskap_punkt", "egenskap_linje", "egenskap_yta", cat.USE_LAYER)  # det som kan få bestämmelser
 # hjälpobjekt som kan få en bestämmelse (och då blir planobjekt)
 HELPER_ASSIGNABLE = (HELPER_POINT, HELPER_LAYER, HELPER_AREA)
@@ -1135,7 +1135,7 @@ class PlanController(QObject):
         """Flyttar ytans text till ``point``. Texten får gärna hamna utanför ytan: symbologin ritar då automatiskt en
         tunn ledlinje till ytan (se ``core.symbology``). Returnerar läget som sattes, eller None om ytan saknas."""
         layer = self.layer(table)
-        feature = layer.getFeature(fid) if layer is not None else None
+        feature = layer.getFeature(fid) if layer is not None and table in LABEL_TABLES else None
         if feature is None or not feature.isValid():
             return None
         self._modify(lambda: apply_attributes(layer, [fid], {"label_x": point.x(), "label_y": point.y()}))

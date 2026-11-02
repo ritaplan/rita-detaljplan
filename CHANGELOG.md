@@ -4,6 +4,11 @@ Formatet följer [Keep a Changelog](https://keepachangelog.com/sv/1.1.0/), versi
 
 ## Ej utgivet
 
+## [0.1.74] – egenskapspunktens text kan inte flyttas
+
+- **Egenskapspunkter:** texten (till exempel +46) står alltid intill punkten och går inte att flytta med textverktyget.
+  Därför ritas varken prick eller ledlinje. Ett läge som sparats av en äldre version används inte längre.
+
 ## [0.1.73] – egenskapspunkten utan prick
 
 - **Egenskapspunkter:** pricken på kartan syns nu bara när texten flyttats bort från punkten (då är den ledlinjens
