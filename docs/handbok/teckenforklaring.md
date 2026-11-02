@@ -4,7 +4,7 @@ Pluginet skapar planens **teckenförklaring** i QGIS layoutläge. Vill du ha en 
 finns också **exempellayouter** i A1–A4, liggande och stående, med karta, teckenförklaring, norrpil, skalstock och
 titelruta.
 
-<!-- FILM: teckenforklaring | Skapa och anpassa teckenförklaringen i en layout, ca 2 min -->
+[![Film: Skapa teckenförklaringen och exportera plankartan (2 min)](https://ritaplan.xyz/film/detaljplan/teckenforklaring.jpg)](https://ritaplan.xyz/film/detaljplan/teckenforklaring.mp4)
 
 ## Exempellayout för plankartan
 

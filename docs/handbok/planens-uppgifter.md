@@ -4,7 +4,7 @@ Dialogen **Planens uppgifter** (ikonen med kryssrutan) samlar allt om planen som
 status, genomförandetid, kvalitet, motiv, beslut och handlingar. Här finns också en checklista över vad som återstår
 före leverans.
 
-<!-- FILM: planens-uppgifter | Fyll i planens uppgifter, motiv och handlingar, ca 3 min -->
+[![Film: Fyll i planens uppgifter, motiv och handlingar (3 min)](https://ritaplan.xyz/film/detaljplan/planens-uppgifter.jpg)](https://ritaplan.xyz/film/detaljplan/planens-uppgifter.mp4)
 
 Du kan spara när som helst och fylla i resten senare. Saknade uppgifter stoppar aldrig sparandet.
 
