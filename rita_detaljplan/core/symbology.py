@@ -42,6 +42,7 @@ from qgis.core import (
     QgsSimpleMarkerSymbolLayer,
     QgsSingleSymbolRenderer,
     QgsStyle,
+    QgsSymbolLayer,
     QgsTextFormat,
     QgsVectorLayer,
     QgsVectorLayerSimpleLabeling,
@@ -535,7 +536,8 @@ def style_property_point(layer: QgsVectorLayer, style: QgsStyle, layers: dict[st
         # Ingen prick: texten står alltid intill punkten och kan inte flyttas, så varken punkt eller ledlinje behövs.
         symbol = _tidy(QgsMarkerSymbol.createSimple({"name": "circle", "color": "0,0,0", "outline_style": "no",
                                                      "size": str(POINT_MARKER_MM)}))
-        symbol.symbolLayer(0).setEnabled(False)
+        symbol.symbolLayer(0).setDataDefinedProperty(QgsSymbolLayer.Property.LayerEnabled,
+                                                     QgsProperty.fromExpression('is_selected()'))
         return symbol
 
     categories = [QgsRendererCategory(UNASSIGNED, _tidy(QgsMarkerSymbol.createSimple(

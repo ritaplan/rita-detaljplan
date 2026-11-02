@@ -353,9 +353,13 @@ class PropertyPointLabelTests(RenderCase):
         callout = settings.callout()
         self.assertTrue(callout is None or not callout.enabled())
 
-    def test_the_dot_is_not_drawn(self):
+    def test_the_dot_is_only_drawn_while_the_point_is_selected(self):
+        """Annars syns punkten inte, och en markerad punkt som ska tas bort kan inte ses."""
+        from qgis.core import QgsSymbolLayer
         dot = next(c for c in self.layers["egenskap_punkt"].renderer().categories() if c.value() == "")
-        self.assertFalse(dot.symbol().symbolLayer(0).enabled())
+        prop = dot.symbol().symbolLayer(0).dataDefinedProperties().property(QgsSymbolLayer.Property.LayerEnabled)
+        self.assertTrue(prop.isActive())
+        self.assertEqual(prop.expressionString(), "is_selected()")
 
     def test_points_are_not_among_the_movable_texts(self):
         from rita_detaljplan.controller import LABEL_TABLES
@@ -363,6 +367,44 @@ class PropertyPointLabelTests(RenderCase):
 
 
 class PropertyPointMoveTests(SplitCase):
+    def setUp(self):
+        super().setUp()
+        from rita_detaljplan.gui.select_tool import SelectTool
+        self.select_tool = SelectTool(self.canvas, self.controller, lambda candidates: candidates[0],
+                                      lambda *a: None)
+        self.addCleanup(self.select_tool.deleteLater)
+
+    def point_text(self, fid, table="egenskap_punkt", unplaced=False):
+        return SimpleNamespace(layerID=self.layers[table].id(), featureId=fid, labelRect=QgsRectangle(0, 0, 1, 1),
+                               isUnplaced=unplaced)
+
+    def test_clicking_the_text_selects_the_point_so_it_can_be_removed(self):
+        point = self.draw("egenskap_punkt", "MultiPoint((20 30))")
+        results = SimpleNamespace(labelsAtPosition=lambda p: [self.point_text(point.id())])
+        with mock.patch.object(self.canvas, "labelingResults", return_value=results):
+            chosen = self.select_tool.click(QgsPointXY(21, 31))
+        self.assertEqual((chosen.table, chosen.fid), ("egenskap_punkt", point.id()))
+        self.assertEqual(self.layers["egenskap_punkt"].selectedFeatureIds(), [point.id()])
+
+    def test_a_rectangle_around_the_text_selects_the_point(self):
+        point = self.draw("egenskap_punkt", "MultiPoint((20 30))")
+        results = SimpleNamespace(labelsWithinRect=lambda r: [self.point_text(point.id()),
+                                                              self.point_text(99, unplaced=True)])
+        with mock.patch.object(self.canvas, "labelingResults", return_value=results):
+            found = self.select_tool.select_rect(QgsRectangle(21, 31, 25, 33))
+        self.assertIn(("egenskap_punkt", point.id()), [(c.table, c.fid) for c in found])
+        self.assertNotIn(("egenskap_punkt", 99), [(c.table, c.fid) for c in found], "en text utan plats räknas inte")
+        self.assertEqual(self.layers["egenskap_punkt"].selectedFeatureIds(), [point.id()])
+
+    def test_the_point_itself_can_still_be_selected_and_deleted(self):
+        point = self.draw("egenskap_punkt", "MultiPoint((20 30))")
+        self.select_tool.click(QgsPointXY(20, 30))
+        layer = self.layers["egenskap_punkt"]
+        self.assertEqual(layer.selectedFeatureIds(), [point.id()])
+        layer.deleteSelectedFeatures()
+        pump()
+        self.assertEqual(layer.featureCount(), 0)
+
     def test_the_controller_refuses_to_move_a_points_text(self):
         point = self.draw("egenskap_punkt", "MultiPoint((20 30))")
         self.assertIsNone(self.controller.move_label("egenskap_punkt", point.id(), QgsPointXY(35, 40)))

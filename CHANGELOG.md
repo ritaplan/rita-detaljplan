@@ -8,6 +8,8 @@ Formatet följer [Keep a Changelog](https://keepachangelog.com/sv/1.1.0/), versi
 
 - **Egenskapspunkter:** texten (till exempel +46) står alltid intill punkten och går inte att flytta med textverktyget.
   Därför ritas varken prick eller ledlinje. Ett läge som sparats av en äldre version används inte längre.
+  Punkten går att markera med Markera genom att klicka på texten (eller dra en ruta runt den) och visas då med den gula
+  markeringen, så att den kan tas bort.
 
 ## [0.1.73] – egenskapspunkten utan prick
 

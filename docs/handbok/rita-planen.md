@@ -75,8 +75,9 @@ För bestämmelser som gäller i en punkt, framför allt **markens höjd över (
    och fyll i höjden.
 
 På kartan visas höjden intill punkten, till exempel **+31,8**, utan någon prick. Texten står alltid kvar intill
-punkten och går inte att flytta med textverktyget, så det behövs varken någon prick eller någon ledlinje. Under
-nollplanet visas höjden med minustecken. I teckenförklaringen blir alla höjder en enda rad: **+0,0 Markens höjd över nollplanet**.
+punkten och går inte att flytta med textverktyget, så det behövs varken någon prick eller någon ledlinje. Vill du ta
+bort en punkt: välj **Markera** och klicka på dess text (eller dra en ruta runt den). Punkten får då en gul markering,
+och du tar bort den som vanligt med Delete. Under nollplanet visas höjden med minustecken. I teckenförklaringen blir alla höjder en enda rad: **+0,0 Markens höjd över nollplanet**.
 
 <!-- BILD: egenskapspunkt.png | En egenskapspunkt med höjden +31,8 på kvartersmark -->
 

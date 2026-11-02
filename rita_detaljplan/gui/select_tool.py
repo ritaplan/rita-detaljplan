@@ -10,6 +10,7 @@ from qgis.PyQt.QtCore import Qt
 from qgis.PyQt.QtGui import QColor
 
 from ..controller import Candidate, PlanController
+from ..core.project import table_of
 
 CLICK_PIXELS = 4
 DRAG_PIXELS = 4  # kortare drag än så räknas som ett klick, inte en rektangel
@@ -74,9 +75,33 @@ class SelectTool(QgsMapTool):
         self._frame.reset(Qgis.GeometryType.Polygon)
         super().deactivate()
 
+    # -- egenskapspunktens text: punkten har ingen prick, så texten är det man klickar på ----------------------
+    def _point_texts(self, positions) -> list[Candidate]:
+        found = []
+        for position in positions:
+            layer = self.controller.project.mapLayer(position.layerID)
+            if table_of(layer) == "egenskap_punkt" and not position.isUnplaced:
+                found.append(Candidate("egenskap_punkt", position.featureId,
+                                       self.controller.describe_area("egenskap_punkt", position.featureId)))
+        return found
+
+    def point_texts_at(self, point: QgsPointXY) -> list[Candidate]:
+        results = self.canvas().labelingResults(False)
+        return self._point_texts(results.labelsAtPosition(point)) if results is not None else []
+
+    def point_texts_in(self, rect: QgsRectangle) -> list[Candidate]:
+        results = self.canvas().labelingResults(False)
+        return self._point_texts(results.labelsWithinRect(rect)) if results is not None else []
+
     # -- själva åtgärderna (kan anropas direkt i tester) -----------------------------------
     def click(self, point: QgsPointXY, add: bool = False) -> Optional[Candidate]:
-        """Markerar ytan under punkten."""
+        """Markerar ytan under punkten. Ett klick på en egenskapspunkts text markerar punkten."""
+        texts = self.point_texts_at(point)
+        if texts:
+            self.controller.select(texts[0], add=add)
+            if self.on_selected is not None:
+                self.on_selected(texts[0])
+            return texts[0]
         candidates = self.controller.candidates_at(point, self.tolerance(), self.controller.SELECTABLE)
         if not candidates:
             if not add:
@@ -94,6 +119,10 @@ class SelectTool(QgsMapTool):
     def select_rect(self, rect: QgsRectangle, add: bool = False) -> list[Candidate]:
         """Markerar allt som rektangeln rör vid."""
         found = self.controller.select_in_rect(rect, add=add)
+        for text in self.point_texts_in(rect):
+            if (text.table, text.fid) not in {(c.table, c.fid) for c in found}:
+                self.controller.select(text, add=True)
+                found.append(text)
         if not found:
             if not add:
                 self.report("Inget att markera i rektangeln.", False)
