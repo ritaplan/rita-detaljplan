@@ -103,8 +103,6 @@ Med **Fyll användning** och **Fyll egenskap** fyller du det som saknas med ett 
 
 Ligger det som saknas i flera skilda bitar fyller du en bit per klick. Ge sedan ytorna bestämmelser som vanligt.
 
-<!-- FILM: fyll-resten | Fyll resten av planområdet med användning, ca 1 min -->
-
 ## Ta bort något
 
 Det som ligger under i hierarkin försvinner när du tar bort det som ligger över:
@@ -209,8 +207,6 @@ utan styrs av referensskalan (se [Planens uppgifter](planens-uppgifter.md#refere
 
 **Dölj texter** (A med ett rött streck) stänger tillfälligt av beteckningarna på kartan när de är i vägen.
 Klicka igen för att visa dem.
-
-<!-- FILM: flytta-texter | Markera, flytta och forma om bestämmelsetexter, ca 1 min -->
 
 ## Nästa steg
 

@@ -7,7 +7,8 @@ GIS-samordnare, databasadministratörer och andra som vill förstå eller felsö
 Du behöver inte läsa den för att använda pluginet.
 
 > Vilka data som skickas vart och vad som är säkerhetsgranskat beskrivs i [Säkerhetsbeskrivning](../sakerhet.md).
-> Hur du kör koden och testerna står i [Utveckling](../utveckling.md).
+> Hur du kör koden och testerna står i [Utveckling](../utveckling.md). Hur koden är uppbyggd, modul för modul, visar
+> [kodkartan](https://ritaplan.xyz/kodkarta-dp.html).
 
 ## Översikt
 

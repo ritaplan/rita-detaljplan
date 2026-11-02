@@ -71,7 +71,7 @@ Tips:
 |---|---|---|
 | [Startsidan](../anvandning.md) | | oversikt |
 | [Kom igång](kom-igang.md) | installera-pluginkalla, ny-plan-dialog, verktygsfalt-oversikt, flytande-verktygsfalt | |
-| [Rita planen](rita-planen.md) | hierarki, egenskapspunkt, importera-geometrier | fyll-resten, flytta-texter |
+| [Rita planen](rita-planen.md) | hierarki, egenskapspunkt, importera-geometrier | |
 | [Bestämmelser](bestammelser.md) | tilldela-dialog | tilldela-bestammelser |
 | [Planens uppgifter](planens-uppgifter.md) | planens-uppgifter | planens-uppgifter |
 | [Kontrollera planen](kontrollera.md) | kontrollera-planen, topologikontroll | kontrollera |
