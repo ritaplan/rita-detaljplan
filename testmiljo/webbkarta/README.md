@@ -2,13 +2,13 @@
 
 Visar alla antagna detaljplaner och planer med laga kraft sida vid sida i en webbkarta (Origo), ritade som en plankarta
 (planområdesgräns, användningsytor i Boverkets färger, egenskapsmönster som prickmark och korsmark, användnings- och
-egenskapsgränser), med data direkt ur plandatabasen i PostGIS. Samma karta publiceras på tre sätt, så att de kan jämföras:
+egenskapsgränser), med data direkt ur plandatabasen i PostGIS. Samma karta publiceras på tre sätt, med två karttjänster, så att de kan jämföras:
 
 | Lager i kartan | Tjänst | Protokoll |
 |---|---|---|
 | GeoServer (WMS) | GeoServer 3.0 | bild (WMS), vektorer (WFS) |
+| GeoServer (vektorrutor) | GeoServer 3.0 med tillägget vectortiles | vektorrutor (MVT), ritas i webbläsaren |
 | QGIS Server (WMS) | QGIS Server 4.2 | bild (WMS), vektorer (WFS) |
-| Martin (vektorrutor) | Martin 1.14 | vektorrutor (MVT), ritas i webbläsaren |
 
 Det här är en **testmiljö** och en mall för kommuner som vill göra något liknande. Den är inte en del av pluginet.
 
@@ -18,9 +18,10 @@ Det här är en **testmiljö** och en mall för kommuner som vill göra något l
 Rita Detaljplan ──checka in──▶ PostGIS: schemat med planerna (till exempel detaljplaner)
                                        │  vyn publicering.planmosaik (bara antagna och laga kraft)
                                        ▼  rollen karta_ro, bara läsrätt på vyn
-                  ┌────────────────────┼────────────────────┐
-              GeoServer           QGIS Server             Martin
-                  └────────────────────┼────────────────────┘
+                          ┌────────────┴────────────┐
+                      GeoServer                 QGIS Server
+                  (WMS + vektorrutor)               (WMS)
+                          └────────────┬────────────┘
                                   nginx (behållaren web)  ──  Origo (statiska filer)
                                        │
                          värdens nginx: https://server/planmosaik/
@@ -41,11 +42,11 @@ Rita Detaljplan ──checka in──▶ PostGIS: schemat med planerna (till exe
 | `publicering.sql` | Publiceringsvyerna. Körs med planschemats namn och koordinatsystem som variabler (se nedan). |
 | `publicering_roll.sh` | Skapar läsrollen `karta_ro` med slumpat lösenord i `.env`. |
 | `forbered.sh` | Slumpar GeoServers adminlösenord och skriver `qgis/pg_service.conf` ur `.env`. |
-| `docker-compose.yml` | De fyra behållarna: GeoServer, QGIS Server, Martin och nginx. |
+| `docker-compose.yml` | De tre behållarna: GeoServer, QGIS Server och nginx. |
 | `stil.py` | Planens utseende på ett ställe: mått för gränslinjer och mönster vid olika kartskalor (se "Skala" nedan). |
 | `geoserver/` | `konfigurera_geoserver.py` (REST-anrop: lager, lagergrupp och stilar), `bygg_stilar.py` (skriver de skalberoende stilarna ur `stil.py`) och stilarna `plan_*.sld`. |
 | `qgis/skapa_qgis_projekt.py` | Skapar QGIS-projektet som QGIS Server publicerar, ritat enligt `stil.py`. |
-| `web/nginx.conf` | Vidarebefordran till de tre tjänsterna. GeoServers administration släpps inte ut. |
+| `web/nginx.conf` | Vidarebefordran till de två karttjänsterna. GeoServers administration släpps inte ut. |
 | `web/html/` | Origo-kartan: `index.json` (innehållet), `planmosaik.js` (planens stil för vektorrutorna), `index.html`. |
 | `hamta_origo.sh` | Hämtar Origos färdiga filer (`js/`, `css/`, `img/`) från GitHub. |
 | `nginx-host/` | Lägger till och tar bort `/planmosaik/` i värdens nginx (kräver sudo). |
@@ -91,7 +92,7 @@ minsta pixelstorlek, så två saker skiljer från en plankarta på papper:
 - Gränser och mönster som blivit för små ritas inte alls: egenskapsgränser försvinner vid ungefär 1:6000,
   användningsgränser vid 1:12000 och mönster (prickmark, korsmark) vid 1:3300. Kvar blir färgen och planområdesgränsen.
 
-Skalan delas i band och alla tre varianterna räknar likadant (`stil.py`; Origo-stilen i `web/html/planmosaik.js` har
+Skalan delas i band och alla varianterna räknar likadant (`stil.py`; Origo-stilen i `web/html/planmosaik.js` har
 samma tal i en tabell: ändra båda). GeoServers stilar skrivs om med `python geoserver/bygg_stilar.py` och
 `python3 geoserver/konfigurera_geoserver.py`. QGIS-projektet byggs om med skriptet i `qgis/`.
 
@@ -105,28 +106,37 @@ likadan överallt och webbläsaren behöver inget göra. Vektoralternativen:
 |---|---|---|
 | **WFS** (båda tjänsterna) | Geometri och attribut som GeoJSON. Stilen sätts i webbläsaren. | Hela lagret skickas, utan indelning i rutor. Bra för några hundra planer, sedan tungt. |
 | **OGC API Features** (QGIS Server; GeoServer med tillägg) | Som WFS, men enklare och modernare. | Samma som WFS. Origo 2.10 har ingen färdig lagertyp för det. |
-| **Vektorrutor** (Martin; GeoServer med tillägget vectortiles) | Små rutor som webbläsaren ritar. Skarpt vid alla zoomnivåer och tar lite av servern. | Stilen måste skrivas om för webbläsaren (här `planmosaik.js`), mönster blir enklare. |
+| **Vektorrutor** (GeoServer med tillägget vectortiles; Martin och pg_tileserv direkt ur databasen) | Små rutor som webbläsaren ritar. Skarpt vid alla zoomnivåer och tar lite av servern. | Stilen måste skrivas om för webbläsaren (här `planmosaik.js`), mönster blir enklare. |
 
-Martin är alltså vektoralternativet i den här miljön. Det är det som skalar bäst när antalet planer växer.
+Vektorrutor från GeoServer är vektoralternativet i den här miljön, och det som skalar bäst när antalet planer växer. Det
+kräver tillägget `vectortiles` (`INSTALL_EXTENSIONS` och `STABLE_EXTENSIONS` i compose-filen: det hämtas från GeoServers
+officiella nedladdningar vid första starten, 2,2 MB) och att cachen (GeoWebCache) får formatet
+`application/vnd.mapbox-vector-tile` för lagergruppen. `konfigurera_geoserver.py` gör det. Rutorna kommer ur cachen och
+förnyas efter en minut, så en ny incheckning syns snart.
 
 ## Det här lärde vi oss
 
 - **Koordinatsystem.** Planerna ligger i SWEREF 99 (här EPSG:3008), men webbkartan går i EPSG:3857 så att OpenStreetMap
-  och Martins rutor passar. GeoServer och QGIS Server omprojicerar själva. Martin gör det i SQL. Vill du ha kartan i
-  SWEREF 99 kräver Origo `proj4Defs` och ett eget rutnät, och Martins vektorrutor (som är i 3857) går då inte att visa.
+  och vektorrutorna (GeoServers cache har rutnätet EPSG:900913) passar. GeoServer och QGIS Server omprojicerar själva.
+  Vill du ha kartan i SWEREF 99 kräver Origo `proj4Defs` och ett eget rutnät, och vektorrutorna går då inte att visa.
 - **Hopp vid zoomning (Origo).** Origos exempelkonfiguration har avrundade upplösningar (`9.5546` i stället för
   `9.554628535647…`). Vektorrutor placeras av rutnätet, så felet växer med rutnummer och zoomnivå (flera hundra meter vid
   zoomnivå 17) och planerna flyttar sig när man zoomar. Använd exakta värden: `156543.03392804097 / 2^zoom`.
-- **Databasanslutningar.** Martin tar som standard 20 anslutningar, GeoServer upp till 10. Sätt `pool_size` (Martin) och
-  `max connections` (GeoServer), och en anslutningsgräns på rollen, annars blir det `too many connections`.
+- **Databasanslutningar.** GeoServer tar upp till 10 anslutningar och QGIS Server några, så en roll med ont om anslutningar
+  räcker inte. Sätt `max connections` (GeoServer) och en gräns på rollen, annars blir det `too many connections`. (Martin tar
+  20 som standard, och var det som fyllde gränsen när det ingick.)
 - **Origo och vektorrutor.** Origo 2.10 kan rita vektorrutor men inte fråga dem: en träff på en MVT-yta ger ett fel
-  (`getGeometryName is not a function`). Martin-lagret är därför inte frågbart, och klick på planen ger ingen ruta när
-  bara Martin är påslaget (GeoServer- och QGIS Server-lagren ger plandata vid klick).
+  (`getGeometryName is not a function`). Vektorlagret är därför inte frågbart, och klick på planen ger ingen ruta när
+  bara vektorlagret är påslaget (WMS-lagren ger plandata vid klick).
 - **Origo.**
   - Det färdiga bygget saknar tillägget `olms` (MapLibre-stilar). Därför har vektorrutorna en egen stil i `planmosaik.js`.
   - `extent` i `index.json` måste vara hela projektionens utbredning. Origo bygger rutnätet av den.
-  - Vektorrutor behöver ett eget rutnät med origo uppe till vänster (`tileGrid` på lagret), eftersom Martin levererar
-    vanliga XYZ-rutor.
+  - Vektorrutor behöver ett eget rutnät på lagret (`tileGrid`): kvadratisk utbredning, exakta upplösningar och origo
+    uppe till vänster (`alignBottomLeft: false`). Då blir Origos `{-y}` precis TMS-raden nerifrån som GeoServers cache vill ha.
+    Med origo nere till vänster räknas raderna åt fel håll och alla rutor ger 404.
+  - Vektorlagret byggs av Origo som `<källa><layerName>@<gridset>@<format>/{z}/{x}/{-y}.<format>`, alltså
+    `gwc/service/tms/1.0.0/planmosaik:planmosaik_karta@EPSG:900913@pbf/...`. Rutor utanför planernas utbredning ger 404
+    (det är ofarligt).
   - npm-paketet `origo` är något helt annat. Hämta från `github.com/origo-map/origo`.
 - **QGIS Server.** WMS-lagrets namn är lagrets namn i projektet: kalla lagren som vyerna, annars fungerar inte
   `LAYERS=plan_anvandning`. Behållarens FastCGI-processer ärver inte miljövariabeln `PGSERVICEFILE`. Lägg tjänstefilen på
@@ -134,7 +144,11 @@ Martin är alltså vektoralternativet i den här miljön. Det är det som skalar
   QGIS skriver färger som `#AARRGGBB`, inte `#RRGGBBAA`.
 - **GeoServer.** Vyer saknar primärnyckel i databasen. Det fungerar, men GeoServer varnar. Etiketterna kan upprepas när
   Origo hämtar kartan i rutor.
-- **Minne.** Hela miljön tog ungefär 1 GB (GeoServer 600 MB, QGIS Server 230 MB, Martin 80 MB, nginx 15 MB). Sätt
+- **Minne.** Hela miljön tog ungefär 1 GB (GeoServer 600 MB, QGIS Server 230 MB, nginx 15 MB). Sätt
   minnesgränser (görs i compose-filen) om servern delas med annat.
-- **Vektorrutor.** Martin ger geometri och attribut. Texter (planbeteckningar) ritas av webbläsaren. Det gör att de blir
-  skarpa, men kräver att kartan har en stil för dem.
+- **Delad planområdesgräns.** Ligger två planer kant i kant ritas planområdesgränsen mellan dem en gång. Vyn `plan_gransar`
+  lägger ihop alla planers gränser (`ST_Union` med 5 cm rutnät, så att små avvikelser mellan två planers hörn inte ger två
+  linjer) och tar bort användnings- och egenskapsgränser som ligger på den. Testplanerna `demo_dp_01` till `03` ligger så,
+  se `skapa_testschema.py`.
+- **Texter.** Planbeteckningar ritas inte i den här kartan. Vektorrutorna skulle kunna ha dem (webbläsaren ritar dem), men
+  det kräver att stilen har en text.

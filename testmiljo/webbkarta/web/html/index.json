@@ -71,8 +71,8 @@
     20048966.1
   ],
   "center": [
-    1462400,
-    8075100
+    1461780,
+    8075200
   ],
   "zoom": 14.6,
   "resolutions": [
@@ -108,14 +108,14 @@
     "qgis": {
       "url": "qgis/"
     },
-    "martin": {
-      "url": "tiles/"
+    "geoserver_rutor": {
+      "url": "geoserver/gwc/service/tms/1.0.0/"
     }
   },
   "groups": [
     {
       "name": "planmosaik",
-      "title": "Planmosaik – samma data, tre sätt",
+      "title": "Planmosaik – samma data, olika tjänster",
       "expanded": true
     },
     {
@@ -161,73 +161,16 @@
       ]
     },
     {
-      "name": "planmosaik_qgis",
-      "id": "planmosaik_karta",
-      "title": "QGIS Server (WMS)",
+      "name": "planmosaik_geoserver_vektor",
+      "title": "GeoServer (vektorrutor)",
       "group": "planmosaik",
-      "source": "qgis",
-      "type": "WMS",
-      "format": "image/png",
-      "tiled": false,
-      "visible": false,
-      "queryable": true,
-      "featureinfoLayer": "plan_anvandning",
-      "attributes": [
-        {
-          "name": "plan_namn",
-          "title": "Plan"
-        },
-        {
-          "name": "plan_beteckning",
-          "title": "Plan, beteckning"
-        },
-        {
-          "name": "visningsstatus",
-          "title": "Status"
-        },
-        {
-          "name": "beteckning",
-          "title": "Användning"
-        },
-        {
-          "name": "anvandningsform",
-          "title": "Användningsform"
-        }
-      ]
-    },
-    {
-      "name": "planmosaik_martin",
-      "title": "Martin (vektorrutor)",
-      "group": "planmosaik",
-      "source": "martin",
+      "source": "geoserver_rutor",
       "type": "VECTORTILE",
-      "format": "mvt",
-      "layerURL": "plan_anvandning,plan_egenskap,plan_gransar/{z}/{x}/{y}",
+      "format": "pbf",
+      "layerName": "planmosaik:planmosaik_karta",
+      "gridset": "EPSG:900913",
       "style": "planmosaik",
       "visible": false,
-      "queryable": false,
-      "attributes": [
-        {
-          "name": "plan_namn",
-          "title": "Plan"
-        },
-        {
-          "name": "plan_beteckning",
-          "title": "Plan, beteckning"
-        },
-        {
-          "name": "visningsstatus",
-          "title": "Status"
-        },
-        {
-          "name": "beteckning",
-          "title": "Användning"
-        },
-        {
-          "name": "anvandningsform",
-          "title": "Användningsform"
-        }
-      ],
       "tileGrid": {
         "alignBottomLeft": false,
         "extent": [
@@ -263,7 +206,43 @@
           256,
           256
         ]
-      }
+      },
+      "queryable": false
+    },
+    {
+      "name": "planmosaik_qgis",
+      "id": "planmosaik_karta",
+      "title": "QGIS Server (WMS)",
+      "group": "planmosaik",
+      "source": "qgis",
+      "type": "WMS",
+      "format": "image/png",
+      "tiled": false,
+      "visible": false,
+      "queryable": true,
+      "featureinfoLayer": "plan_anvandning",
+      "attributes": [
+        {
+          "name": "plan_namn",
+          "title": "Plan"
+        },
+        {
+          "name": "plan_beteckning",
+          "title": "Plan, beteckning"
+        },
+        {
+          "name": "visningsstatus",
+          "title": "Status"
+        },
+        {
+          "name": "beteckning",
+          "title": "Användning"
+        },
+        {
+          "name": "anvandningsform",
+          "title": "Användningsform"
+        }
+      ]
     },
     {
       "name": "osm",

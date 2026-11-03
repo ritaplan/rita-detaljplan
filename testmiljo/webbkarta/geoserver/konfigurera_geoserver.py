@@ -22,6 +22,7 @@ for line in (HERE.parent / ".env").read_text().splitlines():
         ENV[key.strip()] = val.strip()
 
 BASE = "http://127.0.0.1:8081/geoserver/rest"
+GWC = "http://127.0.0.1:8081/geoserver/gwc/rest"  # cachen (GeoWebCache), som levererar vektorrutorna
 AUTH = "Basic " + base64.b64encode(f"admin:{ENV['GEOSERVER_ADMIN_PASSWORD']}".encode()).decode()
 WORKSPACE, STORE = "planmosaik", "publicering"
 # Lagren i ritordning, underst först. Stilen heter som lagret (planmosaik/<lager>.sld)
@@ -29,9 +30,9 @@ LAYERS = (("plan_anvandning", "Användningsytor"), ("plan_egenskap", "Egenskapsy
 GROUP = "planmosaik_karta"
 
 
-def call(method, path, body=None, content_type="application/json"):
+def call(method, path, body=None, content_type="application/json", base=BASE):
     data = body if isinstance(body, bytes) else (json.dumps(body).encode() if body is not None else None)
-    request = urllib.request.Request(BASE + path, data=data, method=method,
+    request = urllib.request.Request(base + path, data=data, method=method,
                                      headers={"Authorization": AUTH, "Content-Type": content_type,
                                               "Accept": "application/json"})
     try:
@@ -94,6 +95,15 @@ if call("GET", f"/workspaces/{WORKSPACE}/layergroups/{GROUP}.json")[0] == 404:
     step("lagergrupp", call("POST", f"/workspaces/{WORKSPACE}/layergroups", group))
 else:
     step("lagergrupp (uppdaterad)", call("PUT", f"/workspaces/{WORKSPACE}/layergroups/{GROUP}", group))
+
+# Vektorrutor (MVT, kräver tillägget vectortiles): lagergruppen får formatet i cachen. Rutorna kommer ur cachen, så de
+# förnyas efter en minut (0 = aldrig): en ny incheckning syns då snart i kartan. En ruta i taget (ingen metatiling).
+tile_layer = f"""<GeoServerLayer><name>{WORKSPACE}:{GROUP}</name><enabled>true</enabled>
+<mimeFormats><string>image/png</string><string>application/vnd.mapbox-vector-tile</string></mimeFormats>
+<gridSubsets><gridSubset><gridSetName>EPSG:900913</gridSetName></gridSubset></gridSubsets>
+<metaWidthHeight><int>1</int><int>1</int></metaWidthHeight><expireCache>60</expireCache><expireClients>0</expireClients>
+</GeoServerLayer>"""
+step("vektorrutor i cachen", call("PUT", f"/layers/{WORKSPACE}:{GROUP}.xml", tile_layer.encode(), "application/xml", GWC))
 
 # Använd X-Forwarded-*-huvudena från nginx när GeoServer bygger adresser i kapabiliteterna
 step("proxyadresser", call("PUT", "/settings", {"global": {"useHeadersProxyURL": True}}))

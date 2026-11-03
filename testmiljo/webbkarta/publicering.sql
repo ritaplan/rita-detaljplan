@@ -1,4 +1,4 @@
--- Publiceringsvyer för planmosaiken: det enda som webbtjänsterna (GeoServer, QGIS Server, Martin) får läsa.
+-- Publiceringsvyer för planmosaiken: det enda som webbtjänsterna (GeoServer och QGIS Server) får läsa.
 --
 -- Pluginets egna tabeller ligger kvar orörda i planschemat. Vyerna väljer vilka planer som är offentliga och vilka
 -- uppgifter som visas, och förbereder det en plankarta behöver (färg per användning, mönster och gränslinjer).
@@ -98,31 +98,34 @@ WHERE e.symbol IN ('Marken får inte förses med byggnad/byggnadsverk',
                    'Marken får endast förses med byggnadsverk under mark');
 
 -- 4. Gränslinjer i planens hierarki: planområdesgräns > användningsgräns > egenskapsgräns -------------------------
--- Där gränser sammanfaller ritas bara den högsta, och en gräns som delas av två ytor ritas en gång (som i pluginet).
+-- Där gränser sammanfaller ritas bara den högsta, och en gräns som delas av två ytor ritas en gång (som i pluginet). Det
+-- gäller också planområdesgränsen mellan två planer som ligger kant i kant: gränserna läggs ihop till en linje. Hörn som
+-- ligger närmare än 5 cm räknas som samma, så att en gräns som två planer ritat var för sig (med små avvikelser) blir en.
 CREATE OR REPLACE VIEW publicering.plan_gransar AS
 WITH planer AS (
-    SELECT p.plan, ST_Boundary(p.geom) AS g FROM publicering.planmosaik p
+    SELECT ST_Union(ST_Boundary(p.geom), 0.05) AS g FROM publicering.planmosaik p
 ), anv AS (
-    SELECT a.plan, ST_Union(ST_Boundary(a.geom)) AS g
+    SELECT a.plan, ST_Union(ST_Boundary(a.geom), 0.05) AS g
     FROM :"plan_schema".anvandning_yta a JOIN publicering.planmosaik p ON p.plan = a.plan GROUP BY a.plan
 ), egen AS (
-    SELECT e.plan, ST_Union(ST_Boundary(e.geom)) AS g
+    SELECT e.plan, ST_Union(ST_Boundary(e.geom), 0.05) AS g
     FROM :"plan_schema".egenskap_yta e JOIN publicering.planmosaik p ON p.plan = e.plan GROUP BY e.plan
 ), linjer AS (
-    SELECT planer.plan, 'planomradesgrans'::text AS typ, planer.g AS geom FROM planer
+    -- planområdesgränsen gäller alla planer: den hör inte till en enskild plan
+    SELECT NULL::text AS plan, 'planomradesgrans'::text AS typ, planer.g AS geom FROM planer
     UNION ALL
-    SELECT anv.plan, 'anvandningsgrans', ST_Difference(anv.g, ST_Buffer(planer.g, 0.05))
-    FROM anv JOIN planer USING (plan)
+    SELECT anv.plan, 'anvandningsgrans', ST_Difference(anv.g, ST_Buffer(planer.g, 0.1))
+    FROM anv CROSS JOIN planer
     UNION ALL
     SELECT egen.plan, 'egenskapsgrans',
-           ST_Difference(egen.g, ST_Buffer(ST_Union(planer.g, COALESCE(anv.g, planer.g)), 0.05))
-    FROM egen JOIN planer USING (plan) LEFT JOIN anv USING (plan)
+           ST_Difference(egen.g, ST_Buffer(ST_Union(planer.g, COALESCE(anv.g, planer.g)), 0.1))
+    FROM egen CROSS JOIN planer LEFT JOIN anv USING (plan)
 )
-SELECT (row_number() OVER (ORDER BY plan, typ))::int AS fid,
+SELECT (row_number() OVER (ORDER BY typ, plan))::int AS fid,
        plan,
        typ,
        ST_Multi(ST_CollectionExtract(geom, 2))::geometry(MultiLineString, :srid) AS geom
 FROM linjer
-WHERE NOT ST_IsEmpty(ST_CollectionExtract(geom, 2));
+WHERE geom IS NOT NULL AND NOT ST_IsEmpty(ST_CollectionExtract(geom, 2));
 
 COMMENT ON VIEW publicering.plan_gransar IS 'Planområdesgräns, användningsgräns och egenskapsgräns';

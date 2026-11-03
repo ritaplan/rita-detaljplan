@@ -1,4 +1,4 @@
-// Stilen för planmosaikens vektorrutor (Martin) i Origo: ritar en plankarta som i Rita Detaljplan.
+// Stilen för planmosaikens vektorrutor (GeoServer) i Origo: ritar en plankarta som i Rita Detaljplan.
 //
 //   plan_anvandning  fyllning i Boverkets färg (kolumnen fyllfarg)
 //   plan_egenskap    mönster: prickmark, korsmark, ringprickad mark
