@@ -141,20 +141,9 @@
     });
   }
 
-  // Origo 2.10 frågar varje träff efter geometrins namn (getGeometryName), men en yta i en vektorruta (RenderFeature) har
-  // ingen sådan metod, så ett klick ger ett fel. Metoden läggs till på RenderFeature första gången en yta ritas.
-  var patched = false;
-  function patchRenderFeature(feature) {
-    if (!patched && feature && typeof feature.getGeometryName !== 'function') {
-      Object.getPrototypeOf(feature).getGeometryName = function () { return 'geometry'; };
-    }
-    patched = true;
-  }
-
   // Origo anropar funktionen när lagret skapas och sätter det den returnerar som lagrets stil.
   Origo.Style.addStyleType('planmosaik', function () {
     return function (feature, resolution) {
-      patchRenderFeature(feature);
       switch (feature.get('layer')) {
         case 'plan_anvandning': return fillStyle(feature.get('fyllfarg'));
         case 'plan_egenskap': return patternStyle(feature.get('monster'), band(resolution));

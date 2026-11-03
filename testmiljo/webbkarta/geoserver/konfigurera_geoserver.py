@@ -27,6 +27,8 @@ AUTH = "Basic " + base64.b64encode(f"admin:{ENV['GEOSERVER_ADMIN_PASSWORD']}".en
 WORKSPACE, STORE = "planmosaik", "publicering"
 # Lagren i ritordning, underst först. Stilen heter som lagret (planmosaik/<lager>.sld)
 LAYERS = (("plan_anvandning", "Användningsytor"), ("plan_egenskap", "Egenskapsytor"), ("plan_gransar", "Gränslinjer"))
+# Lager som inte ritas i kartan utan bara frågas av informationsrutan (planområden med plandata och bestämmelser med motiv)
+INFO_LAYERS = (("planmosaik", "Planområden"), ("plan_bestammelser", "Bestämmelser med motiv"))
 GROUP = "planmosaik_karta"
 # Cachen (vektorrutorna) levererar bara rutor inom lagergruppens utbredning, och den räknas ut första gången. Ange kommunens
 # utbredning här (planschemats koordinatsystem: minx, miny, maxx, maxy), så att nya planer utanför den första inte får
@@ -72,7 +74,7 @@ if call("GET", f"/workspaces/{WORKSPACE}/datastores/{STORE}.json")[0] == 404:
 else:
     step("databaskoppling (uppdaterad)", call("PUT", f"/workspaces/{WORKSPACE}/datastores/{STORE}", store))
 
-for name, title in LAYERS:
+for name, title in LAYERS + INFO_LAYERS:
     if call("GET", f"/workspaces/{WORKSPACE}/datastores/{STORE}/featuretypes/{name}.json")[0] == 404:
         feature_type = {"featureType": {"name": name, "nativeName": name, "title": title,
                                         "srs": "EPSG:3008", "projectionPolicy": "FORCE_DECLARED", "enabled": True}}
@@ -81,6 +83,8 @@ for name, title in LAYERS:
                                                 "?recalculate=nativebbox,latlonbbox", {"featureType": {"name": name}}))
     else:
         print(f"{name}: lager finns redan")
+    if (name, title) in INFO_LAYERS:
+        continue
     sld = (HERE / f"{name}.sld").read_bytes()
     if call("GET", f"/workspaces/{WORKSPACE}/styles/{name}.json")[0] == 404:
         step(f"{name}: stil", call("POST", f"/workspaces/{WORKSPACE}/styles?name={name}", sld,

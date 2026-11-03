@@ -47,7 +47,8 @@ Rita Detaljplan ──checka in──▶ PostGIS: schemat med planerna (till exe
 | `geoserver/` | `konfigurera_geoserver.py` (REST-anrop: lager, lagergrupp och stilar), `bygg_stilar.py` (skriver de skalberoende stilarna ur `stil.py`) och stilarna `plan_*.sld`. |
 | `qgis/skapa_qgis_projekt.py` | Skapar QGIS-projektet som QGIS Server publicerar, ritat enligt `stil.py`. |
 | `web/nginx.conf` | Vidarebefordran till de två karttjänsterna. GeoServers administration släpps inte ut. |
-| `web/html/` | Origo-kartan: `index.json` (innehållet), `planmosaik.js` (planens stil för vektorrutorna), `index.html`. |
+| `web/html/` | Origo-kartan: `index.json` (innehållet), `planmosaik.js` (planens stil för vektorrutorna), `planmosaik-info.js` och `.css` (informationspanelen), `index.html`. |
+| `handlingar/` | `bygg_handlingar.py` och `bygg_plankartor.py` gör testhandlingar (PDF) till demoplanerna. Riktiga handlingar läggs ut av kommunen. |
 | `hamta_origo.sh` | Hämtar Origos färdiga filer (`js/`, `css/`, `img/`) från GitHub. |
 | `nginx-host/` | Lägger till och tar bort `/planmosaik/` i värdens nginx (kräver sudo). |
 
@@ -65,7 +66,10 @@ anslutningar från behållarna, och här kräver den SSL (`sslmode=require` är 
 4. **QGIS-projektet.** Kopiera `stil.py` till `qgis/` (behållaren ser bara den mappen). Kommandot står överst i
    `qgis/skapa_qgis_projekt.py` (ange EPSG-koden sist).
 5. **Starta.** `docker compose up -d`, sedan `python3 geoserver/konfigurera_geoserver.py`.
-6. **Publicera.** `sudo sh nginx-host/installera.sh` lägger in `/planmosaik/` i värdens nginx (säkerhetskopia, `nginx -t`
+6. **Handlingar (bara för test).** `python-qgis.bat handlingar/bygg_handlingar.py <planbeskrivning.docx> <mapp>` på din
+   dator och `python3 handlingar/bygg_plankartor.py web/html/handlingar` på servern. Länkarna i `dokument` skapas av
+   `skapa_testschema.py` (adressen är sista argumentet).
+7. **Publicera.** `sudo sh nginx-host/installera.sh` lägger in `/planmosaik/` i värdens nginx (säkerhetskopia, `nginx -t`
    och automatisk återställning om det misslyckas).
 
 GeoServers administration når du bara via SSH-tunnel: `ssh -L 8081:127.0.0.1:8081 server`, sedan
@@ -80,6 +84,26 @@ docker compose down -v          # behållarna och GeoServers data
 
 I databasen: `DROP SCHEMA publicering CASCADE; DROP ROLE karta_ro;` (och `DROP SCHEMA detaljplaner_test CASCADE;` om
 du skapade testschemat). Radera sedan mappen.
+
+## Informationspanelen
+
+Ett klick på en plan öppnar en panel (till vänster på bred skärm, ett blad i nederkant på telefon) med:
+
+- **Planens uppgifter:** namn, beteckning, diarienummer, status i klartext (till exempel "Gällande, genomförandetiden pågår
+  till och med 2 juli 2030"), syfte, datum för antagande och laga kraft och genomförandetid.
+- **Handlingar:** plankartan och planbeskrivningen först som stora knappar, övriga handlingar under. Länkarna kommer ur
+  tabellen `dokument` i planverktyget (kolumnen `lank`, bara https).
+- **Bestämmelser i området med motiv:** användningen först, sedan de egenskaper som gäller *där man klickade* (märkta
+  "Gäller här"), och de övriga egenskaperna i samma användningsområde bakom en rubrik som fälls ut. Varje bestämmelse
+  visas med färg eller mönster, beteckning, text och motiv. Håller man muspekaren över en bestämmelse markeras dess yta på
+  kartan.
+- **Alla bestämmelser i planen** hämtas med en knapp, grupperade per område.
+
+Uppgifterna hämtas med ett enda anrop till kartservern (`GetFeatureInfo` på vyerna `planmosaik` och `plan_bestammelser`),
+så inget eget serverprogram behövs. Vyn `plan_bestammelser` har en rad per bestämmelse i varje användningsyta och
+innehåller bestämmelsens egen geometri som GeoJSON, så att webbläsaren kan avgöra vilka egenskaper som gäller exakt där man
+klickade. Texten har variablerna ifyllda (`bestammelsetext`), som i pluginet. I panelen byter du tjänst genom att ändra
+`infoUrl` och `wfsUrl` i `index.html` (kräver lagren `planmosaik` och `plan_bestammelser` i tjänsten).
 
 ## Skala
 
@@ -125,14 +149,14 @@ förnyas efter en minut, så en ny incheckning syns snart.
 - **Databasanslutningar.** GeoServer tar upp till 10 anslutningar och QGIS Server några, så en roll med ont om anslutningar
   räcker inte. Sätt `max connections` (GeoServer) och en gräns på rollen, annars blir det `too many connections`. (Martin tar
   20 som standard, och var det som fyllde gränsen när det ingick.)
-- **Informationsruta vid klick (Origo).**
-  - `featureinfoLayer` på ett WMS-lager ska peka på **ett annat lager i `index.json`**, inte på ett lagernamn i tjänsten. Här
-    är det två osynliga WMS-lager (`planmosaik_info_geoserver` och `planmosaik_info_qgis`, grupp `none`) som frågar
-    `plan_anvandning`. Pekar man på något som inte finns händer ingenting alls, utan fel.
-  - Vektorrutor kan Origo 2.10 rita men inte fråga: en träff på en yta i en vektorruta ger felet `getGeometryName is not a
-    function`, eftersom ytorna (RenderFeature) saknar metoden. `planmosaik.js` lägger till den första gången en yta ritas.
-    Det är en lagning av Origo, inte en funktion: provas efter varje Origo-uppdatering.
-  - Datum som `date` får ett `Z` efter sig i GeoServers svar. Vyn skickar dem som text.
+- **Klick i Origo.** Origos egen informationsruta är avstängd (alla lager `queryable: false`, `pinning: false`): panelen
+  sköter klicket via kartans `singleclick`. Skälet är att Origo 2.10 kraschar på träff i vektorrutor
+  (`getGeometryName is not a function`) och att `featureinfoLayer` måste peka på ett annat lager i `index.json`, inte på
+  ett lagernamn i tjänsten (då händer ingenting utan felmeddelande).
+- **QGIS Server och omgjorda vyer.** QGIS Server behåller anslutningar och metadata: efter att vyerna körts om
+  (`publicering.sql`) ritar det inget förrän behållaren startats om (`docker restart planmosaik-qgis`).
+- **QGIS Servers `FILTER`.** Ett filter får inte innehålla `OR` eller funktioner (svaret blir 403). Skriptet för plankartor
+  filtrerar därför bara ytlagren.
 - **Utbredning i GeoServer.** Cachen (vektorrutorna) ger 404 för rutor utanför lagergruppens utbredning, och den räknas ut
   första gången. Läggs en plan utanför den ritas den inte, och rutnätet ser ut att sakna rutor. Ange kommunens utbredning
   i `EXTENT` i `konfigurera_geoserver.py` (körs om, tömmer cachen).

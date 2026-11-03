@@ -5,7 +5,10 @@ delar planområdesgräns: planområdet är en trapets, så den andra planen är 
 på kanten de delar, och den tredje delar den andra planens motsatta kant. Tabellerna skapas med pluginets egen ``ensure_schema``, så de får samma form som när
 pluginet skapar en plan i PostGIS. Skriptet ansluter inte till någon databas: det skriver bara SQL till en fil.
 
-    python-qgis.bat testmiljo/webbkarta/skapa_testschema.py <plan.gpkg> <ut.sql> [schema]
+    python-qgis.bat testmiljo/webbkarta/skapa_testschema.py <plan.gpkg> <ut.sql> [schema] [adress till handlingarna]
+
+Varje plan får också tre handlingar i tabellen dokument: plankarta, planbeskrivning och ett planeringsunderlag. Länkarna
+är <adress>/<plan-id>/plankarta.pdf och så vidare; filerna görs av handlingar/bygg_handlingar.py.
 """
 from __future__ import annotations
 
@@ -35,6 +38,18 @@ PLANER = (
     ("demo_dp_04", "Demo detaljplan 04", "samråd", (("flytta", *SOUTH),), None, None),
     ("demo_dp_05", "Demo detaljplan 05", "upphävd", (("vänd", *M), ("flytta", *SOUTH)), "2012-11-05", "2012-12-01"),
 )
+# Motiv som demoplanen saknar (demoplanens egna ligger kvar). Från planbeskrivningen till demoplanen.
+EXTRA_MOTIV = {
+    "GATA": "Gatan behövs för att ge de boende, besökarna och leveranserna en trafiksäker infart till kvarteret. Den "
+            "utformas för både fordon och gång- och cykeltrafik.",
+    "H": "Handel i bottenvåningen mot gatan ger service nära bostäderna och gör gatumiljön mer levande.",
+    "q1": "Kvarterets trädgårdsmiljö är en del av områdets karaktär och ska bevaras i sitt ursprungliga skick.",
+}
+HANDLINGAR = (  # roll, innehåll, huvudområde, underlagstyp, namn, fil
+    ("beslutshandling", "plankarta", None, None, "Plankarta", "plankarta.pdf"),
+    ("planbeskrivning", None, None, None, "Planbeskrivning", "planbeskrivning.pdf"),
+    ("planeringsunderlag", None, "utredningar", "dagvattenutredning", "Dagvattenutredning", "dagvattenutredning.pdf"),
+)
 GRID = 0.001  # alla koordinater avrundas till millimeter, så att delade kanter får exakt samma hörn
 NAMESPACE = uuid.UUID("0b2d4a3e-7a39-4cc3-9f0e-5f6c2c1d7a10")
 
@@ -55,7 +70,7 @@ def value(field_type: str, raw) -> str:
     return storage.literal(raw)
 
 
-def main(gpkg: Path, out: Path, schema: str) -> None:
+def main(gpkg: Path, out: Path, schema: str, document_base: str) -> None:
     db = sqlite3.connect(f"file:{gpkg.as_posix()}?mode=ro", uri=True)
     db.row_factory = sqlite3.Row
     epsg = int(db.execute("select value from dp_meta where key = 'epsg'").fetchone()[0])
@@ -98,6 +113,8 @@ def main(gpkg: Path, out: Path, schema: str) -> None:
             statements = []
             for row in rows:
                 data = {c: row[c] for c in columns}
+                if layer.name == "bestammelse" and not data.get("motiv") and data.get("beteckning") in EXTRA_MOTIV:
+                    data["motiv"] = EXTRA_MOTIV[data["beteckning"]]
                 if layer.name == "detaljplan":
                     data.update(objektidentitet=plan_id, namn=name, status=status, beteckning=name.replace("Demo detaljplan ", "Dp "),
                                 datumStatusforandring=in_force or adopted)
@@ -124,6 +141,13 @@ def main(gpkg: Path, out: Path, schema: str) -> None:
                 statements.append("(" + ", ".join(values) + ")")
             sql.append(f"INSERT INTO {storage.quote(schema)}.{storage.quote(layer.name)} ({', '.join(names)}) VALUES\n"
                        + ",\n".join(statements))
+        for role, content, area, kind, title, file in HANDLINGAR:
+            document = {"detaljplan": plan_id, "roll": role, "innehall": content, "huvudomrade": area, "underlagstyp": kind,
+                        "namn": title, "kortnamn": title, "datum": in_force or adopted,
+                        "lank": f"{document_base.rstrip('/')}/{plan}/{file}"}
+            columns = ", ".join(['"plan"'] + [storage.quote(k) for k in document])
+            values = ", ".join([storage.literal(plan)] + [storage.literal(v) if v else "NULL" for v in document.values()])
+            sql.append(f"INSERT INTO {storage.quote(schema)}.{storage.quote('dokument')} ({columns}) VALUES ({values})")
     sql.append("COMMIT")
     out.write_text(";\n".join(sql) + ";\n", encoding="utf-8")
     print(f"Skrev {out} ({len(sql)} satser, schema {schema}, EPSG:{epsg}, {len(PLANER)} planer)")
@@ -132,4 +156,5 @@ def main(gpkg: Path, out: Path, schema: str) -> None:
 if __name__ == "__main__":
     if len(sys.argv) < 3:
         sys.exit(__doc__)
-    main(Path(sys.argv[1]), Path(sys.argv[2]), sys.argv[3] if len(sys.argv) > 3 else "detaljplaner_test")
+    main(Path(sys.argv[1]), Path(sys.argv[2]), sys.argv[3] if len(sys.argv) > 3 else "detaljplaner_test",
+         sys.argv[4] if len(sys.argv) > 4 else "https://example.org/handlingar")

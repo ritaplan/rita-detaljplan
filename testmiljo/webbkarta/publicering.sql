@@ -41,7 +41,15 @@ SELECT d.fid,
                     + make_interval(months => b.genomforandetid) < current_date
                THEN 'gällande, genomförandetiden har gått ut'
            ELSE 'gällande, genomförandetiden pågår'
-       END AS visningsstatus
+       END AS visningsstatus,
+       -- bifogade handlingar som JSON: plankartan först, sedan planbeskrivningen, sedan övriga (bara dem som har en länk)
+       (SELECT COALESCE(jsonb_agg(jsonb_build_object('roll', k.roll, 'innehall', k.innehall, 'namn', k.namn,
+                                                     'datum', k.datum, 'lank', k.lank)
+                                  ORDER BY CASE WHEN k.innehall = 'plankarta' THEN 0 WHEN k.roll = 'planbeskrivning' THEN 1
+                                                WHEN k.roll = 'beslutshandling' THEN 2 ELSE 3 END, k.datum DESC NULLS LAST,
+                                           k.namn), '[]'::jsonb)::text
+        FROM :"plan_schema".dokument k
+        WHERE k.plan = d.plan AND k.detaljplan = d.objektidentitet AND NULLIF(k.lank, '') IS NOT NULL) AS handlingar
 FROM :"plan_schema".detaljplan d
 LEFT JOIN LATERAL (
     -- en plan kan ha flera beslut: ta det senaste antagandet
@@ -102,7 +110,105 @@ WHERE e.symbol IN ('Marken får inte förses med byggnad/byggnadsverk',
                    'Marken får endast förses med viss typ av byggnadsverk',
                    'Marken får endast förses med byggnadsverk under mark');
 
--- 4. Gränslinjer i planens hierarki: planområdesgräns > användningsgräns > egenskapsgräns -------------------------
+-- 4. Bestämmelser med motiv, per användningsyta -----------------------------------------------------------------
+-- Formuleringen med värdena ifyllda ("[annat skydd:text]" blir den text som angetts), som i pluginet (core/rows.py).
+CREATE OR REPLACE FUNCTION publicering.bestammelsetext(formulering text, varde text) RETURNS text
+LANGUAGE plpgsql IMMUTABLE AS $$
+DECLARE
+    result text := formulering;
+    vals jsonb;
+    found record;
+    filled text;
+BEGIN
+    IF formulering IS NULL OR varde IS NULL OR varde = '' THEN
+        RETURN formulering;
+    END IF;
+    BEGIN
+        vals := varde::jsonb;
+    EXCEPTION WHEN others THEN
+        RETURN formulering;
+    END;
+    FOR found IN SELECT m[1] AS token, m[2] AS name FROM regexp_matches(formulering, '(\[([^\]:]+):[^\]]*\])', 'g') AS m LOOP
+        SELECT v->>'variabelvarde' INTO filled FROM jsonb_array_elements(vals) v WHERE v->>'beskrivning' = found.name LIMIT 1;
+        IF filled IS NOT NULL THEN
+            result := replace(result, found.token, filled);
+        END IF;
+    END LOOP;
+    RETURN result;
+END
+$$;
+
+-- En rad per bestämmelse som gäller inom en användningsyta: ytans egna (användning) och egenskaper (yta, linje, punkt) som
+-- ligger i den. Geometrin är användningsytan, så ett klick i kartan ger alla bestämmelser i området. "egen_geojson" är
+-- bestämmelsens egen geometri i Web Mercator: kartan använder den för att visa vilka som gäller exakt där man klickade
+-- och för att markera dem. Bara planer som är offentliga (planmosaik) ingår.
+CREATE OR REPLACE VIEW publicering.plan_bestammelser AS
+WITH rader AS (
+    SELECT a.plan, a.objektidentitet AS omrade_id, a.beteckning AS omrade_beteckning, a.anvandningsform, a.geom,
+           'anvandning'::text AS kategori, b.objektidentitet AS bestammelse_id, b.beteckning, b.ordning,
+           b.bestammelseformulering, b.bestammelsevarde, b.motiv, b.bestammelsekod, b.symbol, b.farg, a.geom AS egen
+    FROM :"plan_schema".anvandning_yta a
+    JOIN publicering.planmosaik p ON p.plan = a.plan
+    JOIN :"plan_schema".bestammelse b ON b.plan = a.plan AND b.yta = a.objektidentitet AND b.tabell = 'anvandning_yta'
+  UNION ALL
+    SELECT a.plan, a.objektidentitet, a.beteckning, a.anvandningsform, a.geom,
+           'egenskap', b.objektidentitet, b.beteckning, b.ordning,
+           b.bestammelseformulering, b.bestammelsevarde, b.motiv, b.bestammelsekod, b.symbol, b.farg, e.geom
+    FROM :"plan_schema".anvandning_yta a
+    JOIN publicering.planmosaik p ON p.plan = a.plan
+    JOIN :"plan_schema".egenskap_yta e ON e.plan = a.plan AND ST_Intersects(a.geom, e.geom)
+         AND ST_Area(ST_Intersection(a.geom, e.geom)) > 0.5
+    JOIN :"plan_schema".bestammelse b ON b.plan = a.plan AND b.yta = e.objektidentitet AND b.tabell = 'egenskap_yta'
+  UNION ALL
+    SELECT a.plan, a.objektidentitet, a.beteckning, a.anvandningsform, a.geom,
+           'egenskap', b.objektidentitet, b.beteckning, b.ordning,
+           b.bestammelseformulering, b.bestammelsevarde, b.motiv, b.bestammelsekod, b.symbol, b.farg, l.geom
+    FROM :"plan_schema".anvandning_yta a
+    JOIN publicering.planmosaik p ON p.plan = a.plan
+    JOIN :"plan_schema".egenskap_linje l ON l.plan = a.plan AND ST_Intersects(a.geom, l.geom)
+         AND ST_Length(ST_Intersection(a.geom, l.geom)) > 0.5
+    JOIN :"plan_schema".bestammelse b ON b.plan = a.plan AND b.yta = l.objektidentitet AND b.tabell = 'egenskap_linje'
+  UNION ALL
+    SELECT a.plan, a.objektidentitet, a.beteckning, a.anvandningsform, a.geom,
+           'egenskap', b.objektidentitet, b.beteckning, b.ordning,
+           b.bestammelseformulering, b.bestammelsevarde, b.motiv, b.bestammelsekod, b.symbol, b.farg, pt.geom
+    FROM :"plan_schema".anvandning_yta a
+    JOIN publicering.planmosaik p ON p.plan = a.plan
+    JOIN :"plan_schema".egenskap_punkt pt ON pt.plan = a.plan AND ST_Intersects(a.geom, pt.geom)
+    JOIN :"plan_schema".bestammelse b ON b.plan = a.plan AND b.yta = pt.objektidentitet AND b.tabell = 'egenskap_punkt'
+)
+SELECT (row_number() OVER (ORDER BY plan, omrade_id, kategori, ordning, beteckning))::int AS fid,
+       plan,
+       omrade_id,
+       omrade_beteckning,
+       anvandningsform,
+       kategori,
+       bestammelse_id,
+       beteckning,
+       ordning,
+       publicering.bestammelsetext(bestammelseformulering, bestammelsevarde) AS text,
+       motiv,
+       bestammelsekod,
+       CASE symbol
+           WHEN 'Marken får inte förses med byggnad/byggnadsverk' THEN 'prickmark'
+           WHEN 'Marken får inte förses med byggnadsverk eller viss typ av byggnadsverk' THEN 'prickmark'
+           WHEN 'Marken får endast förses med viss typ av byggnadsverk' THEN 'korsmark'
+           WHEN 'Marken får endast förses med byggnadsverk under mark' THEN 'ringprickad'
+       END AS monster,
+       CASE farg
+           WHEN 'Gul' THEN '#ffffce'     WHEN 'Brun' THEN '#dabf8c'     WHEN 'Beige' THEN '#ffcb83'
+           WHEN 'Orange' THEN '#ff8040'  WHEN 'Röd' THEN '#fa4b3c'      WHEN 'Rosa' THEN '#ffbce1'
+           WHEN 'Lila' THEN '#d1b6e1'    WHEN 'Blå' THEN '#a5dafb'      WHEN 'Blågrå' THEN '#b6cce1'
+           WHEN 'Grön' THEN '#b2ec40'    WHEN 'Ljusgrön' THEN '#deffce' WHEN 'Grå' THEN '#d9d9d9'
+           WHEN 'Ljusgrå' THEN '#e9e9e9'
+       END AS fyllfarg,
+       ST_AsGeoJSON(ST_Transform(egen, 3857), 1) AS egen_geojson,
+       geom
+FROM rader;
+
+COMMENT ON VIEW publicering.plan_bestammelser IS 'Bestämmelser med motiv per användningsyta, för informationsrutan i webbkartan';
+
+-- 5. Gränslinjer i planens hierarki: planområdesgräns > användningsgräns > egenskapsgräns -------------------------
 -- Där gränser sammanfaller ritas bara den högsta, och en gräns som delas av två ytor ritas en gång (som i pluginet). Det
 -- gäller också planområdesgränsen mellan två planer som ligger kant i kant: gränserna läggs ihop till en linje. Hörn som
 -- ligger närmare än 5 cm räknas som samma, så att en gräns som två planer ritat var för sig (med små avvikelser) blir en.
