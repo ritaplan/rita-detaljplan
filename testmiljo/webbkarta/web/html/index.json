@@ -1,0 +1,310 @@
+{
+  "controls": [
+    {
+      "name": "home",
+      "options": {
+        "zoomOnStart": true
+      }
+    },
+    {
+      "name": "mapmenu",
+      "options": {
+        "isActive": true
+      }
+    },
+    {
+      "name": "legend",
+      "options": {
+        "useGroupIndication": true
+      }
+    },
+    {
+      "name": "sharemap"
+    },
+    {
+      "name": "geoposition"
+    },
+    {
+      "name": "measure"
+    },
+    {
+      "name": "position",
+      "options": {
+        "title": "Web Mercator",
+        "projections": {
+          "EPSG:4326": "WGS84",
+          "EPSG:3006": "SWEREF 99 TM",
+          "EPSG:3008": "SWEREF 99 13 30"
+        }
+      }
+    }
+  ],
+  "pageSettings": {
+    "footer": {
+      "text": "Planmosaik – testmiljö för Rita Detaljplan"
+    },
+    "mapGrid": {
+      "visible": true
+    }
+  },
+  "projectionCode": "EPSG:3857",
+  "projectionExtent": [
+    -20026376.39,
+    -20048966.1,
+    20026376.39,
+    20048966.1
+  ],
+  "proj4Defs": [
+    {
+      "code": "EPSG:3006",
+      "projection": "+proj=utm +zone=33 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs"
+    },
+    {
+      "code": "EPSG:3008",
+      "projection": "+proj=tmerc +lat_0=0 +lon_0=13.5 +k=1 +x_0=150000 +y_0=0 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs"
+    }
+  ],
+  "extent": [
+    -20026376.39,
+    -20048966.1,
+    20026376.39,
+    20048966.1
+  ],
+  "center": [
+    1462400,
+    8075100
+  ],
+  "zoom": 14.6,
+  "resolutions": [
+    156543.03,
+    78271.52,
+    39135.76,
+    19567.88,
+    9783.94,
+    4891.97,
+    2445.98,
+    1222.99,
+    611.5,
+    305.75,
+    152.87,
+    76.437,
+    38.219,
+    19.109,
+    9.5546,
+    4.7773,
+    2.3887,
+    1.1943,
+    0.5972
+  ],
+  "featureinfoOptions": {
+    "infowindow": "overlay"
+  },
+  "source": {
+    "geoserver": {
+      "url": "geoserver/planmosaik/wms"
+    },
+    "qgis": {
+      "url": "qgis/"
+    },
+    "martin": {
+      "url": "tiles/"
+    }
+  },
+  "groups": [
+    {
+      "name": "planmosaik",
+      "title": "Planmosaik – samma data, tre sätt",
+      "expanded": true
+    },
+    {
+      "name": "background",
+      "title": "Bakgrundskartor",
+      "expanded": true
+    }
+  ],
+  "layers": [
+    {
+      "name": "planmosaik_geoserver",
+      "id": "planmosaik",
+      "title": "GeoServer (WMS)",
+      "group": "planmosaik",
+      "source": "geoserver",
+      "type": "WMS",
+      "format": "image/png",
+      "tiled": false,
+      "visible": true,
+      "queryable": true,
+      "attributes": [
+        {
+          "name": "namn",
+          "title": "Namn"
+        },
+        {
+          "name": "beteckning",
+          "title": "Beteckning"
+        },
+        {
+          "name": "status",
+          "title": "Status"
+        },
+        {
+          "name": "visningsstatus",
+          "title": "Visas som"
+        },
+        {
+          "name": "datum_laga_kraft",
+          "title": "Laga kraft"
+        },
+        {
+          "name": "genomforandetid_utgar",
+          "title": "Genomförandetiden går ut"
+        },
+        {
+          "name": "syfte",
+          "title": "Syfte"
+        }
+      ]
+    },
+    {
+      "name": "planmosaik_qgis",
+      "id": "planmosaik",
+      "title": "QGIS Server (WMS)",
+      "group": "planmosaik",
+      "source": "qgis",
+      "type": "WMS",
+      "format": "image/png",
+      "tiled": false,
+      "visible": false,
+      "queryable": true,
+      "attributes": [
+        {
+          "name": "namn",
+          "title": "Namn"
+        },
+        {
+          "name": "beteckning",
+          "title": "Beteckning"
+        },
+        {
+          "name": "status",
+          "title": "Status"
+        },
+        {
+          "name": "visningsstatus",
+          "title": "Visas som"
+        },
+        {
+          "name": "datum_laga_kraft",
+          "title": "Laga kraft"
+        },
+        {
+          "name": "genomforandetid_utgar",
+          "title": "Genomförandetiden går ut"
+        },
+        {
+          "name": "syfte",
+          "title": "Syfte"
+        }
+      ]
+    },
+    {
+      "name": "planmosaik_martin",
+      "title": "Martin (vektorrutor)",
+      "group": "planmosaik",
+      "source": "martin",
+      "type": "VECTORTILE",
+      "format": "mvt",
+      "layerURL": "planmosaik/{z}/{x}/{y}",
+      "style": "planmosaik",
+      "visible": false,
+      "queryable": true,
+      "attributes": [
+        {
+          "name": "namn",
+          "title": "Namn"
+        },
+        {
+          "name": "beteckning",
+          "title": "Beteckning"
+        },
+        {
+          "name": "status",
+          "title": "Status"
+        },
+        {
+          "name": "visningsstatus",
+          "title": "Visas som"
+        },
+        {
+          "name": "datum_laga_kraft",
+          "title": "Laga kraft"
+        },
+        {
+          "name": "genomforandetid_utgar",
+          "title": "Genomförandetiden går ut"
+        },
+        {
+          "name": "syfte",
+          "title": "Syfte"
+        }
+      ],
+      "tileGrid": {
+        "alignBottomLeft": false,
+        "extent": [
+          -20037508.34,
+          -20037508.34,
+          20037508.34,
+          20037508.34
+        ],
+        "resolutions": [
+          156543.03,
+          78271.52,
+          39135.76,
+          19567.88,
+          9783.94,
+          4891.97,
+          2445.98,
+          1222.99,
+          611.5,
+          305.75,
+          152.87,
+          76.437,
+          38.219,
+          19.109,
+          9.5546,
+          4.7773,
+          2.3887,
+          1.1943,
+          0.5972
+        ],
+        "tileSize": [
+          256,
+          256
+        ]
+      }
+    },
+    {
+      "name": "osm",
+      "title": "OpenStreetMap",
+      "group": "background",
+      "queryable": false,
+      "style": "karta_osm",
+      "type": "OSM",
+      "visible": true
+    }
+  ],
+  "styles": {
+    "planmosaik": [
+      [
+        {
+          "custom": {
+            "type": "planmosaik",
+            "name": "planmosaik",
+            "file": "",
+            "source": ""
+          }
+        }
+      ]
+    ]
+  }
+}

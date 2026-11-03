@@ -1,0 +1,84 @@
+# Testmiljö för planmosaiken: tre sätt att publicera samma publiceringsvy (publicering.planmosaik) till en webbkarta.
+#
+#   GeoServer    -> WMS/WFS     (/geoserver/...)
+#   QGIS Server  -> WMS/WFS     (/qgis/...)
+#   Martin       -> vektorrutor (/tiles/...)
+#   web (nginx)  -> Origo-kartan (statiska filer) och vidarebefordran till de tre
+#
+# Alla tre läser databasen med den skrivskyddade rollen karta_ro, via nätverket postgis_default (samma nätverk som
+# PostGIS-behållaren). Lösenorden ligger i .env, som skapas av forbered.sh och inte checkas in.
+# Minnesgränserna är satta för en liten server (4 GB) som också kör annat.
+name: planmosaik
+
+services:
+  martin:
+    # Samma Martin-version som den vanliga kartan på servern, men en egen instans som bara ser schemat publicering.
+    image: ghcr.io/maplibre/martin@sha256:fe5e8952312ca8ea0a25c4b1f72ceb13676f2b50dca310843e48b31c8ceb2264
+    container_name: planmosaik-martin
+    restart: unless-stopped
+    command: ["--config", "/config.yaml"]
+    configs:
+      - source: martin_config
+        target: /config.yaml
+    mem_limit: 256m
+    networks: [default, postgis_default]
+
+  geoserver:
+    image: docker.osgeo.org/geoserver:3.0.2
+    container_name: planmosaik-geoserver
+    restart: unless-stopped
+    environment:
+      GEOSERVER_ADMIN_USER: admin
+      GEOSERVER_ADMIN_PASSWORD: ${GEOSERVER_ADMIN_PASSWORD}
+      SKIP_DEMO_DATA: "true"
+      EXTRA_JAVA_OPTS: -Xms128m -Xmx640m
+    volumes:
+      - geoserver_data:/opt/geoserver_data
+    ports:
+      - "127.0.0.1:8081:8080"  # administrationen nås bara härifrån (SSH-tunnel), inte via webben
+    mem_limit: 1g
+    networks: [default, postgis_default]
+
+  qgis-server:
+    image: qgis/qgis-server:4.2.3-resolute
+    container_name: planmosaik-qgis
+    restart: unless-stopped
+    environment:
+      QGIS_PROJECT_FILE: /io/data/planmosaik.qgs
+      QGIS_SERVER_MAX_THREADS: "2"
+    volumes:
+      - ./qgis:/io/data:ro
+      # Systemplatsen för tjänstedefinitioner: FastCGI-processerna ärver inte miljövariabeln PGSERVICEFILE
+      - ./qgis/pg_service.conf:/etc/postgresql-common/pg_service.conf:ro
+    mem_limit: 512m
+    networks: [default, postgis_default]
+
+  web:
+    image: nginx:alpine
+    container_name: planmosaik-web
+    restart: unless-stopped
+    volumes:
+      - ./web/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./web/html:/usr/share/nginx/html:ro
+    ports:
+      - "127.0.0.1:8090:80"
+    mem_limit: 64m
+    depends_on: [martin, geoserver, qgis-server]
+
+configs:
+  martin_config:
+    content: |
+      listen_addresses: "0.0.0.0:3000"
+      postgres:
+        connection_string: "postgres://karta_ro:${KARTA_RO_PASSWORD}@postgis:5432/gis?sslmode=require"
+        auto_publish:
+          tables:
+            from_schemas:
+              - publicering
+
+volumes:
+  geoserver_data:
+
+networks:
+  postgis_default:
+    external: true
