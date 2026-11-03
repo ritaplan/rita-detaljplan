@@ -174,9 +174,15 @@ class PluginsXmlTests(unittest.TestCase):
         version = self.meta["version"]
         self.assertEqual(self.plugin.get("version"), version)
         self.assertEqual(self.text("version"), version)
-        self.assertEqual(self.text("file_name"), f"rita_detaljplan-{version}.zip")
+        self.assertEqual(self.text("file_name"), f"rita_detaljplan.{version}.zip")
         self.assertEqual(self.text("download_url"),
                          f"{REPO_URL}/releases/download/v{version}/rita_detaljplan-{version}.zip")
+
+    def test_qgis_derives_the_plugin_id_from_file_name_by_cutting_at_the_first_dot(self):
+        # Samma uttryck som QGIS pluginhanterare (pyplugin_installer/installer_data.py): ett bindestreck före versionen ger
+        # id:t "rita_detaljplan-0" och felet "Could not store plugin to the plugin directory".
+        self.assertEqual(self.text("file_name").partition(".")[0], "rita_detaljplan")
+        self.assertTrue(self.text("download_url").endswith(f"/rita_detaljplan-{self.meta['version']}.zip"))
 
     def test_it_carries_the_fields_qgis_needs_to_filter_and_list_the_plugin(self):
         self.assertEqual(self.plugin.get("name"), "Rita Detaljplan")

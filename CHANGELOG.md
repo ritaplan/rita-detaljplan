@@ -4,6 +4,11 @@ Formatet följer [Keep a Changelog](https://keepachangelog.com/sv/1.1.0/), versi
 
 ## Ej utgivet
 
+- **Installation via pluginkällan** (`plugins.xml`) fungerar nu. QGIS tar plugin-id:t ur `file_name` genom att klippa
+  vid första punkten, så `rita_..-0.1.x.zip` blev id:t `rita_..-0` och installationen avbröts med "Could not store
+  plugin to the plugin directory". Namnet är nu `<id>.<version>.zip`; nedladdningen är oförändrad. Rättat i
+  `tools/build_plugins_xml.py` och täckt av ett test. Ingen ny version behövs: pluginkällan läses från `main`.
+
 ## [0.1.75] – säkerhetsgenomgång
 
 - **Säkerhet:** en GeoPackage med en avsiktligt felaktig geometri (ett påstått antal punkter som filen inte rymmer, eller

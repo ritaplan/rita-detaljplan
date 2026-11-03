@@ -7,7 +7,7 @@
     <qgis_minimum_version>4.0</qgis_minimum_version>
     <qgis_maximum_version>4.99</qgis_maximum_version>
     <homepage>https://ritaplan.xyz</homepage>
-    <file_name>rita_detaljplan-0.1.75.zip</file_name>
+    <file_name>rita_detaljplan.0.1.75.zip</file_name>
     <icon>https://github.com/ritaplan/rita-detaljplan/raw/main/rita_detaljplan/icon.svg</icon>
     <author_name>Eric Alnemar</author_name>
     <download_url>https://github.com/ritaplan/rita-detaljplan/releases/download/v0.1.75/rita_detaljplan-0.1.75.zip</download_url>

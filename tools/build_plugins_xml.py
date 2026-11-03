@@ -27,6 +27,10 @@ def download_url(meta: dict[str, str]) -> str:
     return f"{meta['repository']}/releases/download/v{version}/{PLUGIN}-{version}.zip"
 
 
+def plugins_xml_file_name(meta: dict[str, str]) -> str:
+    return f"{PLUGIN}.{meta['version']}.zip"
+
+
 def build_tree(meta: dict[str, str], updated: datetime.date) -> ET.ElementTree:
     root = ET.Element("plugins")
     plugin = ET.SubElement(root, "pyqgis_plugin", name=meta["name"], version=meta["version"])
@@ -37,7 +41,10 @@ def build_tree(meta: dict[str, str], updated: datetime.date) -> ET.ElementTree:
         ("qgis_minimum_version", meta["qgisMinimumVersion"]),
         ("qgis_maximum_version", meta.get("qgisMaximumVersion", "")),
         ("homepage", meta["homepage"]),
-        ("file_name", f"{PLUGIN}-{meta['version']}.zip"),
+        # QGIS tar plugin-id:t ur file_name genom att klippa vid första punkten (pyplugin_installer/installer_data.py),
+        # så namnet måste vara <id>.<version>.zip. Med bindestreck blir id:t "rita_..-0" och installationen misslyckas.
+        # Själva nedladdningen sker från download_url, som har release-filens riktiga namn.
+        ("file_name", plugins_xml_file_name(meta)),
         ("icon", f"{meta['repository']}/raw/main/{PLUGIN}/{meta['icon']}"),
         ("author_name", meta["author"]),
         ("download_url", download_url(meta)),
