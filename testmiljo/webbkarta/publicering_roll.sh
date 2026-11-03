@@ -21,7 +21,7 @@ printf 'KARTA_RO_PASSWORD=%s\n' "$PW" > .env
 
 # Lösenordet går via stdin och syns inte i processlistan.
 docker exec -i "$CONTAINER" sh -c "psql -U \"\$POSTGRES_USER\" -d $DB -v ON_ERROR_STOP=1 -q" <<EOF
-CREATE ROLE karta_ro LOGIN PASSWORD '$PW' CONNECTION LIMIT 20;
+CREATE ROLE karta_ro LOGIN PASSWORD '$PW' CONNECTION LIMIT 40;
 ALTER ROLE karta_ro SET default_transaction_read_only = on;
 ALTER ROLE karta_ro SET statement_timeout = '30s';
 GRANT CONNECT ON DATABASE $DB TO karta_ro;

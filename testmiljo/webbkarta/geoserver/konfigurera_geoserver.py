@@ -1,6 +1,7 @@
-"""Ställer in GeoServer för planmosaiken via REST: arbetsyta, databaskoppling, lager och stil.
+"""Ställer in GeoServer för planmosaiken via REST: arbetsyta, databaskoppling, tre lager med stil och en lagergrupp.
 
-Kan köras om (det som redan finns hoppas över). Körs på servern, där GeoServers administration nås på 127.0.0.1:8081:
+Kan köras om (det som redan finns hoppas över, stilarna uppdateras). Körs på servern, där GeoServers administration nås
+på 127.0.0.1:8081:
 
     python3 geoserver/konfigurera_geoserver.py
 
@@ -22,7 +23,10 @@ for line in (HERE.parent / ".env").read_text().splitlines():
 
 BASE = "http://127.0.0.1:8081/geoserver/rest"
 AUTH = "Basic " + base64.b64encode(f"admin:{ENV['GEOSERVER_ADMIN_PASSWORD']}".encode()).decode()
-WORKSPACE, STORE, LAYER = "planmosaik", "publicering", "planmosaik"
+WORKSPACE, STORE = "planmosaik", "publicering"
+# Lagren i ritordning, underst först. Stilen heter som lagret (planmosaik/<lager>.sld)
+LAYERS = (("plan_anvandning", "Användningsytor"), ("plan_egenskap", "Egenskapsytor"), ("plan_gransar", "Gränslinjer"))
+GROUP = "planmosaik_karta"
 
 
 def call(method, path, body=None, content_type="application/json"):
@@ -53,32 +57,43 @@ else:
 
 parameters = {"host": "postgis", "port": "5432", "database": "gis", "schema": "publicering", "dbtype": "postgis",
               "user": "karta_ro", "passwd": ENV["KARTA_RO_PASSWORD"], "SSL mode": "REQUIRE",
-              "Expose primary keys": "true", "validate connections": "true", "Loose bbox": "true"}
+              "Expose primary keys": "true", "validate connections": "true", "Loose bbox": "true",
+              "min connections": "1", "max connections": "6"}
 store = {"dataStore": {"name": STORE, "connectionParameters": {"entry": [{"@key": k, "$": v}
                                                                           for k, v in parameters.items()]}}}
 if call("GET", f"/workspaces/{WORKSPACE}/datastores/{STORE}.json")[0] == 404:
     step("databaskoppling", call("POST", f"/workspaces/{WORKSPACE}/datastores", store))
 else:
-    print("databaskoppling: finns redan")
+    step("databaskoppling (uppdaterad)", call("PUT", f"/workspaces/{WORKSPACE}/datastores/{STORE}", store))
 
-if call("GET", f"/workspaces/{WORKSPACE}/datastores/{STORE}/featuretypes/{LAYER}.json")[0] == 404:
-    feature_type = {"featureType": {"name": LAYER, "nativeName": "planmosaik", "title": "Planmosaik",
-                                    "abstract": "Detaljplaner som är antagna eller har vunnit laga kraft",
-                                    "srs": "EPSG:3008", "projectionPolicy": "FORCE_DECLARED", "enabled": True}}
-    step("lager", call("POST", f"/workspaces/{WORKSPACE}/datastores/{STORE}/featuretypes", feature_type))
-    step("utbredning", call("PUT", f"/workspaces/{WORKSPACE}/datastores/{STORE}/featuretypes/{LAYER}"
-                                    "?recalculate=nativebbox,latlonbbox", {"featureType": {"name": LAYER}}))
-else:
-    print("lager: finns redan")
-
-sld = (HERE / "planmosaik.sld").read_bytes()
-if call("GET", f"/workspaces/{WORKSPACE}/styles/planmosaik.json")[0] == 404:
-    step("stil", call("POST", f"/workspaces/{WORKSPACE}/styles?name=planmosaik", sld,
-                      "application/vnd.ogc.sld+xml"))
-else:
-    step("stil (uppdaterad)", call("PUT", f"/workspaces/{WORKSPACE}/styles/planmosaik", sld,
+for name, title in LAYERS:
+    if call("GET", f"/workspaces/{WORKSPACE}/datastores/{STORE}/featuretypes/{name}.json")[0] == 404:
+        feature_type = {"featureType": {"name": name, "nativeName": name, "title": title,
+                                        "srs": "EPSG:3008", "projectionPolicy": "FORCE_DECLARED", "enabled": True}}
+        step(f"{name}: lager", call("POST", f"/workspaces/{WORKSPACE}/datastores/{STORE}/featuretypes", feature_type))
+        step(f"{name}: utbredning", call("PUT", f"/workspaces/{WORKSPACE}/datastores/{STORE}/featuretypes/{name}"
+                                                "?recalculate=nativebbox,latlonbbox", {"featureType": {"name": name}}))
+    else:
+        print(f"{name}: lager finns redan")
+    sld = (HERE / f"{name}.sld").read_bytes()
+    if call("GET", f"/workspaces/{WORKSPACE}/styles/{name}.json")[0] == 404:
+        step(f"{name}: stil", call("POST", f"/workspaces/{WORKSPACE}/styles?name={name}", sld,
                                    "application/vnd.ogc.sld+xml"))
-step("standardstil", call("PUT", f"/layers/{WORKSPACE}:{LAYER}",
-                          {"layer": {"defaultStyle": {"name": f"{WORKSPACE}:planmosaik"}}}))
+    else:
+        step(f"{name}: stil (uppdaterad)", call("PUT", f"/workspaces/{WORKSPACE}/styles/{name}", sld,
+                                                "application/vnd.ogc.sld+xml"))
+    step(f"{name}: standardstil", call("PUT", f"/layers/{WORKSPACE}:{name}",
+                                       {"layer": {"defaultStyle": {"name": f"{WORKSPACE}:{name}"}}}))
+
+# Lagergruppen ritar de tre lagren i rätt ordning som ett enda lager: LAYERS=planmosaik_karta
+group = {"layerGroup": {
+    "name": GROUP, "title": "Planmosaik", "mode": "SINGLE", "workspace": {"name": WORKSPACE},
+    "publishables": {"published": [{"@type": "layer", "name": f"{WORKSPACE}:{n}"} for n, _ in LAYERS]},
+    "styles": {"style": [{"name": f"{WORKSPACE}:{n}"} for n, _ in LAYERS]}}}
+if call("GET", f"/workspaces/{WORKSPACE}/layergroups/{GROUP}.json")[0] == 404:
+    step("lagergrupp", call("POST", f"/workspaces/{WORKSPACE}/layergroups", group))
+else:
+    step("lagergrupp (uppdaterad)", call("PUT", f"/workspaces/{WORKSPACE}/layergroups/{GROUP}", group))
+
 # Använd X-Forwarded-*-huvudena från nginx när GeoServer bygger adresser i kapabiliteterna
 step("proxyadresser", call("PUT", "/settings", {"global": {"useHeadersProxyURL": True}}))

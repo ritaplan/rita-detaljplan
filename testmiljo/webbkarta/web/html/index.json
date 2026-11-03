@@ -76,25 +76,27 @@
   ],
   "zoom": 14.6,
   "resolutions": [
-    156543.03,
-    78271.52,
-    39135.76,
-    19567.88,
-    9783.94,
-    4891.97,
-    2445.98,
-    1222.99,
-    611.5,
-    305.75,
-    152.87,
-    76.437,
-    38.219,
-    19.109,
-    9.5546,
-    4.7773,
-    2.3887,
-    1.1943,
-    0.5972
+    156543.03392804097,
+    78271.51696402048,
+    39135.75848201024,
+    19567.87924100512,
+    9783.93962050256,
+    4891.96981025128,
+    2445.98490512564,
+    1222.99245256282,
+    611.49622628141,
+    305.748113140705,
+    152.8740565703525,
+    76.43702828517625,
+    38.21851414258813,
+    19.109257071294063,
+    9.554628535647032,
+    4.777314267823516,
+    2.388657133911758,
+    1.194328566955879,
+    0.5971642834779395,
+    0.29858214173896974,
+    0.14929107086948487
   ],
   "featureinfoOptions": {
     "infowindow": "overlay"
@@ -125,7 +127,7 @@
   "layers": [
     {
       "name": "planmosaik_geoserver",
-      "id": "planmosaik",
+      "id": "planmosaik_karta",
       "title": "GeoServer (WMS)",
       "group": "planmosaik",
       "source": "geoserver",
@@ -134,40 +136,33 @@
       "tiled": false,
       "visible": true,
       "queryable": true,
+      "featureinfoLayer": "plan_anvandning",
       "attributes": [
         {
-          "name": "namn",
-          "title": "Namn"
+          "name": "plan_namn",
+          "title": "Plan"
         },
         {
-          "name": "beteckning",
-          "title": "Beteckning"
-        },
-        {
-          "name": "status",
-          "title": "Status"
+          "name": "plan_beteckning",
+          "title": "Plan, beteckning"
         },
         {
           "name": "visningsstatus",
-          "title": "Visas som"
+          "title": "Status"
         },
         {
-          "name": "datum_laga_kraft",
-          "title": "Laga kraft"
+          "name": "beteckning",
+          "title": "Användning"
         },
         {
-          "name": "genomforandetid_utgar",
-          "title": "Genomförandetiden går ut"
-        },
-        {
-          "name": "syfte",
-          "title": "Syfte"
+          "name": "anvandningsform",
+          "title": "Användningsform"
         }
       ]
     },
     {
       "name": "planmosaik_qgis",
-      "id": "planmosaik",
+      "id": "planmosaik_karta",
       "title": "QGIS Server (WMS)",
       "group": "planmosaik",
       "source": "qgis",
@@ -176,34 +171,27 @@
       "tiled": false,
       "visible": false,
       "queryable": true,
+      "featureinfoLayer": "plan_anvandning",
       "attributes": [
         {
-          "name": "namn",
-          "title": "Namn"
+          "name": "plan_namn",
+          "title": "Plan"
         },
         {
-          "name": "beteckning",
-          "title": "Beteckning"
-        },
-        {
-          "name": "status",
-          "title": "Status"
+          "name": "plan_beteckning",
+          "title": "Plan, beteckning"
         },
         {
           "name": "visningsstatus",
-          "title": "Visas som"
+          "title": "Status"
         },
         {
-          "name": "datum_laga_kraft",
-          "title": "Laga kraft"
+          "name": "beteckning",
+          "title": "Användning"
         },
         {
-          "name": "genomforandetid_utgar",
-          "title": "Genomförandetiden går ut"
-        },
-        {
-          "name": "syfte",
-          "title": "Syfte"
+          "name": "anvandningsform",
+          "title": "Användningsform"
         }
       ]
     },
@@ -214,68 +202,62 @@
       "source": "martin",
       "type": "VECTORTILE",
       "format": "mvt",
-      "layerURL": "planmosaik/{z}/{x}/{y}",
+      "layerURL": "plan_anvandning,plan_egenskap,plan_gransar/{z}/{x}/{y}",
       "style": "planmosaik",
       "visible": false,
       "queryable": true,
       "attributes": [
         {
-          "name": "namn",
-          "title": "Namn"
+          "name": "plan_namn",
+          "title": "Plan"
         },
         {
-          "name": "beteckning",
-          "title": "Beteckning"
-        },
-        {
-          "name": "status",
-          "title": "Status"
+          "name": "plan_beteckning",
+          "title": "Plan, beteckning"
         },
         {
           "name": "visningsstatus",
-          "title": "Visas som"
+          "title": "Status"
         },
         {
-          "name": "datum_laga_kraft",
-          "title": "Laga kraft"
+          "name": "beteckning",
+          "title": "Användning"
         },
         {
-          "name": "genomforandetid_utgar",
-          "title": "Genomförandetiden går ut"
-        },
-        {
-          "name": "syfte",
-          "title": "Syfte"
+          "name": "anvandningsform",
+          "title": "Användningsform"
         }
       ],
       "tileGrid": {
         "alignBottomLeft": false,
         "extent": [
-          -20037508.34,
-          -20037508.34,
-          20037508.34,
-          20037508.34
+          -20037508.342789244,
+          -20037508.342789244,
+          20037508.342789244,
+          20037508.342789244
         ],
         "resolutions": [
-          156543.03,
-          78271.52,
-          39135.76,
-          19567.88,
-          9783.94,
-          4891.97,
-          2445.98,
-          1222.99,
-          611.5,
-          305.75,
-          152.87,
-          76.437,
-          38.219,
-          19.109,
-          9.5546,
-          4.7773,
-          2.3887,
-          1.1943,
-          0.5972
+          156543.03392804097,
+          78271.51696402048,
+          39135.75848201024,
+          19567.87924100512,
+          9783.93962050256,
+          4891.96981025128,
+          2445.98490512564,
+          1222.99245256282,
+          611.49622628141,
+          305.748113140705,
+          152.8740565703525,
+          76.43702828517625,
+          38.21851414258813,
+          19.109257071294063,
+          9.554628535647032,
+          4.777314267823516,
+          2.388657133911758,
+          1.194328566955879,
+          0.5971642834779395,
+          0.29858214173896974,
+          0.14929107086948487
         ],
         "tileSize": [
           256,

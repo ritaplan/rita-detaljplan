@@ -71,6 +71,7 @@ configs:
       listen_addresses: "0.0.0.0:3000"
       postgres:
         connection_string: "postgres://karta_ro:${KARTA_RO_PASSWORD}@postgis:5432/gis?sslmode=require"
+        pool_size: 4  # standard är 20, vilket ensam fyller rollens anslutningsgräns
         auto_publish:
           tables:
             from_schemas:
