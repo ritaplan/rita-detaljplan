@@ -109,9 +109,12 @@
       return;
     }
     var ol = Origo.ol;
-    highlight = new ol.layer.Vector({ source: new ol.source.Vector(), zIndex: 1000 });
+    // group 'none' håller lagren borta ur Origos lagerlista (annars visas de som "Titel saknas")
+    highlight = new ol.layer.Vector({ source: new ol.source.Vector(), zIndex: 1000, name: 'planmosaik-markering',
+                                      title: 'Markering', group: 'none', queryable: false });
     map.addLayer(highlight);
-    marker = new ol.layer.Vector({ source: new ol.source.Vector(), zIndex: 1001 });
+    marker = new ol.layer.Vector({ source: new ol.source.Vector(), zIndex: 1001, name: 'planmosaik-klickpunkt',
+                                   title: 'Klickpunkt', group: 'none', queryable: false });
     map.addLayer(marker);
   }
 
