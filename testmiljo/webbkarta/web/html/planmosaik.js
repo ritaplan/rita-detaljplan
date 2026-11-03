@@ -20,16 +20,16 @@
   var MAX_ENLARGE = 2;
   var MIN_VISIBLE_GAP = 1.2;
   var MIN_PATTERN_FACTOR = 0.3;
-  var MIN_PATTERN_GAP = 3;
+  var MIN_PATTERN_GAP = 4.5;
   var LINES = {
-    egenskapsgrans: { width: 1, dash: [10, 4, 2, 4, 2, 4], minWidth: 0.5, maxScale: 6000, z: 3 },
-    anvandningsgrans: { width: 2, dash: [10, 2, 1, 2], minWidth: 0.6, maxScale: 12000, z: 4 },
-    planomradesgrans: { width: 3, dash: [16, 4, 4, 4, 16, 4], minWidth: 1, maxScale: null, z: 5 }
+    egenskapsgrans: { width: 2.2, dash: [14, 6, 3, 6, 3, 6], minWidth: 0.9, maxScale: 6000, z: 3 },
+    anvandningsgrans: { width: 3.6, dash: [14, 3, 2, 3], minWidth: 1.2, maxScale: 12000, z: 4 },
+    planomradesgrans: { width: 5.5, dash: [22, 5, 6, 5, 22, 5], minWidth: 1.8, maxScale: null, z: 5 }
   };
   var PATTERNS = {
-    prickmark: { shape: 'circle', size: 2, margin: 2.5 },
-    korsmark: { shape: 'cross', size: 4.5, margin: 4, stroke: 0.6 },
-    ringprickad: { shape: 'ring', size: 4, margin: 4.5, stroke: 0.7 }
+    prickmark: { shape: 'circle', size: 1.6, margin: 5.5 },
+    korsmark: { shape: 'cross', size: 4.5, margin: 8, stroke: 0.3 },
+    ringprickad: { shape: 'ring', size: 4, margin: 8, stroke: 0.6 }
   };
   // Kartskalans nämnare för en upplösning (meter per pixel), med OGC:s pixelstorlek 0,28 mm som WMS-tjänsterna
   var PIXEL_SIZE = 0.00028;
@@ -63,7 +63,7 @@
     var spec = PATTERNS[kind];
     var size = Math.max(1.2, spec.size * b.factor);
     return { shape: spec.shape, size: size, period: Math.max(size + MIN_PATTERN_GAP, (spec.size + spec.margin) * b.factor),
-             stroke: Math.max(0.5, (spec.stroke || 0) * b.factor) };
+             stroke: Math.max(0.3, (spec.stroke || 0) * b.factor) };
   }
 
   function rgba(hex, alpha) {
@@ -141,9 +141,20 @@
     });
   }
 
+  // Origo 2.10 frågar varje träff efter geometrins namn (getGeometryName), men en yta i en vektorruta (RenderFeature) har
+  // ingen sådan metod, så ett klick ger ett fel. Metoden läggs till på RenderFeature första gången en yta ritas.
+  var patched = false;
+  function patchRenderFeature(feature) {
+    if (!patched && feature && typeof feature.getGeometryName !== 'function') {
+      Object.getPrototypeOf(feature).getGeometryName = function () { return 'geometry'; };
+    }
+    patched = true;
+  }
+
   // Origo anropar funktionen när lagret skapas och sätter det den returnerar som lagrets stil.
   Origo.Style.addStyleType('planmosaik', function () {
     return function (feature, resolution) {
+      patchRenderFeature(feature);
       switch (feature.get('layer')) {
         case 'plan_anvandning': return fillStyle(feature.get('fyllfarg'));
         case 'plan_egenskap': return patternStyle(feature.get('monster'), band(resolution));

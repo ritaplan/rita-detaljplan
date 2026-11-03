@@ -28,6 +28,11 @@ WORKSPACE, STORE = "planmosaik", "publicering"
 # Lagren i ritordning, underst först. Stilen heter som lagret (planmosaik/<lager>.sld)
 LAYERS = (("plan_anvandning", "Användningsytor"), ("plan_egenskap", "Egenskapsytor"), ("plan_gransar", "Gränslinjer"))
 GROUP = "planmosaik_karta"
+# Cachen (vektorrutorna) levererar bara rutor inom lagergruppens utbredning, och den räknas ut första gången. Ange kommunens
+# utbredning här (planschemats koordinatsystem: minx, miny, maxx, maxy), så att nya planer utanför den första inte får
+# rutor som saknas. Tomma rutor kostar nästan ingenting.
+EXTENT = (123500, 6483000, 134500, 6493500)
+EPSG = "EPSG:3008"
 
 
 def call(method, path, body=None, content_type="application/json", base=BASE):
@@ -89,6 +94,7 @@ for name, title in LAYERS:
 # Lagergruppen ritar de tre lagren i rätt ordning som ett enda lager: LAYERS=planmosaik_karta
 group = {"layerGroup": {
     "name": GROUP, "title": "Planmosaik", "mode": "SINGLE", "workspace": {"name": WORKSPACE},
+    "bounds": {"minx": EXTENT[0], "miny": EXTENT[1], "maxx": EXTENT[2], "maxy": EXTENT[3], "crs": EPSG},
     "publishables": {"published": [{"@type": "layer", "name": f"{WORKSPACE}:{n}"} for n, _ in LAYERS]},
     "styles": {"style": [{"name": f"{WORKSPACE}:{n}"} for n, _ in LAYERS]}}}
 if call("GET", f"/workspaces/{WORKSPACE}/layergroups/{GROUP}.json")[0] == 404:
@@ -104,6 +110,9 @@ tile_layer = f"""<GeoServerLayer><name>{WORKSPACE}:{GROUP}</name><enabled>true</
 <metaWidthHeight><int>1</int><int>1</int></metaWidthHeight><expireCache>60</expireCache><expireClients>0</expireClients>
 </GeoServerLayer>"""
 step("vektorrutor i cachen", call("PUT", f"/layers/{WORKSPACE}:{GROUP}.xml", tile_layer.encode(), "application/xml", GWC))
+# Töm cachen för lagergruppen: rutor som redan sparats gäller den gamla utbredningen och de gamla planerna
+truncate = f"<truncateLayer><layerName>{WORKSPACE}:{GROUP}</layerName></truncateLayer>"
+step("cachen tömd", call("POST", "/masstruncate", truncate.encode(), "text/xml", GWC))
 
 # Använd X-Forwarded-*-huvudena från nginx när GeoServer bygger adresser i kapabiliteterna
 step("proxyadresser", call("PUT", "/settings", {"global": {"useHeadersProxyURL": True}}))

@@ -19,20 +19,21 @@ BAND_EDGES = (1500, 3000, 6000, 12000, 24000, 48000)  # kartskalans nämnare dä
 MAX_ENLARGE = 2.0  # zoomar man in förbi referensskalan växer måtten högst så mycket
 MIN_VISIBLE_GAP = 1.2  # pixlar: mindre luckor i ett streckmönster syns inte, linjen ritas då heldragen
 MIN_PATTERN_FACTOR = 0.3  # mönster ritas inte när de skulle bli mindre än så, jämfört med referensskalan
-MIN_PATTERN_GAP = 3.0  # pixlar: minsta mellanrum mellan markörer, annars blir mönstret en mörk yta
+MIN_PATTERN_GAP = 4.5  # pixlar: minsta mellanrum mellan markörer, annars blir mönstret en mörk yta
 
-# Gränslinjer. Bredd och streckmönster är Boverkets (BFS 2020:6), i pixlar vid referensskalan.
+# Gränslinjer. Streckmönstrets rytm är Boverkets (BFS 2020:6), men bredden och längderna är större än på papper: på en
+# skärm syns en tunn linje knappt, och mönstret ska fortfarande synas som streck. Pixlar vid referensskalan.
 # max_scale: ritas bara i band som börjar före den här skalan (nämnaren), None = alltid
 LINES = {
-    "egenskapsgrans": {"width": 1.0, "dash": (10, 4, 2, 4, 2, 4), "min_width": 0.5, "max_scale": 6000},
-    "anvandningsgrans": {"width": 2.0, "dash": (10, 2, 1, 2), "min_width": 0.6, "max_scale": 12000},
-    "planomradesgrans": {"width": 3.0, "dash": (16, 4, 4, 4, 16, 4), "min_width": 1.0, "max_scale": None},
+    "egenskapsgrans": {"width": 2.2, "dash": (14, 6, 3, 6, 3, 6), "min_width": 0.9, "max_scale": 6000},
+    "anvandningsgrans": {"width": 3.6, "dash": (14, 3, 2, 3), "min_width": 1.2, "max_scale": 12000},
+    "planomradesgrans": {"width": 5.5, "dash": (22, 5, 6, 5, 22, 5), "min_width": 1.8, "max_scale": None},
 }
 # Mönster för egenskapsytor. size = markörens storlek, margin = mellanrum, båda i pixlar vid referensskalan.
 PATTERNS = {
-    "prickmark": {"shape": "circle", "size": 2.0, "margin": 2.5},
-    "korsmark": {"shape": "cross", "size": 4.5, "margin": 4.0, "stroke": 0.6},
-    "ringprickad": {"shape": "ring", "size": 4.0, "margin": 4.5, "stroke": 0.7},
+    "prickmark": {"shape": "circle", "size": 1.6, "margin": 5.5},
+    "korsmark": {"shape": "cross", "size": 4.5, "margin": 8.0, "stroke": 0.3},
+    "ringprickad": {"shape": "ring", "size": 4.0, "margin": 8.0, "stroke": 0.6},
 }
 
 
@@ -78,4 +79,4 @@ def pattern_style(kind: str, scale: float) -> dict | None:
     size = max(1.2, spec["size"] * scale_factor)
     period = max(size + MIN_PATTERN_GAP, (spec["size"] + spec["margin"]) * scale_factor)
     return {"shape": spec["shape"], "size": round(size, 2), "period": round(period, 2),
-            "stroke": round(max(0.5, spec.get("stroke", 0) * scale_factor), 2)}
+            "stroke": round(max(0.3, spec.get("stroke", 0) * scale_factor), 2)}

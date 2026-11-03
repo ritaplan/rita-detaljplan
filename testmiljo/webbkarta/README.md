@@ -125,9 +125,17 @@ förnyas efter en minut, så en ny incheckning syns snart.
 - **Databasanslutningar.** GeoServer tar upp till 10 anslutningar och QGIS Server några, så en roll med ont om anslutningar
   räcker inte. Sätt `max connections` (GeoServer) och en gräns på rollen, annars blir det `too many connections`. (Martin tar
   20 som standard, och var det som fyllde gränsen när det ingick.)
-- **Origo och vektorrutor.** Origo 2.10 kan rita vektorrutor men inte fråga dem: en träff på en MVT-yta ger ett fel
-  (`getGeometryName is not a function`). Vektorlagret är därför inte frågbart, och klick på planen ger ingen ruta när
-  bara vektorlagret är påslaget (WMS-lagren ger plandata vid klick).
+- **Informationsruta vid klick (Origo).**
+  - `featureinfoLayer` på ett WMS-lager ska peka på **ett annat lager i `index.json`**, inte på ett lagernamn i tjänsten. Här
+    är det två osynliga WMS-lager (`planmosaik_info_geoserver` och `planmosaik_info_qgis`, grupp `none`) som frågar
+    `plan_anvandning`. Pekar man på något som inte finns händer ingenting alls, utan fel.
+  - Vektorrutor kan Origo 2.10 rita men inte fråga: en träff på en yta i en vektorruta ger felet `getGeometryName is not a
+    function`, eftersom ytorna (RenderFeature) saknar metoden. `planmosaik.js` lägger till den första gången en yta ritas.
+    Det är en lagning av Origo, inte en funktion: provas efter varje Origo-uppdatering.
+  - Datum som `date` får ett `Z` efter sig i GeoServers svar. Vyn skickar dem som text.
+- **Utbredning i GeoServer.** Cachen (vektorrutorna) ger 404 för rutor utanför lagergruppens utbredning, och den räknas ut
+  första gången. Läggs en plan utanför den ritas den inte, och rutnätet ser ut att sakna rutor. Ange kommunens utbredning
+  i `EXTENT` i `konfigurera_geoserver.py` (körs om, tömmer cachen).
 - **Origo.**
   - Det färdiga bygget saknar tillägget `olms` (MapLibre-stilar). Därför har vektorrutorna en egen stil i `planmosaik.js`.
   - `extent` i `index.json` måste vara hela projektionens utbredning. Origo bygger rutnätet av den.

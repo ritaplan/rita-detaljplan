@@ -18,9 +18,9 @@
           <PolygonSymbolizer>
             <Fill><GraphicFill><Graphic>
               <Mark><WellKnownName>circle</WellKnownName><Fill><CssParameter name="fill">#000000</CssParameter></Fill></Mark>
-              <Size>2.0</Size>
+              <Size>1.6</Size>
             </Graphic></GraphicFill></Fill>
-            <VendorOption name="graphic-margin">1.5</VendorOption>
+            <VendorOption name="graphic-margin">2.75</VendorOption>
           </PolygonSymbolizer>
         </Rule>
         <Rule>
@@ -35,7 +35,7 @@
               <Mark><WellKnownName>circle</WellKnownName><Fill><CssParameter name="fill">#000000</CssParameter></Fill></Mark>
               <Size>1.2</Size>
             </Graphic></GraphicFill></Fill>
-            <VendorOption name="graphic-margin">1.5</VendorOption>
+            <VendorOption name="graphic-margin">2.25</VendorOption>
           </PolygonSymbolizer>
         </Rule>
         <Rule>
@@ -46,10 +46,10 @@
           <MaxScaleDenominator>1500</MaxScaleDenominator>
           <PolygonSymbolizer>
             <Fill><GraphicFill><Graphic>
-              <Mark><WellKnownName>cross</WellKnownName><Stroke><CssParameter name="stroke">#000000</CssParameter><CssParameter name="stroke-width">0.6</CssParameter></Stroke></Mark>
+              <Mark><WellKnownName>cross</WellKnownName><Stroke><CssParameter name="stroke">#000000</CssParameter><CssParameter name="stroke-width">0.3</CssParameter></Stroke></Mark>
               <Size>4.5</Size>
             </Graphic></GraphicFill></Fill>
-            <VendorOption name="graphic-margin">2.0</VendorOption>
+            <VendorOption name="graphic-margin">4.0</VendorOption>
           </PolygonSymbolizer>
         </Rule>
         <Rule>
@@ -61,10 +61,10 @@
           <MaxScaleDenominator>3000</MaxScaleDenominator>
           <PolygonSymbolizer>
             <Fill><GraphicFill><Graphic>
-              <Mark><WellKnownName>cross</WellKnownName><Stroke><CssParameter name="stroke">#000000</CssParameter><CssParameter name="stroke-width">0.5</CssParameter></Stroke></Mark>
+              <Mark><WellKnownName>cross</WellKnownName><Stroke><CssParameter name="stroke">#000000</CssParameter><CssParameter name="stroke-width">0.3</CssParameter></Stroke></Mark>
               <Size>2.12</Size>
             </Graphic></GraphicFill></Fill>
-            <VendorOption name="graphic-margin">1.5</VendorOption>
+            <VendorOption name="graphic-margin">2.25</VendorOption>
           </PolygonSymbolizer>
         </Rule>
         <Rule>
@@ -75,10 +75,10 @@
           <MaxScaleDenominator>1500</MaxScaleDenominator>
           <PolygonSymbolizer>
             <Fill><GraphicFill><Graphic>
-              <Mark><WellKnownName>circle</WellKnownName><Stroke><CssParameter name="stroke">#000000</CssParameter><CssParameter name="stroke-width">0.7</CssParameter></Stroke></Mark>
+              <Mark><WellKnownName>circle</WellKnownName><Stroke><CssParameter name="stroke">#000000</CssParameter><CssParameter name="stroke-width">0.6</CssParameter></Stroke></Mark>
               <Size>4.0</Size>
             </Graphic></GraphicFill></Fill>
-            <VendorOption name="graphic-margin">2.25</VendorOption>
+            <VendorOption name="graphic-margin">4.0</VendorOption>
           </PolygonSymbolizer>
         </Rule>
         <Rule>
@@ -90,10 +90,10 @@
           <MaxScaleDenominator>3000</MaxScaleDenominator>
           <PolygonSymbolizer>
             <Fill><GraphicFill><Graphic>
-              <Mark><WellKnownName>circle</WellKnownName><Stroke><CssParameter name="stroke">#000000</CssParameter><CssParameter name="stroke-width">0.5</CssParameter></Stroke></Mark>
+              <Mark><WellKnownName>circle</WellKnownName><Stroke><CssParameter name="stroke">#000000</CssParameter><CssParameter name="stroke-width">0.3</CssParameter></Stroke></Mark>
               <Size>1.89</Size>
             </Graphic></GraphicFill></Fill>
-            <VendorOption name="graphic-margin">1.5</VendorOption>
+            <VendorOption name="graphic-margin">2.25</VendorOption>
           </PolygonSymbolizer>
         </Rule>
       </FeatureTypeStyle>

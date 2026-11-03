@@ -57,12 +57,17 @@ COMMENT ON VIEW publicering.planmosaik IS 'Planområdena för antagna planer och
 
 -- 2. Användningsytor med färg ------------------------------------------------------------------------------------
 -- Färgerna är Boverkets färgnamn som i pluginet (core/symbology.py, FARGER). Namnet står kvar i "farg".
-CREATE OR REPLACE VIEW publicering.plan_anvandning AS
+DROP VIEW IF EXISTS publicering.plan_anvandning;
+CREATE VIEW publicering.plan_anvandning AS
 SELECT a.fid,
        a.plan,
        p.namn AS plan_namn,
        p.beteckning AS plan_beteckning,
        p.visningsstatus,
+       p.status AS plan_status,
+       p.datum_laga_kraft::text AS datum_laga_kraft,  -- text: GeoServer lägger annars ett Z efter datum
+       p.genomforandetid_utgar::text AS genomforandetid_utgar,
+       p.syfte AS plan_syfte,
        a.beteckning,
        a.anvandningsform,
        a.farg,

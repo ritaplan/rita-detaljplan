@@ -136,29 +136,7 @@
       "tiled": false,
       "visible": true,
       "queryable": true,
-      "featureinfoLayer": "plan_anvandning",
-      "attributes": [
-        {
-          "name": "plan_namn",
-          "title": "Plan"
-        },
-        {
-          "name": "plan_beteckning",
-          "title": "Plan, beteckning"
-        },
-        {
-          "name": "visningsstatus",
-          "title": "Status"
-        },
-        {
-          "name": "beteckning",
-          "title": "Användning"
-        },
-        {
-          "name": "anvandningsform",
-          "title": "Användningsform"
-        }
-      ]
+      "featureinfoLayer": "planmosaik_info_geoserver"
     },
     {
       "name": "planmosaik_geoserver_vektor",
@@ -207,7 +185,41 @@
           256
         ]
       },
-      "queryable": false
+      "queryable": true,
+      "attributes": [
+        {
+          "name": "plan_namn",
+          "title": "Plan"
+        },
+        {
+          "name": "plan_beteckning",
+          "title": "Beteckning"
+        },
+        {
+          "name": "plan_status",
+          "title": "Status"
+        },
+        {
+          "name": "datum_laga_kraft",
+          "title": "Laga kraft"
+        },
+        {
+          "name": "genomforandetid_utgar",
+          "title": "Genomförandetiden går ut"
+        },
+        {
+          "name": "beteckning",
+          "title": "Användning"
+        },
+        {
+          "name": "anvandningsform",
+          "title": "Användningsform"
+        },
+        {
+          "name": "plan_syfte",
+          "title": "Syfte"
+        }
+      ]
     },
     {
       "name": "planmosaik_qgis",
@@ -220,29 +232,7 @@
       "tiled": false,
       "visible": false,
       "queryable": true,
-      "featureinfoLayer": "plan_anvandning",
-      "attributes": [
-        {
-          "name": "plan_namn",
-          "title": "Plan"
-        },
-        {
-          "name": "plan_beteckning",
-          "title": "Plan, beteckning"
-        },
-        {
-          "name": "visningsstatus",
-          "title": "Status"
-        },
-        {
-          "name": "beteckning",
-          "title": "Användning"
-        },
-        {
-          "name": "anvandningsform",
-          "title": "Användningsform"
-        }
-      ]
+      "featureinfoLayer": "planmosaik_info_qgis"
     },
     {
       "name": "osm",
@@ -252,6 +242,96 @@
       "style": "karta_osm",
       "type": "OSM",
       "visible": true
+    },
+    {
+      "name": "planmosaik_info_geoserver",
+      "id": "plan_anvandning",
+      "title": "Planmosaik",
+      "group": "none",
+      "source": "geoserver",
+      "type": "WMS",
+      "format": "image/png",
+      "visible": false,
+      "queryable": true,
+      "attributes": [
+        {
+          "name": "plan_namn",
+          "title": "Plan"
+        },
+        {
+          "name": "plan_beteckning",
+          "title": "Beteckning"
+        },
+        {
+          "name": "plan_status",
+          "title": "Status"
+        },
+        {
+          "name": "datum_laga_kraft",
+          "title": "Laga kraft"
+        },
+        {
+          "name": "genomforandetid_utgar",
+          "title": "Genomförandetiden går ut"
+        },
+        {
+          "name": "beteckning",
+          "title": "Användning"
+        },
+        {
+          "name": "anvandningsform",
+          "title": "Användningsform"
+        },
+        {
+          "name": "plan_syfte",
+          "title": "Syfte"
+        }
+      ]
+    },
+    {
+      "name": "planmosaik_info_qgis",
+      "id": "plan_anvandning",
+      "title": "Planmosaik",
+      "group": "none",
+      "source": "qgis",
+      "type": "WMS",
+      "format": "image/png",
+      "visible": false,
+      "queryable": true,
+      "attributes": [
+        {
+          "name": "plan_namn",
+          "title": "Plan"
+        },
+        {
+          "name": "plan_beteckning",
+          "title": "Beteckning"
+        },
+        {
+          "name": "plan_status",
+          "title": "Status"
+        },
+        {
+          "name": "datum_laga_kraft",
+          "title": "Laga kraft"
+        },
+        {
+          "name": "genomforandetid_utgar",
+          "title": "Genomförandetiden går ut"
+        },
+        {
+          "name": "beteckning",
+          "title": "Användning"
+        },
+        {
+          "name": "anvandningsform",
+          "title": "Användningsform"
+        },
+        {
+          "name": "plan_syfte",
+          "title": "Syfte"
+        }
+      ]
     }
   ],
   "styles": {

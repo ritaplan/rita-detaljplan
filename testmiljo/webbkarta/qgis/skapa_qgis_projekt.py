@@ -102,8 +102,10 @@ def _pattern_symbol(style: dict) -> QgsFillSymbol:
     marker = QgsSimpleMarkerSymbolLayer(shape[style["shape"]], style["size"], 0.0, Qgis.ScaleMethod.ScaleDiameter,
                                         BLACK if filled else QColor(0, 0, 0, 0), BLACK)
     marker.setSizeUnit(PIXELS)
-    marker.setStrokeWidth(0 if filled else style["stroke"])
+    marker.setStrokeWidth(style["stroke"])
     marker.setStrokeWidthUnit(PIXELS)
+    if filled:
+        marker.setStrokeStyle(Qt.PenStyle.NoPen)  # bredd 0 ger i QGIS en hårfin penna, som gör prickarna för tjocka
     pattern = QgsPointPatternFillSymbolLayer()
     pattern.setSubSymbol(QgsMarkerSymbol([marker]))
     pattern.setDistanceX(style["period"])
