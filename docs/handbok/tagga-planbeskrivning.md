@@ -6,7 +6,7 @@ bestämmelser.
 
 **Originaldokumentet ändras aldrig.**
 
-<!-- FILM: tagga-planbeskrivning | Tagga en planbeskrivning i fyra steg, ca 4 min -->
+[![Film: Tagga en planbeskrivning i fyra steg (3 min)](https://ritaplan.xyz/film/detaljplan/tagga-planbeskrivning.jpg)](https://ritaplan.xyz/film/detaljplan/tagga-planbeskrivning.mp4)
 
 ## Öppna programmet
 

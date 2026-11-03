@@ -77,7 +77,7 @@ Tips:
 | [Kontrollera planen](kontrollera.md) | kontrollera-planen, topologikontroll | kontrollera |
 | [Leverera planen](leverera.md) | leverans-och-export, ngp-installningar | leverera-ngp |
 | [Teckenförklaring och plankarta](teckenforklaring.md) | exempellayout, teckenforklaring-layout | |
-| [Tagga planbeskrivning](tagga-planbeskrivning.md) | tagga-steg-2 | tagga-planbeskrivning |
+| [Tagga planbeskrivning](tagga-planbeskrivning.md) | tagga-steg-2 | |
 | [Arkivpaket](arkivpaket.md) | arkivpaket-dialog | arkivpaket |
 | [Lagring](lagring.md) | | checka-ut-in |
 
