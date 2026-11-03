@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from plan_case import HAVE_QGIS, INSIDE, LEFT, LINE_INSIDE, PLAN, RIGHT, filled, pick, pump  # noqa: E402
+from plan_case import HAVE_QGIS, LEFT, LINE_INSIDE, PLAN, filled, pick  # noqa: E402
 
 if HAVE_QGIS:
     import rita_detaljplan
@@ -18,7 +18,7 @@ if HAVE_QGIS:
     from qgis.PyQt.QtWidgets import QToolButton
     from rita_detaljplan.controller import (ASSIGN_TARGETS, HELPER_AREA, HELPER_LAYER, HELPER_POINT, HELPER_TABLES,
                                             SELECTABLE)
-    from rita_detaljplan.core import assignments, geopackage, importer, model, storage, symbology
+    from rita_detaljplan.core import assignments, geopackage, importer, model, storage
     from rita_detaljplan.core.project import (HELPER_GROUP_NAME, create_plan_project, find_layer, find_plan_group,
                                               load_plan, upgrade_symbology)
     from rita_detaljplan.gui.assign_dialog import AssignDialog
@@ -498,7 +498,7 @@ class HelperPluginTests(GuiCase):
 
     def test_the_menu_has_the_import_entry_and_the_toolbar_button_calls_the_same_function(self):
         self.assertIn("Importera geometrier…", [a.text() for a in self.plugin.actions])
-        with mock.patch.object(self.plugin, "import_geometry") as called:
+        with mock.patch.object(self.plugin, "import_geometry"):
             self.plugin.toolbar._import_callback = None
         self.assertIsNotNone(self.plugin.toolbar.act_import)
 

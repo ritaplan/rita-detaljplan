@@ -29,7 +29,7 @@ from typing import Optional
 
 from qgis.core import (NULL, QgsApplication, QgsDataProvider, QgsDataSourceUri, QgsFeature, QgsProject,
                        QgsVectorLayer)
-from qgis.PyQt.QtCore import QDate, QDateTime, Qt
+from qgis.PyQt.QtCore import QDate, QDateTime
 
 from . import geopackage, model, storage
 from .project import DB_SCOPE, find_layer

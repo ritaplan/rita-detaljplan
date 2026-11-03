@@ -12,8 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from plan_case import HAVE_QGIS, INSIDE, LEFT, PLAN, RIGHT, PlanCase, filled, pick, pump  # noqa: E402
 
 if HAVE_QGIS:
-    from qgis.core import QgsGeometry, QgsPointXY, QgsProject
-    from qgis.PyQt.QtCore import Qt
+    from qgis.core import QgsGeometry
     from rita_detaljplan.core import bestammelse as bm
     from rita_detaljplan.core import validation as v
     from rita_detaljplan.core.validation import Area, Issue, PlanData

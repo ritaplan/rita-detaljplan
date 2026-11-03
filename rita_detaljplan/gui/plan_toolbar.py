@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Callable, Optional
 
 from qgis.core import Qgis, QgsApplication, QgsProject, QgsTask
-from qgis.gui import QgsAdvancedDigitizingDockWidget, QgsMapToolCapture, QgsRubberBand
+from qgis.gui import QgsMapToolCapture, QgsRubberBand
 from qgis.PyQt import sip
 from qgis.PyQt.QtCore import Qt, QTimer
 from qgis.PyQt.QtGui import QColor, QIcon
@@ -34,7 +34,7 @@ from .checkout_actions import CheckoutActions
 from .bottom_toolbar import BottomToolBar
 from .delivery_dialog import DeliveryDialog
 from .fill_tool import FillTool
-from .ngp_dialog import ARCHIVE, FILE, UPLOAD, NgpDialog, NgpRequest
+from .ngp_dialog import ARCHIVE, FILE, NgpDialog, NgpRequest
 from .label_tool import LabelTool
 from .messages import push
 from .select_tool import SelectTool

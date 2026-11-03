@@ -187,7 +187,7 @@ class PlanAreaTests(ControllerCase):
     def test_deleting_one_of_two_plan_areas_removes_or_trims_only_the_uses_on_it(self):
         first, second = self.two_areas()
         left = self.draw("anvandning_yta", "MultiPolygon(((0 0, 50 0, 50 50, 0 50, 0 0)))")
-        right = self.draw("anvandning_yta", self.SECOND)
+        self.draw("anvandning_yta", self.SECOND)
         self.assertTrue(self.layers["detaljplan"].deleteFeature(second.id()))
         pump()
         self.assertEqual([f.id() for f in self.features("anvandning_yta")], [left.id()])
@@ -310,7 +310,7 @@ class UseTests(ControllerCase):
         self.assertEqual(self.warnings, [])
 
     def test_a_real_split_leaves_the_original_feature_as_a_single_part_and_is_not_flagged(self):
-        use = self.build_plan(uses=(PLAN,))[0]
+        self.build_plan(uses=(PLAN,))
         layer = self.layers["anvandning_yta"]
         self.assertEqual(int(layer.splitFeatures([QgsPointXY(50, -10), QgsPointXY(50, 110)])), 0)
         self.assertFalse(any("flera geometridelar" in w for w in self.warnings), self.warnings)
@@ -347,7 +347,7 @@ class SharedVertexTests(ControllerCase):
 
     def test_a_real_overlap_is_still_clipped_after_the_change(self):
         self.draw("detaljplan", PLAN)
-        a, b = self.draw("anvandning_yta", LEFT), self.draw("anvandning_yta", RIGHT)
+        a, _ = self.draw("anvandning_yta", LEFT), self.draw("anvandning_yta", RIGHT)
         layer = self.layers["anvandning_yta"]
         layer.changeGeometry(a.id(), QgsGeometry.fromWkt("MultiPolygon(((0 0, 70 0, 70 100, 0 100, 0 0)))"))
         pump()

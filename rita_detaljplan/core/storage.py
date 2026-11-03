@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Optional
 
 from qgis.core import Qgis, QgsDataSourceUri, QgsProviderRegistry, QgsVectorLayer
 

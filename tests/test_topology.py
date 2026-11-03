@@ -11,7 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from plan_case import HAVE_QGIS, PLAN, pump  # noqa: E402
 
 if HAVE_QGIS:
-    from qgis.core import QgsGeometry, QgsPointXY, QgsProject
+    from qgis.core import QgsGeometry, QgsProject
     from qgis.PyQt.QtCore import Qt
     from qgis.PyQt.QtWidgets import QLabel
     from rita_detaljplan.core import topology as t
@@ -645,7 +645,7 @@ class ToolBarTests(TopologyCase):
         with mock.patch("rita_detaljplan.gui.plan_toolbar.TopologyDialog") as dialog_cls:
             self.toolbar.check_topology()
         analyze, apply, show = dialog_cls.call_args.args[:3]
-        findings, fill = dialog_cls.call_args.kwargs["findings"], dialog_cls.call_args.kwargs["fill_use"]
+        findings, _ = dialog_cls.call_args.kwargs["findings"], dialog_cls.call_args.kwargs["fill_use"]
         self.assertTrue(analyze(0.5))
         dialog_cls.return_value.exec.assert_called_once()
         self.assertEqual(findings(), self.controller.topology_findings())

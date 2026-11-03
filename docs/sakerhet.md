@@ -164,9 +164,11 @@ Testerna kräver bara QGIS och Pythons `unittest`.
   beroenden, samt OpenSSF Scorecard. Dependabot håller de fastlåsta versionerna av dessa verktyg uppdaterade. Testsviten
   (`tests/`) kräver QGIS 4 och körs inte på GitHub utan lokalt före varje release.
 - Pluginkällan (`plugins.xml`) läses från `main` på GitHub. Den som kan skriva till repot kan alltså få kod installerad hos
-  alla som uppdaterar via pluginkällan. Skyddet är kontot på GitHub. Vid kontrollen 2026-11-03 var `main` **inte** en
-  skyddad gren och GitHubs hemlighetsskanning var avstängd; rekommendation: tvåfaktorsinloggning, skyddad `main` och
-  hemlighetsskanning med push-skydd (se [Rekommendationer](#rekommendationer-för-en-organisation)).
+  alla som uppdaterar via pluginkällan. Skyddet är kontot på GitHub. Läget 2026-11-03 (kontrollerat via GitHubs API): en regel för `main` stoppar radering och tvångspush, GitHubs
+  hemlighetsskanning och Dependabot-varningar är på, privat rapportering av sårbarheter är på och organisationen kräver
+  tvåfaktorsinloggning. Regeln kräver varken pull request eller gröna kontroller, eftersom underhållaren pushar direkt till
+  `main`. Push-skyddet, som stoppar en push som innehåller en hemlighet, var vid kontrollen inte påslaget (se
+  [Rekommendationer](#rekommendationer-för-en-organisation)).
 - Pluginet är **inte** publicerat i QGIS officiella pluginarkiv och har därför inte genomgått dess granskning.
 
 ## Fynd

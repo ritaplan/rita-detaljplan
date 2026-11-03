@@ -15,7 +15,7 @@ from .core.catalog_store import CatalogError, CatalogService
 from .core import archive, checkout, example_sheet, example_sheet_layout, importer, legend_layout, storage
 from .core import import_ngp as import_ngp_module
 from .core.project import (activate_plan_group, collapse_plan_group, create_plan_project, create_postgis_plan_project,
-                           find_plan_group, load_plan, plan_groups, remove_plan, restyle)
+                           find_plan_group, load_plan, plan_groups, remove_plan)
 from .gui.about_dialog import AboutDialog
 from .gui.import_dialog import ImportDialog
 from .gui.archive_dialog import ArchiveDialog, build_archive

@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from plan_case import HAVE_QGIS, LEFT, PLAN, PlanCase, filled, pick, pump  # noqa: E402
+from plan_case import HAVE_QGIS, pump  # noqa: E402
 
 if HAVE_QGIS:
     from qgis.core import QgsProject, QgsSettings
@@ -25,7 +25,7 @@ if HAVE_QGIS:
     from rita_detaljplan.gui.settings_dialog import SettingsDialog
     from fake_ngp import MEDIA_V4, FakeNgp
     from qgis_app import get_app
-    from test_export import BESLUT, DOCUMENTS, ExportCase
+    from test_export import ExportCase
 
 
 def no_sleep(_seconds):

@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from plan_case import HAVE_QGIS, INSIDE, LEFT, PLAN, RIGHT, filled, pick, pump  # noqa: E402
+from plan_case import HAVE_QGIS, LEFT, PLAN, RIGHT, filled, pick, pump  # noqa: E402
 
 if HAVE_QGIS:
     from osgeo import ogr
@@ -109,8 +109,8 @@ class SplitTests(SplitCase):
 
     def test_a_pasted_copy_with_the_same_identity_gets_its_own(self):
         use = self.assigned_use()
-        copy = self.add("anvandning_yta", "MultiPolygon(((0 0, 10 0, 10 10, 0 10, 0 0)))",
-                        objektidentitet=use["objektidentitet"])
+        self.add("anvandning_yta", "MultiPolygon(((0 0, 10 0, 10 10, 0 10, 0 0)))",
+                 objektidentitet=use["objektidentitet"])
         pump()
         ids = [f["objektidentitet"] for f in self.layers["anvandning_yta"].getFeatures()]
         self.assertEqual(len(ids), len(set(ids)))

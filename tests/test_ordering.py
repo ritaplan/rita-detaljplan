@@ -41,7 +41,7 @@ class HeadingTests(DialogCase):
         self.use_a = self.use_a
         self.controller.add_bestammelse("anvandning_yta", self.use_a.id(), pick(self.catalog, "DP_KM_J2"),
                                         [])
-        prop = self.draw("egenskap_yta", INSIDE)
+        self.draw("egenskap_yta", INSIDE)
         candidates = [c for c in self.controller.candidates_at(__import__("qgis.core", fromlist=["QgsPointXY"]).QgsPointXY(20, 20), 0.5)
                       if c.table == "egenskap_yta"]
         from rita_detaljplan.gui.assign_dialog import AssignDialog
@@ -250,7 +250,7 @@ class ReindexTests(DialogCase):
             self.assertNotEqual(other_rows_after[value], label_before, "index-siffran ska ha bytt plats även här")
 
     def test_reindex_is_disabled_with_fewer_than_two_indexed_provisions(self):
-        other = self.draw("egenskap_yta", INSIDE_B)
+        self.draw("egenskap_yta", INSIDE_B)
         other_dialog = self.open((70, 20))
         self.assertFalse(other_dialog.btn_reindex.isEnabled(), "inga bestämmelser alls")
         self.add_via(other_dialog, self.entry, "50")

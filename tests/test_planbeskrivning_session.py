@@ -9,7 +9,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from plankarta_case import make_larkan  # noqa: E402
 from rita_detaljplan.planbeskrivning.pbapp import session as ss  # noqa: E402
-from rita_detaljplan.planbeskrivning.pbkarna import planbeskrivning_docx as dx  # noqa: E402
 
 
 class SessionTest(unittest.TestCase):

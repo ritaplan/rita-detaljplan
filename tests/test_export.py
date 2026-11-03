@@ -9,10 +9,10 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from plan_case import HAVE_QGIS, INSIDE, LEFT, LINE_INSIDE, PLAN, RIGHT, filled, pick, pump  # noqa: E402
+from plan_case import HAVE_QGIS, INSIDE, LINE_INSIDE, PLAN, filled, pick  # noqa: E402
 
 if HAVE_QGIS:
-    from qgis.core import QgsGeometry, QgsPointXY, QgsProject
+    from qgis.core import QgsGeometry, QgsProject
     from rita_detaljplan.core import export_ngp as ex
     from rita_detaljplan.core import rules
     from rita_detaljplan.core import validation

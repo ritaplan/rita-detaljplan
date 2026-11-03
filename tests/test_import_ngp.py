@@ -10,11 +10,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from plan_case import HAVE_QGIS, PlanCase, pick, pump  # noqa: E402
 
 if HAVE_QGIS:
-    from qgis.core import QgsProject
     from rita_detaljplan.controller import PlanController
     from rita_detaljplan.core import import_ngp as im
-    from rita_detaljplan.core import rules
-    from rita_detaljplan.core.project import create_plan_project, load_plan
 
 
 def polygon(coords):

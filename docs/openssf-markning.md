@@ -20,15 +20,16 @@ formuläret när du fyller i det; listan kan ha ändrats.
 
 ## Förutsättningar på GitHub (att göra av ägaren)
 
-Dessa inställningar kräver ägarens rättigheter och är ändringar i repots säkerhetsinställningar, så de är inte gjorda:
+Dessa inställningar kräver ägarens rättigheter. Läget kontrollerades via GitHubs API 2026-11-03:
 
 | Inställning | Var | Varför |
 | --- | --- | --- |
-| Hemlighetsskanning och push-skydd | *Settings → Advanced Security* (eller *Code security*) | Krav `no_leaked_credentials`; stoppar att nycklar checkas in av misstag. Gratis för publika repon. |
-| Dependabot-varningar | samma sida | Meddelar om Actions med kända sårbarheter. |
-| Skyddad `main` | *Settings → Rules → Rulesets* eller *Branches* | Kräver att kontrollerna (CodeQL, ruff, bygg) är gröna och stoppar tvångspush. Som enda underhållare kan du låta ägaren kringgå regeln. Ger poäng i Scorecard. |
-| Tvåfaktorsinloggning | GitHub-kontot | Skyddar pluginkällan som läses direkt från `main` (se [Leveranskedja](sakerhet.md#leveranskedja-och-distribution)). |
-| Privat sårbarhetsrapportering | *Settings → Advanced Security* | Är redan påslagen (kontrollerad 2026-11-03). |
+| Hemlighetsskanning (*Secret Protection*) | *Settings → Advanced Security* | **På.** Krav `no_leaked_credentials`. Gratis för publika repon. |
+| Push-skydd (*Push protection*) | samma sida, under Secret Protection | **Ej påslaget vid kontrollen.** Stoppar att en nyckel checkas in av misstag. |
+| Dependabot-varningar | samma sida | **På.** Meddelar om Actions med kända sårbarheter. |
+| Skyddad `main` | *Settings → Rules → Rulesets* | **På** (regeln *Protect main*, aktiv): stoppar radering och tvångspush. Kräver varken pull request eller gröna kontroller, eftersom underhållaren pushar direkt till `main`. |
+| Tvåfaktorsinloggning | Organisationen *ritaplan* | **Krävs av organisationen.** Skyddar pluginkällan som läses direkt från `main` (se [Leveranskedja](sakerhet.md#leveranskedja-och-distribution)). |
+| Privat sårbarhetsrapportering | *Settings → Advanced Security* | **På.** |
 
 ## Kraven på nivån *passing* och läget för projektet
 
@@ -74,7 +75,7 @@ Dessa inställningar kräver ägarens rättigheter och är ändringar i repots s
 | `test`, `test_invocation` | Ja | `tests\run_tests.bat` (Pythons `unittest` i QGIS Python), beskrivet i CONTRIBUTING |
 | `test_most`, `test_continuous_integration` | Delvis (SUGGESTED) | Testsviten är stor men kräver QGIS 4 och körs lokalt, inte på GitHub. Skriv det. |
 | `test_policy`, `tests_are_added`, `tests_documented_added` | Ja | CONTRIBUTING: *Ny funktion eller rättning ska ha ett test*. Exempel: fynd 6 i 0.1.75 har ett test. |
-| `warnings`, `warnings_fixed` | Efter push | ruff-kontrollen (`ruff.toml`, regler E9 och F utom oanvända importer och variabler) körs i `build-check.yml`. Första körningen 2026-11-03 gav bara fynd om oanvända importer och variabler; de ignoreras medvetet. |
+| `warnings`, `warnings_fixed` | Efter push | ruff-kontrollen (`ruff.toml`, regler E9 och F) körs i `build-check.yml`. Första körningen 2026-11-03 gav bara fynd om oanvända importer och variabler; de rättades samma dag. |
 | `warnings_strict` | Delvis (SUGGESTED) | Reglerna är avsiktligt snäva (riktiga fel, inte stil). |
 
 ### Säkerhet
@@ -85,7 +86,7 @@ Dessa inställningar kräver ägarens rättigheter och är ändringar i repots s
 | `crypto_*` (published, call, floss, keylength, working, weaknesses, pfs, password_storage, random) | N/A | Pluginet har ingen egen kryptografi: all kryptering (https, databasanslutning) sköts av QGIS/Qt, och lösenord lagras av QGIS autentiseringsdatabas. |
 | `delivery_mitm`, `delivery_unsigned` | Ja | Allt hämtas över https från GitHub. Ingen kontrollsumma hämtas över http. |
 | `vulnerabilities_fixed_60_days`, `vulnerabilities_critical_fixed` | Ja | Inga kända öppna sårbarheter över 60 dagar (fynd i [sakerhet.md](sakerhet.md): bara informativa kvar). |
-| `no_leaked_credentials` | Efter push | Slå på hemlighetsskanning (se ovan). Repot har inte sökts igenom med verktyg; gör det innan du svarar. |
+| `no_leaked_credentials` | Ja | Hemlighetsskanning är på; GitHub söker igenom hela historiken. Slå också på push-skydd (se ovan). |
 
 ### Analys
 

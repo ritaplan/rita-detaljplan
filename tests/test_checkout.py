@@ -14,10 +14,10 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from plan_case import HAVE_QGIS, LEFT, PLAN, pump  # noqa: E402
+from plan_case import HAVE_QGIS, pump  # noqa: E402
 
 if HAVE_QGIS:
-    from qgis.core import Qgis, QgsDataSourceUri, QgsProject, QgsVectorLayer
+    from qgis.core import QgsDataSourceUri, QgsProject, QgsVectorLayer
     from qgis.PyQt.QtCore import QDate, QDateTime
     from rita_detaljplan.core import checkout as co
     from rita_detaljplan.core import geopackage, model, storage
@@ -329,7 +329,7 @@ class CheckInTests(CheckoutCase):
 
     def test_checking_in_writes_one_transaction_with_every_table_and_releases_the_lock(self):
         path = self.out()
-        edited = self.edit_copy()
+        self.edit_copy()
         expected = self.counts()
         done_path, removed = co.check_in(self.project)
         self.assertEqual((done_path, removed), (path, True))

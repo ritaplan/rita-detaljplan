@@ -26,7 +26,6 @@ if HAVE_QGIS:
     from rita_detaljplan.gui.legend_settings_dialog import LegendSettingsDialog
     from qgis.core import QgsSettings
     from qgis.PyQt.QtGui import QFont
-    from qgis_app import get_app
     from test_export import ExportCase
 
 
@@ -642,7 +641,6 @@ class LegendStyleTests(StyleCase):
         self.assertEqual(fixed, 30.0)
 
     def test_the_heading_fits_the_default_width_at_full_size_on_every_paper(self):
-        from qgis.PyQt.QtGui import QFontMetricsF
         for width, height in ((841, 594), (594, 420), (420, 297), (297, 210)):
             self.layout = self.new_layout(width, height)
             self.legend()

@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from plan_case import HAVE_QGIS, INSIDE, LEFT, filled, pick  # noqa: E402
+from plan_case import HAVE_QGIS, INSIDE, filled, pick  # noqa: E402
 
 if HAVE_QGIS:
     from rita_detaljplan.core import assignments, geopackage, model, rows, storage, validation, vertical

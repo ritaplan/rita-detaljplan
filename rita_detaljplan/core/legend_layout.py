@@ -14,10 +14,9 @@ from dataclasses import dataclass, field, fields, replace
 from typing import Optional
 
 from qgis.core import (Qgis, QgsFillSymbol, QgsLayoutItemGroup, QgsLayoutItemLabel, QgsLayoutItemPicture, QgsLayoutItemPolyline,
-                       QgsLayoutItemShape, QgsLayoutPoint, QgsLayoutSize, QgsLineSymbol, QgsPointPatternFillSymbolLayer, QgsSimpleLineSymbolLayer,
-                       QgsStyle, QgsTextFormat)
+                       QgsLayoutItemShape, QgsLayoutPoint, QgsLayoutSize, QgsLineSymbol, QgsPointPatternFillSymbolLayer, QgsStyle, QgsTextFormat)
 from qgis.PyQt.QtCore import QPointF, Qt
-from qgis.PyQt.QtGui import QColor, QFont, QFontMetricsF, QPolygonF
+from qgis.PyQt.QtGui import QFont, QFontMetricsF, QPolygonF
 
 from . import legend as lg
 from . import symbology

@@ -1,5 +1,4 @@
 """Tilldelning av bestämmelser till ytor (lägga till, ändra, ta bort, flera per yta) – kräver QGIS."""
-import json
 import sys
 import unittest
 from pathlib import Path
@@ -8,12 +7,11 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from plan_case import HAVE_QGIS, INSIDE, LEFT, LINE_INSIDE, PLAN, RIGHT, PlanCase, filled, pick  # noqa: E402
+from plan_case import HAVE_QGIS, INSIDE, LEFT, PLAN, RIGHT, PlanCase, filled, pick  # noqa: E402
 
 if HAVE_QGIS:
     from qgis.core import QgsProject, QgsVectorLayer
-    from rita_detaljplan.core import assignments, model
-    from rita_detaljplan.core import catalog as cat
+    from rita_detaljplan.core import assignments
     from rita_detaljplan.core.assignments import AssignmentError
 
 UTNYTT = dict(layer="egenskap_yta", contains="byggnadsarea")

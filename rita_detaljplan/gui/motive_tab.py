@@ -3,7 +3,7 @@
 vid laga kraft (då blir tomma motiv gula), men kan fyllas i när som helst."""
 from __future__ import annotations
 
-from qgis.PyQt.QtCore import QObject, Qt, pyqtSignal
+from qgis.PyQt.QtCore import Qt, pyqtSignal
 from qgis.PyQt.QtWidgets import QLabel, QListWidget, QListWidgetItem, QPlainTextEdit, QVBoxLayout, QWidget
 
 from ..core import catalog as cat
