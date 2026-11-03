@@ -5,3 +5,6 @@ extend-exclude = ["dist", "floorplan", "exempel", "spec"]
 
 [lint]
 select = ["E9", "F"]
+# Oanvända importer och variabler (F401, F841) ger inga fel i körningen och rättas inte automatiskt: ett test kan ersätta ett
+# importerat namn. Resten av pyflakes (odefinierade namn, dubbla definitioner med mera) gäller.
+ignore = ["F401", "F841"]

@@ -74,7 +74,7 @@ Dessa inställningar kräver ägarens rättigheter och är ändringar i repots s
 | `test`, `test_invocation` | Ja | `tests\run_tests.bat` (Pythons `unittest` i QGIS Python), beskrivet i CONTRIBUTING |
 | `test_most`, `test_continuous_integration` | Delvis (SUGGESTED) | Testsviten är stor men kräver QGIS 4 och körs lokalt, inte på GitHub. Skriv det. |
 | `test_policy`, `tests_are_added`, `tests_documented_added` | Ja | CONTRIBUTING: *Ny funktion eller rättning ska ha ett test*. Exempel: fynd 6 i 0.1.75 har ett test. |
-| `warnings`, `warnings_fixed` | Efter push | ruff-kontrollen (`ruff.toml`, regler E9 och F) körs i `build-check.yml`. **Ej körd lokalt** (inget linterverktyg finns installerat här): första körningen på GitHub kan visa fynd som ska rättas. |
+| `warnings`, `warnings_fixed` | Efter push | ruff-kontrollen (`ruff.toml`, regler E9 och F utom oanvända importer och variabler) körs i `build-check.yml`. Första körningen 2026-11-03 gav bara fynd om oanvända importer och variabler; de ignoreras medvetet. |
 | `warnings_strict` | Delvis (SUGGESTED) | Reglerna är avsiktligt snäva (riktiga fel, inte stil). |
 
 ### Säkerhet
