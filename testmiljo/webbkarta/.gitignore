@@ -1,5 +1,0 @@
-.env
-pg_service.conf
-*.log
-build/
-__pycache__/

@@ -4,10 +4,10 @@ Formatet följer [Keep a Changelog](https://keepachangelog.com/sv/1.1.0/), versi
 
 ## Ej utgivet
 
-- **Mall för planmosaik i webbkarta** (`testmiljo/webbkarta/`, ingår inte i pluginet): visar alla antagna planer och
-  planer med laga kraft sida vid sida i en Origo-karta, direkt ur plandatabasen i PostGIS. En publiceringsvy och en
-  skrivskyddad databasroll ligger mellan planernas tabeller och webbtjänsterna. Samma data publiceras med GeoServer
-  (bild och vektorrutor) och QGIS Server så att de kan jämföras. Provad mot en riktig PostGIS-databas.
+- **Detaljplaner i en webbkarta (Origo)** finns nu som en egen lösning i repot
+  [rita-detaljplan-origomap](https://github.com/ritaplan/rita-detaljplan-origomap), för kommuner som vill visa planerna
+  ur PostGIS i sin Origo-karta: plankartor, en informationspanel med bestämmelser, motiv och handlingar, och
+  karttjänster med GeoServer eller QGIS Server. Ingår inte i pluginet.
 - **Installation via pluginkällan** (`plugins.xml`) fungerar nu. QGIS tar plugin-id:t ur `file_name` genom att klippa
   vid första punkten, så `rita_..-0.1.x.zip` blev id:t `rita_..-0` och installationen avbröts med "Could not store
   plugin to the plugin directory". Namnet är nu `<id>.<version>.zip`; nedladdningen är oförändrad. Rättat i
