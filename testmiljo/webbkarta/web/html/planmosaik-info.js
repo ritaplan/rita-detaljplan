@@ -443,6 +443,7 @@
   }
 
   function open() {
+    fitToFooter();
     panel.hidden = false;
     panel.classList.add('is-open');
   }
@@ -521,6 +522,12 @@
     toastTimer = setTimeout(function () { node.classList.remove('is-visible'); }, 2600);
   }
 
+  // Origos bottenlist (kartans namn, skala, koordinatsystem) ska inte täckas: panelen läggs ovanför den, vilken höjd den än har
+  function fitToFooter() {
+    var footer = document.querySelector('.o-footer');
+    document.documentElement.style.setProperty('--pm-footer', ((footer && footer.offsetHeight) || 28) + 'px');
+  }
+
   function init(v, opts) {
     viewer = v;
     options = opts || {};
@@ -539,6 +546,9 @@
       }
     });
     map.on('singleclick', onClick);
+    fitToFooter();
+    window.addEventListener('resize', fitToFooter);
+    setTimeout(fitToFooter, 1500); // bottenlisten byggs färdigt strax efter att kartan laddats
   }
 
   window.PlanMosaikInfo = { init: init };

@@ -7,10 +7,11 @@
   --pm-accent: #1c5fa8;
   --pm-accent-soft: #e8f1fb;
   --pm-here: #e8590c;
+  --pm-footer: 28px; /* höjden på Origos bottenlist: sätts av planmosaik-info.js så att panelen hamnar ovanför den */
 }
 
 .pm-panel {
-  position: fixed; z-index: 1500; top: 12px; bottom: 12px; left: 76px; width: 430px; max-width: calc(100vw - 88px);
+  position: fixed; z-index: 1500; top: 12px; bottom: calc(var(--pm-footer, 28px) + 12px); left: 76px; width: 430px; max-width: calc(100vw - 88px);
   display: flex; flex-direction: column; background: #fff; color: var(--pm-ink); border-radius: 16px;
   box-shadow: 0 12px 44px rgba(15, 23, 42, 0.28), 0 1px 3px rgba(15, 23, 42, 0.2);
   font: 15px/1.5 system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; outline: none;
@@ -112,14 +113,14 @@
 .pm-message { padding: 40px 28px; text-align: center; }
 .pm-message p { color: var(--pm-ink-2); }
 .pm-toast {
-  position: fixed; z-index: 1600; left: 50%; bottom: 28px; transform: translate(-50%, 20px); padding: 10px 18px; border-radius: 999px;
+  position: fixed; z-index: 1600; left: 50%; bottom: calc(var(--pm-footer, 28px) + 20px); transform: translate(-50%, 20px); padding: 10px 18px; border-radius: 999px;
   background: #1f2933; color: #fff; font: 14px system-ui, sans-serif; opacity: 0; pointer-events: none; transition: all 0.2s;
 }
 .pm-toast.is-visible { opacity: 1; transform: translate(-50%, 0); }
 
 /* smal skärm: panelen blir ett blad i nederkant */
 @media (max-width: 720px) {
-  .pm-panel { top: auto; left: 0; right: 0; bottom: 0; width: auto; max-width: none; max-height: 78vh; border-radius: 18px 18px 0 0;
+  .pm-panel { top: auto; left: 0; right: 0; bottom: var(--pm-footer, 28px); width: auto; max-width: none; max-height: calc(78vh - var(--pm-footer, 28px)); border-radius: 18px 18px 0 0;
     animation: pm-up 0.2s ease-out; }
   .pm-hero { border-radius: 18px 18px 0 0; padding: 18px 52px 14px 18px; }
   .pm-section { padding-left: 18px; padding-right: 18px; }
