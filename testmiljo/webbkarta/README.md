@@ -155,8 +155,10 @@ förnyas efter en minut, så en ny incheckning syns snart.
   ett lagernamn i tjänsten (då händer ingenting utan felmeddelande).
 - **QGIS Server och omgjorda vyer.** QGIS Server behåller anslutningar och metadata: efter att vyerna körts om
   (`publicering.sql`) ritar det inget förrän behållaren startats om (`docker restart planmosaik-qgis`).
-- **QGIS Servers `FILTER`.** Ett filter får inte innehålla `OR` eller funktioner (svaret blir 403). Skriptet för plankartor
-  filtrerar därför bara ytlagren.
+- **QGIS Servers `FILTER` läcker.** Ett filter (`FILTER=lager:"plan" = 'x'`) blir kvar i processens cachade projekt och
+  påverkar senare anrop: lagret kan då plötsligt vara tomt för alla besökare, tills tjänsten startas om (det syntes som att
+  användningsfärgerna försvann). Använd aldrig `FILTER` mot den publika tjänsten. `bygg_plankartor.py` startar en egen,
+  kortlivad QGIS Server för plankartorna. Ett filter får dessutom inte innehålla `OR` eller funktioner (svaret blir 403).
 - **Utbredning i GeoServer.** Cachen (vektorrutorna) ger 404 för rutor utanför lagergruppens utbredning, och den räknas ut
   första gången. Läggs en plan utanför den ritas den inte, och rutnätet ser ut att sakna rutor. Ange kommunens utbredning
   i `EXTENT` i `konfigurera_geoserver.py` (körs om, tömmer cachen).
