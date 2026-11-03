@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- Egenskapsytor (mönster). Samma utseende som QGIS-projektet (qgis/skapa_qgis_projekt.py) och Origo-stilen för vektorrutorna
-     (web/html/planmosaik.js): Boverkets färger, mönster och streckmönster, mått i pixlar. -->
+<!-- Egenskapsytor (mönster). Skriven av bygg_stilar.py ur stil.py: ändra där, inte här. Mått i pixlar, skalade efter kartskalan i band. -->
 <StyledLayerDescriptor version="1.0.0"
     xmlns="http://www.opengis.net/sld" xmlns:ogc="http://www.opengis.net/ogc"
     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
@@ -11,45 +10,90 @@
       <Title>Egenskapsytor (mönster)</Title>
       <FeatureTypeStyle>
         <Rule>
-          <Title>Prickmark: marken får inte förses med byggnad</Title>
+          <Title>prickmark 0-1500</Title>
           <ogc:Filter><ogc:PropertyIsEqualTo>
             <ogc:PropertyName>monster</ogc:PropertyName><ogc:Literal>prickmark</ogc:Literal>
           </ogc:PropertyIsEqualTo></ogc:Filter>
+          <MaxScaleDenominator>1500</MaxScaleDenominator>
           <PolygonSymbolizer>
             <Fill><GraphicFill><Graphic>
-              <Mark><WellKnownName>circle</WellKnownName>
-                <Fill><CssParameter name="fill">#000000</CssParameter></Fill></Mark>
-              <Size>2</Size>
+              <Mark><WellKnownName>circle</WellKnownName><Fill><CssParameter name="fill">#000000</CssParameter></Fill></Mark>
+              <Size>2.0</Size>
             </Graphic></GraphicFill></Fill>
-            <VendorOption name="graphic-margin">2.5</VendorOption>
+            <VendorOption name="graphic-margin">1.5</VendorOption>
           </PolygonSymbolizer>
         </Rule>
         <Rule>
-          <Title>Korsmark: marken får endast förses med viss typ av byggnadsverk</Title>
+          <Title>prickmark 1500-3000</Title>
+          <ogc:Filter><ogc:PropertyIsEqualTo>
+            <ogc:PropertyName>monster</ogc:PropertyName><ogc:Literal>prickmark</ogc:Literal>
+          </ogc:PropertyIsEqualTo></ogc:Filter>
+          <MinScaleDenominator>1500</MinScaleDenominator>
+          <MaxScaleDenominator>3000</MaxScaleDenominator>
+          <PolygonSymbolizer>
+            <Fill><GraphicFill><Graphic>
+              <Mark><WellKnownName>circle</WellKnownName><Fill><CssParameter name="fill">#000000</CssParameter></Fill></Mark>
+              <Size>1.2</Size>
+            </Graphic></GraphicFill></Fill>
+            <VendorOption name="graphic-margin">1.5</VendorOption>
+          </PolygonSymbolizer>
+        </Rule>
+        <Rule>
+          <Title>korsmark 0-1500</Title>
           <ogc:Filter><ogc:PropertyIsEqualTo>
             <ogc:PropertyName>monster</ogc:PropertyName><ogc:Literal>korsmark</ogc:Literal>
           </ogc:PropertyIsEqualTo></ogc:Filter>
+          <MaxScaleDenominator>1500</MaxScaleDenominator>
           <PolygonSymbolizer>
             <Fill><GraphicFill><Graphic>
-              <Mark><WellKnownName>cross</WellKnownName>
-                <Stroke><CssParameter name="stroke">#000000</CssParameter><CssParameter name="stroke-width">1</CssParameter></Stroke></Mark>
-              <Size>5</Size>
+              <Mark><WellKnownName>cross</WellKnownName><Stroke><CssParameter name="stroke">#000000</CssParameter><CssParameter name="stroke-width">0.6</CssParameter></Stroke></Mark>
+              <Size>4.5</Size>
             </Graphic></GraphicFill></Fill>
-            <VendorOption name="graphic-margin">4</VendorOption>
+            <VendorOption name="graphic-margin">2.0</VendorOption>
           </PolygonSymbolizer>
         </Rule>
         <Rule>
-          <Title>Ringprickad mark: marken får endast förses med byggnadsverk under mark</Title>
+          <Title>korsmark 1500-3000</Title>
+          <ogc:Filter><ogc:PropertyIsEqualTo>
+            <ogc:PropertyName>monster</ogc:PropertyName><ogc:Literal>korsmark</ogc:Literal>
+          </ogc:PropertyIsEqualTo></ogc:Filter>
+          <MinScaleDenominator>1500</MinScaleDenominator>
+          <MaxScaleDenominator>3000</MaxScaleDenominator>
+          <PolygonSymbolizer>
+            <Fill><GraphicFill><Graphic>
+              <Mark><WellKnownName>cross</WellKnownName><Stroke><CssParameter name="stroke">#000000</CssParameter><CssParameter name="stroke-width">0.5</CssParameter></Stroke></Mark>
+              <Size>2.12</Size>
+            </Graphic></GraphicFill></Fill>
+            <VendorOption name="graphic-margin">1.5</VendorOption>
+          </PolygonSymbolizer>
+        </Rule>
+        <Rule>
+          <Title>ringprickad 0-1500</Title>
           <ogc:Filter><ogc:PropertyIsEqualTo>
             <ogc:PropertyName>monster</ogc:PropertyName><ogc:Literal>ringprickad</ogc:Literal>
           </ogc:PropertyIsEqualTo></ogc:Filter>
+          <MaxScaleDenominator>1500</MaxScaleDenominator>
           <PolygonSymbolizer>
             <Fill><GraphicFill><Graphic>
-              <Mark><WellKnownName>circle</WellKnownName>
-                <Stroke><CssParameter name="stroke">#000000</CssParameter><CssParameter name="stroke-width">0.8</CssParameter></Stroke></Mark>
-              <Size>4</Size>
+              <Mark><WellKnownName>circle</WellKnownName><Stroke><CssParameter name="stroke">#000000</CssParameter><CssParameter name="stroke-width">0.7</CssParameter></Stroke></Mark>
+              <Size>4.0</Size>
             </Graphic></GraphicFill></Fill>
-            <VendorOption name="graphic-margin">4.5</VendorOption>
+            <VendorOption name="graphic-margin">2.25</VendorOption>
+          </PolygonSymbolizer>
+        </Rule>
+        <Rule>
+          <Title>ringprickad 1500-3000</Title>
+          <ogc:Filter><ogc:PropertyIsEqualTo>
+            <ogc:PropertyName>monster</ogc:PropertyName><ogc:Literal>ringprickad</ogc:Literal>
+          </ogc:PropertyIsEqualTo></ogc:Filter>
+          <MinScaleDenominator>1500</MinScaleDenominator>
+          <MaxScaleDenominator>3000</MaxScaleDenominator>
+          <PolygonSymbolizer>
+            <Fill><GraphicFill><Graphic>
+              <Mark><WellKnownName>circle</WellKnownName><Stroke><CssParameter name="stroke">#000000</CssParameter><CssParameter name="stroke-width">0.5</CssParameter></Stroke></Mark>
+              <Size>1.89</Size>
+            </Graphic></GraphicFill></Fill>
+            <VendorOption name="graphic-margin">1.5</VendorOption>
           </PolygonSymbolizer>
         </Rule>
       </FeatureTypeStyle>

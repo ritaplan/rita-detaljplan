@@ -205,7 +205,7 @@
       "layerURL": "plan_anvandning,plan_egenskap,plan_gransar/{z}/{x}/{y}",
       "style": "planmosaik",
       "visible": false,
-      "queryable": true,
+      "queryable": false,
       "attributes": [
         {
           "name": "plan_namn",

@@ -42,8 +42,9 @@ Rita Detaljplan ──checka in──▶ PostGIS: schemat med planerna (till exe
 | `publicering_roll.sh` | Skapar läsrollen `karta_ro` med slumpat lösenord i `.env`. |
 | `forbered.sh` | Slumpar GeoServers adminlösenord och skriver `qgis/pg_service.conf` ur `.env`. |
 | `docker-compose.yml` | De fyra behållarna: GeoServer, QGIS Server, Martin och nginx. |
-| `geoserver/` | `konfigurera_geoserver.py` (REST-anrop: lager, lagergrupp och stilar) och stilarna `plan_*.sld`. |
-| `qgis/skapa_qgis_projekt.py` | Skapar QGIS-projektet som QGIS Server publicerar, ritat med pluginets egen symbologi. Behöver `symbology.py` och stilbiblioteket ur pluginet (se skriptets huvud). |
+| `stil.py` | Planens utseende på ett ställe: mått för gränslinjer och mönster vid olika kartskalor (se "Skala" nedan). |
+| `geoserver/` | `konfigurera_geoserver.py` (REST-anrop: lager, lagergrupp och stilar), `bygg_stilar.py` (skriver de skalberoende stilarna ur `stil.py`) och stilarna `plan_*.sld`. |
+| `qgis/skapa_qgis_projekt.py` | Skapar QGIS-projektet som QGIS Server publicerar, ritat enligt `stil.py`. |
 | `web/nginx.conf` | Vidarebefordran till de tre tjänsterna. GeoServers administration släpps inte ut. |
 | `web/html/` | Origo-kartan: `index.json` (innehållet), `planmosaik.js` (planens stil för vektorrutorna), `index.html`. |
 | `hamta_origo.sh` | Hämtar Origos färdiga filer (`js/`, `css/`, `img/`) från GitHub. |
@@ -60,8 +61,8 @@ anslutningar från behållarna, och här kräver den SSL (`sslmode=require` är 
    koordinatsystemets EPSG-kod), sedan `sh publicering_roll.sh`.
 2. **Hemligheter och filer.** `sh forbered.sh`
 3. **Origo.** `sh hamta_origo.sh`. Skriver inte över `index.html`, `index.json` eller `planmosaik.js`.
-4. **QGIS-projektet.** Kopiera `rita_detaljplan/core/symbology.py` och `rita_detaljplan/data/styles/detaljplaner-bfs-2020-6.xml`
-   till `qgis/`. Kommandot står överst i `qgis/skapa_qgis_projekt.py` (ange EPSG-koden sist).
+4. **QGIS-projektet.** Kopiera `stil.py` till `qgis/` (behållaren ser bara den mappen). Kommandot står överst i
+   `qgis/skapa_qgis_projekt.py` (ange EPSG-koden sist).
 5. **Starta.** `docker compose up -d`, sedan `python3 geoserver/konfigurera_geoserver.py`.
 6. **Publicera.** `sudo sh nginx-host/installera.sh` lägger in `/planmosaik/` i värdens nginx (säkerhetskopia, `nginx -t`
    och automatisk återställning om det misslyckas).
@@ -78,6 +79,21 @@ docker compose down -v          # behållarna och GeoServers data
 
 I databasen: `DROP SCHEMA publicering CASCADE; DROP ROLE karta_ro;` (och `DROP SCHEMA detaljplaner_test CASCADE;` om
 du skapade testschemat). Radera sedan mappen.
+
+## Skala
+
+Linjer och mönster har **fast referensskala 1:1000**, som i Rita Detaljplan: mått anges vid den skalan och blir
+proportionellt mindre när man zoomar ut, i stället för att ligga kvar i samma pixelbredd och täcka planen. En skärm har en
+minsta pixelstorlek, så två saker skiljer från en plankarta på papper:
+
+- En linje blir aldrig smalare än sin minsta bredd (planområdesgränsen 1 px), och streckmönstret byts mot en heldragen
+  linje när luckorna blir för små.
+- Gränser och mönster som blivit för små ritas inte alls: egenskapsgränser försvinner vid ungefär 1:6000,
+  användningsgränser vid 1:12000 och mönster (prickmark, korsmark) vid 1:3300. Kvar blir färgen och planområdesgränsen.
+
+Skalan delas i band och alla tre varianterna räknar likadant (`stil.py`; Origo-stilen i `web/html/planmosaik.js` har
+samma tal i en tabell: ändra båda). GeoServers stilar skrivs om med `python geoserver/bygg_stilar.py` och
+`python3 geoserver/konfigurera_geoserver.py`. QGIS-projektet byggs om med skriptet i `qgis/`.
 
 ## Bild eller vektor?
 
@@ -103,6 +119,9 @@ Martin är alltså vektoralternativet i den här miljön. Det är det som skalar
   zoomnivå 17) och planerna flyttar sig när man zoomar. Använd exakta värden: `156543.03392804097 / 2^zoom`.
 - **Databasanslutningar.** Martin tar som standard 20 anslutningar, GeoServer upp till 10. Sätt `pool_size` (Martin) och
   `max connections` (GeoServer), och en anslutningsgräns på rollen, annars blir det `too many connections`.
+- **Origo och vektorrutor.** Origo 2.10 kan rita vektorrutor men inte fråga dem: en träff på en MVT-yta ger ett fel
+  (`getGeometryName is not a function`). Martin-lagret är därför inte frågbart, och klick på planen ger ingen ruta när
+  bara Martin är påslaget (GeoServer- och QGIS Server-lagren ger plandata vid klick).
 - **Origo.**
   - Det färdiga bygget saknar tillägget `olms` (MapLibre-stilar). Därför har vektorrutorna en egen stil i `planmosaik.js`.
   - `extent` i `index.json` måste vara hela projektionens utbredning. Origo bygger rutnätet av den.
