@@ -167,8 +167,8 @@ Testerna kräver bara QGIS och Pythons `unittest`.
   alla som uppdaterar via pluginkällan. Skyddet är kontot på GitHub. Läget 2026-11-03 (kontrollerat via GitHubs API): en regel för `main` stoppar radering och tvångspush, GitHubs
   hemlighetsskanning och Dependabot-varningar är på, privat rapportering av sårbarheter är på och organisationen kräver
   tvåfaktorsinloggning. Regeln kräver varken pull request eller gröna kontroller, eftersom underhållaren pushar direkt till
-  `main`. Push-skyddet, som stoppar en push som innehåller en hemlighet, var vid kontrollen inte påslaget (se
-  [Rekommendationer](#rekommendationer-för-en-organisation)).
+  `main`. Push-skyddet, som stoppar en push som innehåller en hemlighet, är påslaget (2026-11-03). Samma inställningar gäller
+  organisationens övriga repon, bland annat webbkartan [rita-detaljplan-origomap](https://github.com/ritaplan/rita-detaljplan-origomap).
 - Pluginet är **inte** publicerat i QGIS officiella pluginarkiv och har därför inte genomgått dess granskning.
 
 ## Fynd

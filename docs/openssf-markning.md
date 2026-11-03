@@ -25,7 +25,7 @@ Dessa inställningar kräver ägarens rättigheter. Läget kontrollerades via Gi
 | Inställning | Var | Varför |
 | --- | --- | --- |
 | Hemlighetsskanning (*Secret Protection*) | *Settings → Advanced Security* | **På.** Krav `no_leaked_credentials`. Gratis för publika repon. |
-| Push-skydd (*Push protection*) | samma sida, under Secret Protection | **Ej påslaget vid kontrollen.** Stoppar att en nyckel checkas in av misstag. |
+| Push-skydd (*Push protection*) | samma sida, under Secret Protection | **På** (påslaget 2026-11-03). Stoppar att en nyckel checkas in av misstag. |
 | Dependabot-varningar | samma sida | **På.** Meddelar om Actions med kända sårbarheter. |
 | Skyddad `main` | *Settings → Rules → Rulesets* | **På** (regeln *Protect main*, aktiv): stoppar radering och tvångspush. Kräver varken pull request eller gröna kontroller, eftersom underhållaren pushar direkt till `main`. |
 | Tvåfaktorsinloggning | Organisationen *ritaplan* | **Krävs av organisationen.** Skyddar pluginkällan som läses direkt från `main` (se [Leveranskedja](sakerhet.md#leveranskedja-och-distribution)). |
@@ -86,7 +86,7 @@ Dessa inställningar kräver ägarens rättigheter. Läget kontrollerades via Gi
 | `crypto_*` (published, call, floss, keylength, working, weaknesses, pfs, password_storage, random) | N/A | Pluginet har ingen egen kryptografi: all kryptering (https, databasanslutning) sköts av QGIS/Qt, och lösenord lagras av QGIS autentiseringsdatabas. |
 | `delivery_mitm`, `delivery_unsigned` | Ja | Allt hämtas över https från GitHub. Ingen kontrollsumma hämtas över http. |
 | `vulnerabilities_fixed_60_days`, `vulnerabilities_critical_fixed` | Ja | Inga kända öppna sårbarheter över 60 dagar (fynd i [sakerhet.md](sakerhet.md): bara informativa kvar). |
-| `no_leaked_credentials` | Ja | Hemlighetsskanning är på; GitHub söker igenom hela historiken. Slå också på push-skydd (se ovan). |
+| `no_leaked_credentials` | Ja | Hemlighetsskanning är på; GitHub söker igenom hela historiken. Push-skyddet är också på. |
 
 ### Analys
 
