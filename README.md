@@ -91,6 +91,7 @@ Fler detaljer, steg för steg: [Användarhandbok](docs/anvandning.md), även på
 
 - [ritaplan.xyz](https://ritaplan.xyz): webbsidan om Rita-pluginen
 - [Användarhandbok](docs/anvandning.md): steg för steg genom alla moment och verktyg
+- [Detaljplaner i en webbkarta (Origo)](https://github.com/ritaplan/rita-detaljplan-origomap): visa kommunens planer ur PostGIS i en Origo-karta, med plankarta, bestämmelser, motiv och handlingar
 - [Kända begränsningar](docs/kanda-begransningar.md): vad som inte är provat eller saknas
 - [Regler från Lantmäteriets vägledning](docs/ngp-regler.md): underlag för kontrollen och exporten
 - [Säkerhetsbeskrivning](docs/sakerhet.md): vad pluginet gör, vilka data som rör sig vart och vad som är granskat
