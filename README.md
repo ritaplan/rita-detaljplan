@@ -12,6 +12,9 @@ och Boverkets planbestämmelsekatalog, kontrollera dem mot Lantmäteriets regler
 
 **Webbsida:** [ritaplan.xyz](https://ritaplan.xyz), om Rita-pluginen.
 
+**Tagga planbeskrivningen utan QGIS:** [ritaplan.xyz/tagga.html](https://ritaplan.xyz/tagga.html) är samma taggningsprogram som en
+webbsida. Du behöver varken QGIS eller någon installation, och dina filer lämnar aldrig datorn (förhandsversion).
+
 Öppen källkod, [GPL-2.0-or-later](LICENSE). Gränssnittet är på svenska.
 
 Läs [Kända begränsningar](docs/kanda-begransningar.md) innan du använder pluginet till något viktigt, och rapportera
@@ -40,7 +43,7 @@ gärna fel under [Issues](https://github.com/ritaplan/rita-detaljplan/issues).
 - **Taggar planbeskrivningen** (Word) enligt Boverkets föreskrifter BFS 2020:8 och Lantmäteriets Planbeskrivning 2.0:
   tema, grupp och undergrupp för varje avsnitt, motiv kopplade till planens bestämmelser, kontroll av det obligatoriska
   innehållet och en leverans- och granskningskopia av dokumentet. Knappen *Tagga planbeskrivning* öppnar programmet, som
-  också går att köra fristående utan QGIS. Originalet ändras aldrig.
+  också finns som [webbsida utan QGIS](https://ritaplan.xyz/tagga.html). Originalet ändras aldrig.
 - **Skapar detaljplanens teckenförklaring** i QGIS layoutläge (rubriker, färgrutor, mönster, genomförandetid), med
   inställningar för teckensnitt, storlekar och avstånd, och en **exempellayout för plankartan** (karta, norrpil,
   skalstock och titelruta på A2) att utgå från.
@@ -91,6 +94,7 @@ Fler detaljer, steg för steg: [Användarhandbok](docs/anvandning.md), även på
 
 - [ritaplan.xyz](https://ritaplan.xyz): webbsidan om Rita-pluginen
 - [Användarhandbok](docs/anvandning.md): steg för steg genom alla moment och verktyg
+- [Tagga planbeskrivning i webbläsaren](https://ritaplan.xyz/tagga.html): taggningen som webbsida, utan QGIS och utan installation, med ett exempel att prova
 - [Detaljplaner i en webbkarta (Origo)](https://github.com/ritaplan/rita-detaljplan-origomap): visa kommunens planer ur PostGIS i en Origo-karta, med plankarta, bestämmelser, motiv och handlingar
 - [Detaljplaner i Hajk](https://github.com/ritaplan/rita-detaljplan-hajk): samma panel som ett plugin för Hajk 4, med inställningssida i Hajk Admin
 - [Kända begränsningar](docs/kanda-begransningar.md): vad som inte är provat eller saknas

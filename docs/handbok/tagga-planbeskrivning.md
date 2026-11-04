@@ -13,9 +13,17 @@ bestämmelser.
 Klicka på **Tagga planbeskrivning** (dokumentet med en etikett) i verktygsfältet. Programmet öppnas i ett eget fönster
 med den aktiva planen vald. Knappen är grå tills planområdet är ritat.
 
-Programmet går också att köra fristående, utan QGIS. Då väljer du plankartan som ett QGIS-projekt, en GeoPackage eller en
-JSON-leverans (`.json`) i Lantmäteriets format. En JSON-leverans saknar planens beteckningar (e1, a1 …), så programmet
-kopplar motiven till bestämmelserna på deras text. Står bara beteckningen i planbeskrivningen kan du koppla motivet själv.
+## Utan QGIS: i webbläsaren
+
+Programmet finns också som webbsida på **[ritaplan.xyz/tagga.html](https://ritaplan.xyz/tagga.html)**. Du behöver varken QGIS
+eller någon installation, och **dina filer lämnar aldrig datorn**: sidan läser dem själv i webbläsaren, och originalet
+ändras aldrig. Det är samma kod och samma fyra steg som i QGIS. Knappen *Prova med exemplet kv. Lärkan* öppnar en påhittad
+plan, om du vill se hur det fungerar först. Webbsidan är en förhandsversion.
+
+Som plankarta väljer du en GeoPackage (`.gpkg`) eller en JSON-leverans (`.json`) i Lantmäteriets format. Ett QGIS-projekt
+(`.qgz`) går inte, eftersom webbläsaren inte kommer åt filerna det pekar på. En JSON-leverans saknar planens beteckningar
+(e1, a1 …), så programmet kopplar motiven till bestämmelserna på deras text. Står bara beteckningen i planbeskrivningen kan
+du koppla motivet själv.
 
 ## De fyra stegen
 
