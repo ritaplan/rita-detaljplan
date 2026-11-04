@@ -4,6 +4,14 @@ Formatet följer [Keep a Changelog](https://keepachangelog.com/sv/1.1.0/), versi
 
 ## Ej utgivet
 
+- **Tagga planbeskrivning som webbsida:** programmet finns nu också på [ritaplan.xyz/tagga.html](https://ritaplan.xyz/tagga.html),
+  utan QGIS och utan installation. Planbeskrivningen och plankartan läses i webbläsaren och lämnar aldrig datorn. Samma kod
+  körs i webbläsaren (Pyodide); gränssnittet mot kärnan ligger i `rita_detaljplan/planbeskrivning/pbweb/` och
+  `tools/bygg_webbkarna.py` paketerar kärnan för sidan. Förhandsversion.
+- **Plankartan som JSON-leverans:** det fristående taggningsprogrammet läser nu också en leverans i Lantmäteriets JSON-format
+  (detaljplan 4.1, `.json`) som plankarta, från Rita Detaljplan eller ett annat verktyg. Leveransen har inga beteckningar
+  (e1, a1 …), så motiven matchas på bestämmelsens text. Raden *Till Rita Detaljplan* i exportsteget är borttagen i
+  fristående läge, eftersom pluginet ännu inte kan läsa in utbytesfilen.
 - **Detaljplaner i en webbkarta (Origo)** finns nu som en egen lösning i repot
   [rita-detaljplan-origomap](https://github.com/ritaplan/rita-detaljplan-origomap), för kommuner som vill visa planerna
   ur PostGIS i sin Origo-karta: plankartor, en informationspanel med bestämmelser, motiv och handlingar, och
