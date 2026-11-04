@@ -1,3 +1,4 @@
+import json
 import sys
 import tempfile
 import unittest
@@ -86,6 +87,40 @@ class JsonDeliveryTest(unittest.TestCase):
                 pk.read_plankarta(path)
             self.assertIn(part, str(context.exception))
         self.assertEqual(geo.read_karta(self.folder / "a.json").bounds(), None)
+
+    def test_a_malformed_delivery_gives_a_message_and_not_an_error_in_the_program(self):
+        """Avsiktligt eller av misstag felaktiga filer: en lista högst upp, id som listor, objekt som inte är objekt och
+        tusentals nivåer nästlade listor ska ge ett PlankartaError (och en tom karta), aldrig ett TypeError eller liknande."""
+        plan_id = "7f3c2b10-5d4e-4a8b-9c21-0e6f3d2ba91e"
+        exempel = {
+            "lista.json": "[1, 2, 3]",
+            "tom.json": "{}",
+            "id_som_lista.json": json.dumps({"type": "FeatureCollection", "features": [
+                {"type": "Feature", "properties": {"feature:typ": "detaljplan", "objektidentitet": ["x"]}}]}),
+            "formulering_som_lista.json": json.dumps({"type": "FeatureCollection", "features": [
+                {"type": "Feature", "properties": {"feature:typ": "detaljplan", "objektidentitet": plan_id}},
+                {"type": "Feature", "properties": {"feature:typ": "användningsbestämmelse", "objektidentitet": "b1",
+                                                   "detaljplan": plan_id, "bestammelseformulering": ["a"],
+                                                   "planbestammelsekatalogreferens": {"x": 1}}}]}),
+            "objekt_som_siffror.json": json.dumps({"type": "FeatureCollection", "features": [1, "a", None, [2]]}),
+            "geometri_som_text.json": json.dumps({"type": "FeatureCollection", "features": [
+                {"type": "Feature", "properties": {"feature:typ": "detaljplan", "objektidentitet": plan_id,
+                                                   "plangeometri": "inte en lista"}},
+                {"type": "Feature", "properties": {"feature:typ": "användningsbestämmelse", "objektidentitet": "b1",
+                                                   "detaljplan": plan_id, "bestammelseformulering": "Park",
+                                                   "bestammelsegeometri": [{"geometri": {"position": {"type": "Polygon",
+                                                                                                      "coordinates": "x"}}}]}}]}),
+            "for_djup.json": "[" * 200000 + "]" * 200000,
+        }
+        for namn, text in exempel.items():
+            with self.subTest(namn):
+                path = self.folder / namn
+                path.write_text(text, encoding="utf-8")
+                try:
+                    pk.read_plankarta(path)
+                except pk.PlankartaError:
+                    pass  # ett felmeddelande, som det ska vara (en läsbar fil som geometri_som_text får gärna gå igenom)
+                self.assertIsNone(geo.read_karta(path, plan_id).bounds())
 
     def test_the_session_loads_it_like_any_other_plankarta(self):
         from rita_detaljplan.planbeskrivning.pbapp import session as ss

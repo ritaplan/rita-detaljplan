@@ -2,16 +2,19 @@
 
 Formatet följer [Keep a Changelog](https://keepachangelog.com/sv/1.1.0/), versionsnumren [Semantic Versioning](https://semver.org/lang/sv/).
 
-## Ej utgivet
+## [0.1.76] – Tagga planbeskrivning på webben
 
 - **Tagga planbeskrivning som webbsida:** programmet finns nu också på [ritaplan.xyz/tagga.html](https://ritaplan.xyz/tagga.html),
   utan QGIS och utan installation. Planbeskrivningen och plankartan läses i webbläsaren och lämnar aldrig datorn. Samma kod
   körs i webbläsaren (Pyodide); gränssnittet mot kärnan ligger i `rita_detaljplan/planbeskrivning/pbweb/` och
-  `tools/bygg_webbkarna.py` paketerar kärnan för sidan. Förhandsversion.
+  `tools/bygg_webbkarna.py` paketerar kärnan för sidan. Python-laddaren (Pyodide) hämtas från ett publikt nätverk och är
+  låst med en kontrollsumma (SRI). Förhandsversion.
 - **Plankartan som JSON-leverans:** det fristående taggningsprogrammet läser nu också en leverans i Lantmäteriets JSON-format
   (detaljplan 4.1, `.json`) som plankarta, från Rita Detaljplan eller ett annat verktyg. Leveransen har inga beteckningar
   (e1, a1 …), så motiven matchas på bestämmelsens text. Raden *Till Rita Detaljplan* i exportsteget är borttagen i
-  fristående läge, eftersom pluginet ännu inte kan läsa in utbytesfilen.
+  fristående läge, eftersom pluginet ännu inte kan läsa in utbytesfilen. En trasig eller avsiktligt felaktig fil (en lista
+  högst upp, id som listor, tusentals nivåer nästlade listor) ger ett felmeddelande, inte ett fel i programmet; täckt av
+  ett test.
 - **Detaljplaner i en webbkarta (Origo)** finns nu som en egen lösning i repot
   [rita-detaljplan-origomap](https://github.com/ritaplan/rita-detaljplan-origomap), för kommuner som vill visa planerna
   ur PostGIS i sin Origo-karta: plankartor, en informationspanel med bestämmelser, motiv och handlingar, och

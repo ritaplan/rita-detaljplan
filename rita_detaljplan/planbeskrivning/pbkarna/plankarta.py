@@ -157,10 +157,10 @@ def load_json(path: str | Path) -> dict:
         raise PlankartaError(f"Filen finns inte: {path}")
     try:
         data = json.loads(path.read_text(encoding="utf-8-sig"))
-    except (OSError, UnicodeDecodeError, ValueError) as exc:
-        raise PlankartaError(f"{path.name} går inte att läsa som JSON: {exc}") from exc
+    except (OSError, UnicodeDecodeError, ValueError, RecursionError) as exc:  # RecursionError: tusentals nivåer nästlade listor
+        raise PlankartaError(f"{path.name} går inte att läsa som JSON: {exc.__class__.__name__}") from exc
     features = data.get("features") if isinstance(data, dict) else None
-    if data.get("type") != "FeatureCollection" or not isinstance(features, list):
+    if not isinstance(data, dict) or data.get("type") != "FeatureCollection" or not isinstance(features, list):
         raise PlankartaError(f"{path.name} är ingen leverans av en detaljplan (en FeatureCollection saknas).")
     return data
 
@@ -193,11 +193,7 @@ def json_kind(properties: dict) -> str:
     return "egenskap_yta"
 
 
-def read_json(path: str | Path) -> list[Plan]:
-    """Planerna i en leverans i Lantmäteriets JSON-format, t.ex. från Rita Detaljplan eller ett annat verktyg. Samma
-    bestämmelse på flera ytor blir *en* ``Provision``, som vid en GeoPackage. Leveransen har inga beteckningar (e1, a1 …):
-    de finns bara i pluginets egna tabeller, så ``label`` är tom."""
-    path = Path(path)
+def _read_json(path: Path) -> list[Plan]:
     plan_rows, rules = json_features(load_json(path))
     if not plan_rows:
         raise PlankartaError(f"{path.name} har inget detaljplanobjekt.")
@@ -236,6 +232,25 @@ def read_json(path: str | Path) -> list[Plan]:
     for plan in plans.values():
         plan.provisions.sort(key=lambda p: (_KIND_ORDER.get(plan.kinds.get(p.key), 9), p.label.lower(), p.text.lower()))
     return list(plans.values())
+
+
+# Fel som en avsiktligt eller av misstag felaktig leverans kan ge (ett id som är en lista, en plats där det skulle stå en
+# ordbok, för djup nästling): de blir ett felmeddelande i stället för ett fel i programmet.
+_TRASIG_JSON = (TypeError, AttributeError, KeyError, IndexError, ValueError, RecursionError)
+
+
+def read_json(path: str | Path) -> list[Plan]:
+    """Planerna i en leverans i Lantmäteriets JSON-format, t.ex. från Rita Detaljplan eller ett annat verktyg. Samma
+    bestämmelse på flera ytor blir *en* ``Provision``, som vid en GeoPackage. Leveransen har inga beteckningar (e1, a1 …):
+    de finns bara i pluginets egna tabeller, så ``label`` är tom. Kastar ``PlankartaError`` om filen inte går att tolka."""
+    path = Path(path)
+    try:
+        return _read_json(path)
+    except PlankartaError:
+        raise
+    except _TRASIG_JSON as exc:
+        raise PlankartaError(f"{path.name} har en uppbyggnad som programmet inte förstår ({exc.__class__.__name__}). Är det en "
+                             "leverans enligt detaljplan 4.1?") from exc
 
 
 def _project_xml(path: Path) -> str:

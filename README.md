@@ -28,6 +28,10 @@ gärna fel under [Issues](https://github.com/ritaplan/rita-detaljplan/issues).
   <img src="docs/images/plankarta-bord.jpg" alt="Rita Detaljplan: en färdig plankarta med teckenförklaring, utskriven i A2 och liggande på ett bord" width="720">
 </p>
 
+<p align="center">
+  <a href="https://ritaplan.xyz/tagga.html"><img src="docs/images/tagga-webb.png" alt="Tagga planbeskrivningen direkt i webbläsaren, på ritaplan.xyz/tagga.html: utan QGIS och utan installation, dina filer lämnar aldrig datorn. Bilden visar steget Motiv, där motiven kopplas till planens bestämmelser, med en karta över var bestämmelsen gäller." width="720"></a>
+</p>
+
 ## Vad pluginet gör
 
 - **Ritar planen i hierarki:** planområde → användning → egenskap, med snappning, fyllverktyg och regler som håller ytorna

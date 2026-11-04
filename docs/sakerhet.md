@@ -8,6 +8,13 @@ som inte är det. Rapportera säkerhetsbrister enligt [SECURITY.md](../SECURITY.
 0.1.75: sökningarna nedan kördes om över hela koden, och filhanteringen i det som tillkommit sedan 0.1.44
 (taggningsprogrammet `planbeskrivning/`, arkivpaketet `core/archive.py`) lästes igenom.
 
+**Version 0.1.76 är inte genomgången på nytt.** Den lägger till att taggningsprogrammet kan läsa en JSON-leverans som
+plankarta (filen läses med Pythons `json`, tolkas bara som text och tal och ger ett felmeddelande om den är felaktig;
+ett test täcker lista högst upp, id som listor och för djup nästling), och ett gränssnitt (`planbeskrivning/pbweb/`) för
+webbsidan ritaplan.xyz/tagga.html som pluginet självt inte använder. Webbsidan ingår inte i pluginet och omfattas inte av
+det här dokumentet: den kör programmets kod i webbläsaren med Pyodide, som hämtas från cdn.jsdelivr.net (laddarfilen är
+låst med en kontrollsumma, de övriga delarna inte), och skickar inga filer vidare.
+
 ## Läs det här först: vad dokumentet är och inte är
 
 - Pluginet är skrivet med AI-stöd och underhålls av en enskild person på fritiden. Det är en experimentell
@@ -253,6 +260,8 @@ utanför det här dokumentet.
 - QGIS och GDAL:s egna sårbarheter, till exempel vid inläsning av hotfyllda filer, bedöms inte här.
 - Dataskydd (GDPR) bedöms inte, förutom att fynd 2 pekar på att användarnamn kan lagras.
 - Tillgänglighet, drift och support.
+- Webbsidan ritaplan.xyz/tagga.html (se Omfattning ovan): den är en egen leverans med egna beroenden (Pyodide från ett
+  publikt nätverk) och är inte granskad här.
 
 ## Rekommendationer för en organisation
 

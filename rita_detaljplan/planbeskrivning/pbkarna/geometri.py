@@ -164,7 +164,7 @@ def shape_of_json(descriptions) -> Optional[Shape]:
     return Shape(parts, closed) if parts else None
 
 
-def read_karta_json(path: str | Path, plan_id: Optional[str] = None) -> Karta:
+def _read_karta_json(path: str | Path, plan_id: Optional[str] = None) -> Karta:
     """Ytorna (och planområdet) i en leverans i Lantmäteriets JSON-format. Varje bestämmelseobjekt har sin egen
     geometri, så ``areas`` har en post per bestämmelseobjekt (nyckeln är dess ``objektidentitet``). Går filen inte att
     läsa blir kartan tom, inget fel."""
@@ -191,6 +191,14 @@ def read_karta_json(path: str | Path, plan_id: Optional[str] = None) -> Karta:
         karta.areas[ident] = shape
         karta.layer_of[ident] = plankarta.json_kind(properties)
     return karta
+
+
+def read_karta_json(path: str | Path, plan_id: Optional[str] = None) -> Karta:
+    """Som ``_read_karta_json``, men en fil som inte går att tolka (också en avsiktligt felaktig) ger en tom karta."""
+    try:
+        return _read_karta_json(path, plan_id)
+    except (TypeError, AttributeError, KeyError, IndexError, ValueError, RecursionError):
+        return Karta()
 
 
 def read_karta(path: str | Path, plan_id: Optional[str] = None) -> Karta:
