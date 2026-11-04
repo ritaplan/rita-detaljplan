@@ -67,6 +67,16 @@ Pluginet har automatiska tester (se [Utveckling](utveckling.md)), men flera dela
   eget; det är inte provat mot Lantmäteriets validering att bokmärkena ligger inuti varandra. En motivrubrik som skrivits
   på ett annat sätt känns igen om den liknar de vanliga (*Motiv*, *Motiveringar*, *Skäl till bestämmelserna* …);
   annars väljer du temat för rubriken i listan. Specifikationen kräver inte den avgränsningen.
+- **Tagga planbeskrivning utan QGIS** (webbsidan [ritaplan.xyz/tagga.html](https://ritaplan.xyz/tagga.html) och det
+  fristående programmet). Plankartan kan vara en GeoPackage eller en JSON-leverans (detaljplan 4.1), också från ett annat
+  verktyg. En JSON-leverans saknar planens beteckningar (e1, a1 …), så motiven matchas mot bestämmelserna på deras text,
+  vilket ger färre automatiska träffar; resten kopplar du själv. Ett QGIS-projekt (`.qgz`) går inte att öppna på
+  webbsidan, eftersom webbläsaren inte kommer åt filerna det pekar på, och en plan som ligger i PostGIS kan inte läsas
+  utan QGIS: exportera den till en GeoPackage eller en JSON-leverans. Webbsidan är en **förhandsversion**: den är provad i
+  Edge (Chromium) mot en riktig planbeskrivning och ett exempel, **att de taggade kopiorna öppnas i Word är inte provat**,
+  och sidan hämtar Pythons motor (Pyodide) från ett publikt nätverk (laddarfilen är låst med en kontrollsumma). Raden för
+  att föra över motiven till Rita Detaljplan finns inte utanför QGIS, eftersom pluginet ännu inte kan läsa den
+  utbytesfil programmet kan skriva.
 
 - Endast 2D. Volymgeometri (kropp) stöds inte än.
 - Endast användnings- och egenskapsbestämmelser stöds (inga pågående bestämmelser i katalogen är administrativa).
