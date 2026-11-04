@@ -7,7 +7,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from plankarta_case import PLAN_ID, make_geopackage, make_larkan, make_project  # noqa: E402
+from plankarta_case import PLAN_ID, make_geopackage, make_json_delivery, make_larkan, make_project  # noqa: E402
 from rita_detaljplan.planbeskrivning.pbkarna import geometri as geo  # noqa: E402
 from rita_detaljplan.planbeskrivning.pbkarna import plankarta as pk  # noqa: E402
 from rita_detaljplan.planbeskrivning.pbkarna import planbeskrivning_check as ck  # noqa: E402
@@ -35,6 +35,64 @@ class ReadOnlyUriTest(unittest.TestCase):
             reader = sqlite3.connect(geo.read_only_uri(path), uri=True)
             self.assertEqual(reader.execute("SELECT count(*) FROM t").fetchone()[0], 0)
             reader.close()
+
+
+class JsonDeliveryTest(unittest.TestCase):
+    """Plankartan som en leverans i Lantmäteriets JSON-format i stället för en GeoPackage."""
+
+    def setUp(self):
+        self.dir = tempfile.TemporaryDirectory()
+        self.folder = Path(self.dir.name)
+        self.path = make_json_delivery(self.folder / "leverans.json", motiv={"e1": "Friyta för dagvatten."})
+
+    def tearDown(self):
+        self.dir.cleanup()
+
+    def test_it_gives_the_same_provisions_as_the_geopackage_except_for_the_labels(self):
+        from_json, = pk.read_plankarta(self.path)
+        from_gpkg, = pk.read_geopackage(make_geopackage(self.folder / "plan.gpkg"))
+        self.assertEqual((from_json.identitet, from_json.namn), (from_gpkg.identitet, from_gpkg.namn))
+        def summary(plan):  # utan nycklarna: de bygger på hur värdena är sparade, och ordningen på beteckningarna
+            return sorted((p.text, len(p.refs), plan.kinds[p.key]) for p in plan.provisions)
+        self.assertEqual(summary(from_json), summary(from_gpkg))
+        self.assertEqual({p.label for p in from_json.provisions}, {""})
+
+    def test_values_are_filled_in_and_motives_are_kept(self):
+        plan, = pk.read_json(self.path)
+        texts = [p.text for p in plan.provisions]
+        self.assertIn("Största byggnadsarea är 30 % av fastighetsarean", texts)
+        self.assertIn("Högsta nockhöjd är 14,0 meter", texts)
+        area = next(p for p in plan.provisions if p.text.startswith("Största byggnadsarea"))
+        self.assertEqual(plan.motiv[area.key], "Friyta för dagvatten.")
+
+    def test_the_map_has_one_shape_per_provision_object(self):
+        plan, = pk.read_json(self.path)
+        karta = geo.read_karta(plan.kalla, plan.identitet)
+        self.assertIsNotNone(karta.border)
+        for ids in plan.areas.values():
+            for ident in ids:
+                self.assertIn(ident, karta.areas)
+        use = next(p for p in plan.provisions if p.text == "Park")
+        self.assertEqual({karta.layer_of[i] for i in plan.areas[use.key]}, {"anvandning_yta"})
+        self.assertIsNotNone(karta.bounds())
+
+    def test_a_file_that_is_not_a_delivery_is_explained(self):
+        for name, content, part in (("a.json", "inte json", "går inte att läsa"),
+                                    ("b.json", '{"type": "Feature"}', "ingen leverans"),
+                                    ("c.json", '{"type": "FeatureCollection", "features": []}', "inget detaljplanobjekt")):
+            path = self.folder / name
+            path.write_text(content, encoding="utf-8")
+            with self.assertRaises(pk.PlankartaError) as context:
+                pk.read_plankarta(path)
+            self.assertIn(part, str(context.exception))
+        self.assertEqual(geo.read_karta(self.folder / "a.json").bounds(), None)
+
+    def test_the_session_loads_it_like_any_other_plankarta(self):
+        from rita_detaljplan.planbeskrivning.pbapp import session as ss
+        session = ss.Session(ss.Store.memory())
+        session.load_plankarta(self.path)
+        self.assertEqual(session.plan.namn, "Detaljplan för kv. Lärkan")
+        self.assertTrue(session.karta.areas)
 
 
 class GeoPackageTest(unittest.TestCase):

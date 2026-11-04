@@ -84,9 +84,14 @@ gui/planbeskrivning_host.py   QgisHost: ger programmet den aktiva planen och tar
 Programmet går också att köra fristående, utan QGIS (med PySide6 installerat, `pip install PySide6`):
 
 ```
-python -m rita_detaljplan.planbeskrivning [planbeskrivning.docx] [plan.qgz]
+python -m rita_detaljplan.planbeskrivning [planbeskrivning.docx] [plan.qgz | plan.gpkg | leverans.json]
 python tools/skapa_exempel.py      # exemplet kv. Lärkan i exempel/ (knappen Öppna exemplet i fristående läge)
 ```
+
+Plankartan kan vara ett QGIS-projekt (`.qgz`/`.qgs`), en GeoPackage (`.gpkg`) eller en leverans i Lantmäteriets JSON-format
+(`.json`, detaljplan 4.1, samma fil som *Spara som JSON-fil* skriver, eller en från ett annat verktyg). Läsarna finns i
+`pbkarna/plankarta.py` (`read_json`) och `pbkarna/geometri.py` (`read_karta_json`). Leveransen har inga beteckningar
+(e1, a1 …), så bestämmelserna matchas mot planbeskrivningen på sin text, inte på beteckningen.
 
 Testerna (`tests/test_planbeskrivning*.py`) körs med resten av sviten. Kärnans och fönstrets tester behöver inte QGIS
 men körs då med PySide6. Den klickbara skissen av gränssnittet finns i `docs/planbeskrivning-skiss.html`.

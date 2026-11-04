@@ -96,6 +96,40 @@ def make_geopackage(path: Path, plan_id: str = PLAN_ID, bestammelser=None, motiv
     return path
 
 
+def make_json_delivery(path: Path, plan_id: str = PLAN_ID, motiv: dict | None = None) -> Path:
+    """Samma plan som ``make_geopackage``, som en leverans i Lantmäteriets JSON-format (detaljplan 4.1): ett detaljplanobjekt
+    och ett bestämmelseobjekt per bestämmelse och yta, med egen geometri och utan beteckningar (de finns inte i
+    leveransen). ``motiv``: {beteckning: text}."""
+    def description(kind, box, closed=True):
+        ring = _ring(box)
+        position = ({"type": "Polygon", "coordinates": [[list(p) for p in ring]]} if closed
+                    else {"type": "LineString", "coordinates": [list(p) for p in ring]})
+        return [{"geometri": {"typ": kind, "position": position, "koordinatsystemPlan": "EPSG:3006", "dimension": 2}}]
+
+    boxes = {name: box for name, _table, _label, box in YTOR}
+    features = [{"type": "Feature", "id": plan_id, "geometry": None, "properties": {
+        "feature:typ": "detaljplan", "objektidentitet": plan_id, "kommun": "Exempelstad",
+        "namn": "Detaljplan för kv. Lärkan", "syfte": "Syftet är att möjliggöra bostäder.",
+        "plangeometri": description("yta", PLANGRANS)}}]
+    for table, label, text, values, areas in BESTAMMELSER:
+        for area in areas:
+            properties = {
+                "feature:typ": "användningsbestämmelse" if table == "anvandning_yta" else "egenskapsbestämmelse",
+                "detaljplan": plan_id, "objektidentitet": _uuid(f"{label}/{area}"),
+                "planbestammelsekatalogreferens": _uuid("katalog/" + text), "bestammelseformulering": text,
+                "bestammelsegeometri": description("yta", boxes[area])}
+            if values:
+                properties["bestammelsevarde"] = [{"datatyp": "decimaltal", **item} for item in json.loads(values)]
+            if (motiv or {}).get(label):
+                properties["planbestammelsebeskrivning"] = {"motiv": motiv[label]}
+            features.append({"type": "Feature", "id": properties["objektidentitet"], "geometry": None,
+                             "properties": properties})
+    path = Path(path)
+    path.write_text(json.dumps({"type": "FeatureCollection", "feature:mediatyp": "application/vnd.lm.detaljplan.v4+json",
+                                "features": features}, ensure_ascii=False, indent=2), encoding="utf-8")
+    return path
+
+
 def make_project(path: Path, gpkg_name: str, provider: str = "ogr") -> Path:
     """Ett QGIS-projekt (.qgz eller .qgs) med planens lager, som pekar på GeoPackage-filen med en relativ sökväg."""
     path = Path(path)

@@ -98,7 +98,7 @@ class FilesPage(QWidget):
             self.doc_frame, self.doc_facts, None, spacing=14, margins=(20, 20, 20, 20)))
         map_panel = frame("panel", box(
             "v", self._head("Plankarta", f"Den aktiva planen i {host.name}." if host is not None else
-                            "QGIS-projekt (.qgz, .qgs) eller GeoPackage (.gpkg) från Rita Detaljplan."),
+                            "QGIS-projekt (.qgz, .qgs) eller GeoPackage (.gpkg) från Rita Detaljplan, eller en JSON-leverans (.json)."),
             self.map_frame, self.plan_row, self.map_facts, None, spacing=14, margins=(20, 20, 20, 20)))
 
         self.go = button("Fortsätt till taggning  →", "primary")
@@ -155,7 +155,7 @@ class FilesPage(QWidget):
 
     def choose_plankarta(self) -> None:
         path, _ = QFileDialog.getOpenFileName(self, "Välj plankarta", self._start_dir(),
-                                              "Plan från Rita Detaljplan (*.qgz *.qgs *.gpkg);;Alla filer (*)")
+                                              "Plan från Rita Detaljplan eller JSON-leverans (*.qgz *.qgs *.gpkg *.json);;Alla filer (*)")
         if path:
             self.load(plankarta=path)
 
@@ -215,13 +215,13 @@ class FilesPage(QWidget):
     def dropEvent(self, event) -> None:  # noqa: N802
         paths = [Path(u.toLocalFile()) for u in event.mimeData().urls() if u.isLocalFile()]
         docx = next((p for p in paths if p.suffix.lower() == ".docx"), None)
-        plankarta = next((p for p in paths if p.suffix.lower() in (".qgz", ".qgs", ".gpkg")), None)
+        plankarta = next((p for p in paths if p.suffix.lower() in (".qgz", ".qgs", ".gpkg", ".json")), None)
         if self.session.host is not None:
             plankarta = None  # planen kommer från värdprogrammet
         if docx or plankarta:
             self.load(docx=docx, plankarta=plankarta)
         else:
-            self.toast("Dra hit en planbeskrivning (.docx) eller en plankarta (.qgz, .qgs, .gpkg).")
+            self.toast("Dra hit en planbeskrivning (.docx) eller en plankarta (.qgz, .qgs, .gpkg, .json).")
 
     def refresh(self) -> None:
         s = self.session
@@ -1035,9 +1035,8 @@ class ExportPage(QWidget):
                              "Lägger syftet och motiven ur planbeskrivningen på planen och dess bestämmelser (de ersätter "
                              "det som stod). Spara planen som vanligt efteråt.", "Importera till planen",
                              self.write_to_host)
-        else:
-            self._export_row(exports, "Till Rita Detaljplan", "Syfte och motiv per bestämmelse, så att pluginet kan "
-                             "läsa in dem på plankartan.", "Exportera…", self.save_exchange)
+        # Fristående finns ingen rad som för över motiven till planen: utbytesfilen (``session.write_exchange``) är färdig,
+        # men pluginet kan inte läsa in den än. Lägg tillbaka en "Exportera…"-rad här när det går.
         self._export_row(exports, "Översikt över taggarna", "Tabell (CSV) som öppnas i Excel: bokmärke, rubrik, tema, "
                          "grupp, undergrupp och läge.", "Spara…", self.save_overview)
         export_panel = frame("panel", box("v", label("Spara och exportera", "h2"), exports, self.result,
@@ -1182,15 +1181,6 @@ class ExportPage(QWidget):
         self.result.setText(html.escape(message))
         self.result.show()
         self.toast(message)
-
-    def save_exchange(self) -> None:
-        path = self._ask_path("Exportera till Rita Detaljplan", "_motiv", ".json", "Utbytesfil (*.json)")
-        if path:
-            try:
-                data = self.session.write_exchange(path)
-            except ss.SessionError as exc:
-                return self._fail(exc)
-            self._done(path, f"Exporterade syftet och {len(data['motiv'])} motiv till {path.name}.")
 
     def save_overview(self) -> None:
         path = self._ask_path("Spara översikt", "_taggar", ".csv", "Tabell (*.csv)")

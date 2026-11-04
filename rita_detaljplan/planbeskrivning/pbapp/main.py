@@ -146,7 +146,7 @@ def main(argv=None) -> int:
     files = argv[1:]
     if files:
         docx = next((f for f in files if f.lower().endswith(".docx")), None)
-        plankarta = next((f for f in files if f.lower().endswith((".qgz", ".qgs", ".gpkg"))), None)
+        plankarta = next((f for f in files if f.lower().endswith((".qgz", ".qgs", ".gpkg", ".json"))), None)
         window.files.load(docx=docx, plankarta=plankarta)
     window.show()
     return app.exec()

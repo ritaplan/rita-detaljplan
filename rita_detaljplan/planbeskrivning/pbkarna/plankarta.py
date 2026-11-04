@@ -145,6 +145,99 @@ def read_geopackage(path: str | Path) -> list[Plan]:
     return list(plans.values())
 
 
+_USE_TYPE = "användningsbestämmelse"
+_JSON_KIND = {"yta": "egenskap_yta", "kropp": "egenskap_yta", "linje": "egenskap_linje", "punkt": "egenskap_punkt"}
+
+
+def load_json(path: str | Path) -> dict:
+    """Läser en leverans i Lantmäteriets JSON-format (detaljplan 4.1, en ``FeatureCollection``). Kastar
+    ``PlankartaError`` om filen inte går att läsa eller inte är en sådan leverans."""
+    path = Path(path)
+    if not path.is_file():
+        raise PlankartaError(f"Filen finns inte: {path}")
+    try:
+        data = json.loads(path.read_text(encoding="utf-8-sig"))
+    except (OSError, UnicodeDecodeError, ValueError) as exc:
+        raise PlankartaError(f"{path.name} går inte att läsa som JSON: {exc}") from exc
+    features = data.get("features") if isinstance(data, dict) else None
+    if data.get("type") != "FeatureCollection" or not isinstance(features, list):
+        raise PlankartaError(f"{path.name} är ingen leverans av en detaljplan (en FeatureCollection saknas).")
+    return data
+
+
+def json_features(data: dict) -> tuple[list[dict], list[dict]]:
+    """(detaljplanobjekten, bestämmelseobjekten) i en leverans, som deras ``properties``."""
+    plans, rules = [], []
+    for feature in data["features"]:
+        properties = feature.get("properties") if isinstance(feature, dict) else None
+        if not isinstance(properties, dict):
+            continue
+        properties = dict(properties)
+        properties.setdefault("objektidentitet", feature.get("id"))
+        kind = properties.get("feature:typ")
+        if kind == "detaljplan":
+            plans.append(properties)
+        elif kind in (_USE_TYPE, "egenskapsbestämmelse"):
+            rules.append(properties)
+    return plans, rules
+
+
+def json_kind(properties: dict) -> str:
+    """Vilket lager en bestämmelse hör till i pluginet (anvandning_yta, egenskap_yta, egenskap_linje, egenskap_punkt)."""
+    if properties.get("feature:typ") == _USE_TYPE:
+        return "anvandning_yta"
+    for description in properties.get("bestammelsegeometri") or []:
+        geometry = description.get("geometri") if isinstance(description, dict) else None
+        if isinstance(geometry, dict) and geometry.get("typ") in _JSON_KIND:
+            return _JSON_KIND[geometry["typ"]]
+    return "egenskap_yta"
+
+
+def read_json(path: str | Path) -> list[Plan]:
+    """Planerna i en leverans i Lantmäteriets JSON-format, t.ex. från Rita Detaljplan eller ett annat verktyg. Samma
+    bestämmelse på flera ytor blir *en* ``Provision``, som vid en GeoPackage. Leveransen har inga beteckningar (e1, a1 …):
+    de finns bara i pluginets egna tabeller, så ``label`` är tom."""
+    path = Path(path)
+    plan_rows, rules = json_features(load_json(path))
+    if not plan_rows:
+        raise PlankartaError(f"{path.name} har inget detaljplanobjekt.")
+    plans = {}
+    for row in plan_rows:
+        ident = row.get("objektidentitet")
+        if ident and ident not in plans:
+            plans[ident] = Plan(ident, _clean(row.get("namn")) or "", _clean(row.get("beteckning")) or "", path,
+                                syfte=_clean(row.get("syfte")) or "")
+    for properties in rules:
+        ident = properties.get("objektidentitet")
+        if not ident:
+            continue
+        plan_id = properties.get("detaljplan")
+        plan = plans.get(plan_id) if plan_id else (next(iter(plans.values())) if len(plans) == 1 else None)
+        if plan is None:
+            continue
+        values = properties.get("bestammelsevarde")
+        row = {"planbestammelsekatalogreferens": properties.get("planbestammelsekatalogreferens"),
+               "bestammelseformulering": _clean(properties.get("bestammelseformulering")),
+               "bestammelsevarde": json.dumps(values, ensure_ascii=False) if values else None}
+        key = identity(row)
+        provision = next((p for p in plan.provisions if p.key == key), None)
+        if provision is None:
+            provision = Provision(key, "", display_text(row), (),
+                                  row["bestammelseformulering"] == TECHNICAL_FORMULATION)
+            plan.provisions.append(provision)
+            plan.kinds[key] = json_kind(properties)
+            plan.areas[key] = []
+        provision.refs = provision.refs + (ident,)
+        plan.areas[key].append(ident)  # i leveransen har varje bestämmelseobjekt sin egen geometri
+        description = properties.get("planbestammelsebeskrivning")
+        motiv = _clean(description.get("motiv")) if isinstance(description, dict) else None
+        if motiv and not plan.motiv.get(key):
+            plan.motiv[key] = motiv
+    for plan in plans.values():
+        plan.provisions.sort(key=lambda p: (_KIND_ORDER.get(plan.kinds.get(p.key), 9), p.label.lower(), p.text.lower()))
+    return list(plans.values())
+
+
 def _project_xml(path: Path) -> str:
     if path.suffix.lower() == ".qgz":
         try:
@@ -192,11 +285,14 @@ def geopackages_in_project(path: str | Path) -> list[Path]:
 
 
 def read_plankarta(path: str | Path) -> list[Plan]:
-    """Planerna i en GeoPackage (.gpkg) eller i ett QGIS-projekt (.qgz/.qgs) med planer från Rita Detaljplan."""
+    """Planerna i en GeoPackage (.gpkg), ett QGIS-projekt (.qgz/.qgs) med planer från Rita Detaljplan eller en
+    leverans i Lantmäteriets JSON-format (.json)."""
     path = Path(path)
     suffix = path.suffix.lower()
     if suffix == ".gpkg":
         return read_geopackage(path)
+    if suffix == ".json":
+        return read_json(path)
     if suffix in (".qgz", ".qgs"):
         plans: list[Plan] = []
         missing = []
@@ -208,7 +304,7 @@ def read_plankarta(path: str | Path) -> list[Plan]:
         if not plans and missing:
             raise PlankartaError("Projektets GeoPackage-fil hittades inte: " + ", ".join(str(m) for m in missing))
         return plans
-    raise PlankartaError("Välj ett QGIS-projekt (.qgz, .qgs) eller en GeoPackage (.gpkg).")
+    raise PlankartaError("Välj ett QGIS-projekt (.qgz, .qgs), en GeoPackage (.gpkg) eller en JSON-leverans (.json).")
 
 
 def key_text(key) -> str:

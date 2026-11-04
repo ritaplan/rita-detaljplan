@@ -134,8 +134,70 @@ def read_only_uri(path: str | Path) -> str:
     return ("file:////" + posix.lstrip("/") if posix.startswith("//") else f"file:{posix}") + "?mode=ro"
 
 
+def shape_of_json(descriptions) -> Optional[Shape]:
+    """En eller flera ``bestammelsegeometri``/``plangeometri``-poster ur en JSON-leverans som ``Shape`` (x, y; höjden
+    och eventuella kroppars sidor bortses från). Punkter och okända typer ger ingen form."""
+    parts: list = []
+    closed = False
+    for description in descriptions or []:
+        geometry = description.get("geometri") if isinstance(description, dict) else None
+        position = geometry.get("position") if isinstance(geometry, dict) else None
+        if not isinstance(position, dict):
+            continue
+        kind, coordinates = position.get("type"), position.get("coordinates")
+        try:
+            if kind == "Polygon":
+                polygons = [coordinates]
+            elif kind == "MultiPolygon":
+                polygons = coordinates
+            elif kind == "LineString":
+                parts.append([(p[0], p[1]) for p in coordinates])
+                continue
+            else:
+                continue
+            for polygon in polygons:
+                parts += [[(p[0], p[1]) for p in ring] for ring in polygon]
+            closed = True
+        except (TypeError, IndexError, KeyError):
+            continue
+    parts = [part for part in parts if part]
+    return Shape(parts, closed) if parts else None
+
+
+def read_karta_json(path: str | Path, plan_id: Optional[str] = None) -> Karta:
+    """Ytorna (och planområdet) i en leverans i Lantmäteriets JSON-format. Varje bestämmelseobjekt har sin egen
+    geometri, så ``areas`` har en post per bestämmelseobjekt (nyckeln är dess ``objektidentitet``). Går filen inte att
+    läsa blir kartan tom, inget fel."""
+    from . import plankarta  # senare import: plankarta importerar den här modulen
+
+    karta = Karta()
+    try:
+        plans, rules = plankarta.json_features(plankarta.load_json(path))
+    except plankarta.PlankartaError:
+        return karta
+    for properties in plans:
+        if plan_id and properties.get("objektidentitet") != plan_id:
+            continue
+        shape = shape_of_json(properties.get("plangeometri"))
+        if shape is not None:
+            karta.border = karta.border or shape
+    for properties in rules:
+        ident = properties.get("objektidentitet")
+        if not ident or (plan_id and properties.get("detaljplan") not in (plan_id, None)):
+            continue
+        shape = shape_of_json(properties.get("bestammelsegeometri"))
+        if shape is None:
+            continue
+        karta.areas[ident] = shape
+        karta.layer_of[ident] = plankarta.json_kind(properties)
+    return karta
+
+
 def read_karta(path: str | Path, plan_id: Optional[str] = None) -> Karta:
-    """Ytorna (och planområdet) i en GeoPackage från Rita Detaljplan. Saknas geometrin blir kartan tom, inget fel."""
+    """Ytorna (och planområdet) i en GeoPackage från Rita Detaljplan, eller i en JSON-leverans (.json). Saknas
+    geometrin blir kartan tom, inget fel."""
+    if Path(path).suffix.lower() == ".json":
+        return read_karta_json(path, plan_id)
     karta = Karta()
     try:
         connection = sqlite3.connect(read_only_uri(path), uri=True)
