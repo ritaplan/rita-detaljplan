@@ -15,6 +15,8 @@ webbsidan ritaplan.xyz/tagga.html som pluginet självt inte använder. Webbsidan
 det här dokumentet: den kör programmets kod i webbläsaren med Pyodide, som hämtas från cdn.jsdelivr.net (laddarfilen är
 låst med en kontrollsumma, de övriga delarna inte), och skickar inga filer vidare.
 
+**Version 0.1.77 är inte heller genomgången på nytt.** Den lägger till en översikt över planerna i en databas (`core/plan_overview.py`), som läser planernas uppgifter med `SELECT`-frågor där scheman och tabeller citeras med samma hjälpfunktioner som resten av lagringen (`quote` och `literal`); schemanamnen kommer ur databasen. Inga nya filer läses eller skrivs och inga nya beroenden tillkommer. Genvägarna (`gui/plan_toolbar.py`) och statusradsspärren (`gui/statusbar_guard.py`) ändrar bara QGIS gränssnitt. Felsökningsskriptet `tools/felsok_omritning.py` ingår inte i zip-filen.
+
 ## Läs det här först: vad dokumentet är och inte är
 
 - Pluginet är skrivet med AI-stöd och underhålls av en enskild person på fritiden. Det är en experimentell

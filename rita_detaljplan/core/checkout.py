@@ -102,12 +102,24 @@ def read_lock(plan: PostgisStorage) -> Optional[Lock]:
     return Lock.from_json(text) if text else None
 
 
-def new_lock() -> Lock:
+def _user() -> str:
     try:
-        user = getpass.getuser()
+        return getpass.getuser()
     except Exception:  # noqa: BLE001 - saknas t.ex. i vissa tjänstemiljöer
-        user = "okänd"
-    return Lock(uuid.uuid4().hex, user, platform.node() or "okänd dator", datetime.now().isoformat(timespec="seconds"))
+        return "okänd"
+
+
+def _host() -> str:
+    return platform.node() or "okänd dator"
+
+
+def new_lock() -> Lock:
+    return Lock(uuid.uuid4().hex, _user(), _host(), datetime.now().isoformat(timespec="seconds"))
+
+
+def is_own_lock(lock: Lock) -> bool:
+    """Låset tillhör den här användaren på den här datorn (en tidigare utcheckning som kan tas upp igen)."""
+    return lock.user == _user() and lock.host == _host()
 
 
 def acquire_lock(plan: PostgisStorage) -> Lock:

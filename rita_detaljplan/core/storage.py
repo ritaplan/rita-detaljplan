@@ -225,6 +225,7 @@ class PostgisStorage(Storage):
         self.schema = schema
         self.plan_id = plan_id
         self._connection = connection
+        self._epsg_cache: Optional[int] = None
 
     @property
     def name(self) -> str:
@@ -274,6 +275,8 @@ class PostgisStorage(Storage):
         uri = QgsDataSourceUri(self.connection.uri())
         geometry = "geom" if layer_def.geometry else ""
         uri.setDataSource(self.schema, layer_def.name, geometry, f'"plan" = {literal(self.plan_id)}', "fid")
+        # fid är primärnyckel: hoppa över leverantörens kontroll av att nyckeln är unik (en fråga över nätet per lager)
+        uri.setParam("checkPrimaryKeyUnicity", "0")
         if layer_def.geometry:
             if epsg:
                 uri.setSrid(str(epsg))
@@ -281,11 +284,22 @@ class PostgisStorage(Storage):
         return uri.uri(True)
 
     def _open(self, uri: str, alias: str) -> QgsVectorLayer:  # särskilt för att kunna bytas ut i tester
-        return QgsVectorLayer(uri, alias, PROVIDER)
+        # Ingen standardstil ur databasen (pluginet sätter egen symbologi): sparar frågor per lager. Att skapa ett
+        # PostGIS-lager kostar annars ungefär en sekund över nätet, och en plan har tolv lager.
+        options = QgsVectorLayer.LayerOptions()
+        options.loadDefaultStyle = False
+        return QgsVectorLayer(uri, alias, PROVIDER, options)
+
+    def _epsg(self) -> Optional[int]:
+        """Schemats koordinatsystem. Läses en gång: det ligger fast för schemat, och varje läsning är ett par frågor
+        över nätet (planens alla tolv lager gjorde annars tolv läsningar när planen öppnades)."""
+        if self._epsg_cache is None:
+            epsg = self.read_meta().get("epsg")
+            self._epsg_cache = int(epsg) if epsg else None
+        return self._epsg_cache
 
     def make_layer(self, layer_def: model.LayerDef) -> QgsVectorLayer:
-        epsg = self.read_meta().get("epsg")
-        return self._open(self.layer_uri(layer_def, int(epsg) if epsg else None), layer_def.alias)
+        return self._open(self.layer_uri(layer_def, self._epsg()), layer_def.alias)
 
     def describe(self) -> str:
         return f"{self.connection_name} · {self.schema} · {self.plan_id}"

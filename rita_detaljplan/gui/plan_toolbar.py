@@ -9,16 +9,17 @@ del som har en användning, hur många ytor som saknar bestämmelse) visas i QGI
 """
 from __future__ import annotations
 
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Callable, Optional
 
 from qgis.core import Qgis, QgsApplication, QgsProject, QgsTask
-from qgis.gui import QgsMapToolCapture, QgsRubberBand
+from qgis.gui import QgsGui, QgsMapToolCapture, QgsRubberBand
 from qgis.PyQt import sip
 from qgis.PyQt.QtCore import Qt, QTimer
 from qgis.PyQt.QtGui import QColor, QIcon
 from qgis.PyQt.QtGui import QCursor
-from qgis.PyQt.QtWidgets import QAction, QActionGroup, QFileDialog, QMenu, QMessageBox, QToolBar, QToolButton
+from qgis.PyQt.QtWidgets import QAction, QActionGroup, QFileDialog, QMenu, QMessageBox, QToolBar, QToolButton, QWidget
 
 from ..controller import (HELPER_AREA, HELPER_LAYER, HELPER_POINT, HELPER_TABLES, PLAN_LAYER, Candidate,
                           PlanController)
@@ -66,6 +67,16 @@ HELPER_MORE_BUTTONS = (
     (HELPER_POINT, "helper_point.svg", "Rita hjälppunkter (referenser som aldrig ingår i leveransen)."),
 )
 HELPER_NAMES = {HELPER_LAYER: "Hjälplinje", HELPER_AREA: "Hjälpyta", HELPER_POINT: "Hjälppunkt"}
+
+# Namn i QGIS kortkommandodialog (Inställningar → Kortkommandon) för pluginets verktyg. Inga förvalda genvägar: användaren
+# väljer själv, så inget krockar med QGIS egna eller andra tilläggs genvägar.
+SHORTCUT_PREFIX = "Rita Detaljplan: "
+SHORTCUT_DRAW_NAMES = {
+    PLAN_LAYER: "Rita planområdet", cat.USE_LAYER: "Rita användningsområden", "egenskap_yta": "Rita egenskapsområden",
+    SECONDARY_BUTTON: "Rita sekundära egenskapsområden", "egenskap_linje": "Rita egenskapslinjer",
+    "egenskap_punkt": "Rita egenskapspunkter", HELPER_LAYER: "Rita hjälplinjer", HELPER_AREA: "Rita hjälpytor",
+    HELPER_POINT: "Rita hjälppunkter",
+}
 IMPORT_TIP = ("Importera geometrier: kopierar ytor, linjer och punkter från ett annat lager eller en datakälla (DWG/DXF, "
               "Shape, GeoPackage, WFS …) till Hjälplager, utan attribut. Ge dem sedan en bestämmelse med "
               "Planbestämmelser.")
@@ -100,6 +111,8 @@ TOPOLOGY_TIP = ("Topologikontroll (beta, ännu inte full funktionalitet): föres
 TOPOLOGY_EDITING_TIP = "Topologikontrollen kan inte användas medan redigeringen pågår: avsluta och spara först."
 CHECKOUT_TIP = ("Checka ut: lås planen i databasen och redigera en lokal kopia (snabbare). En plan som öppnats från "
                 "databasen är skrivskyddad tills den checkats ut.")
+CHECKOUT_FILE_TIP = ("Checka ut och in gäller planer i en databas. Den här planen ligger i en lokal fil och kan "
+                     "redigeras direkt.")
 CHECKIN_TIP = "Checka in: skriv planen tillbaka till databasen, släpp låset och ta bort den lokala kopian (eller kasta den)."
 INFO_TIP = ("Planens uppgifter: kommun, namn, syfte, status, beslut och handlingar, och vad som återstår före "
             "leverans.")
@@ -131,6 +144,11 @@ class PlanToolBar(QToolBar):
         self.controller = controller
         self.catalog_provider = catalog_provider
         self.status_text = ""
+        self._status_cache = None  # (nyckel, text), se _cached_status_text
+        self._refresh_suspended = 0  # se refresh_suspended
+        self._shortcuts: list[QAction] = []  # se register_shortcuts
+        self._shortcut_manager = self._shortcut_parent = None
+        self._refresh_pending = False
         self._issue_band = QgsRubberBand(iface.mapCanvas(), Qgis.GeometryType.Polygon)  # "Visa i kartan" för en avvikelse
         self._issue_band.setColor(QColor(179, 38, 30, 90))
         self._issue_band.setStrokeColor(QColor(179, 38, 30))
@@ -368,7 +386,75 @@ class PlanToolBar(QToolBar):
     def has_plan(self) -> bool:
         return self.controller.layer(PLAN_LAYER) is not None
 
+    # -- kortkommandon ------------------------------------------------------------------
+    def shortcut_actions(self) -> list[tuple[str, QAction]]:
+        """Verktygsradens egna åtgärder med det namn de visas under i QGIS kortkommandodialog."""
+        named = [("Ny detaljplan", self.act_new), ("Öppna detaljplan", self.act_open),
+                 ("Checka ut / checka in", self.act_checkout), ("Börja rita planbestämmelser", self.act_start),
+                 ("Avsluta redigering", self.act_stop), ("Planens uppgifter", self.act_info),
+                 ("Topologikontroll", self.act_topology), ("Leverans och export", self.act_deliver),
+                 ("Tagga planbeskrivning", self.act_planbeskrivning), ("Markera", self.act_select),
+                 ("Avmarkera alla", self.act_deselect), ("Text", self.act_label), ("Dölj texter", self.act_hide_labels)]
+        named += [(name, self.draw_actions[table]) for table, name in SHORTCUT_DRAW_NAMES.items()]
+        named += [("Fyll användning", self.act_fill_use), ("Fyll egenskap", self.act_fill_property),
+                  ("Importera geometrier", self.act_import), ("Planbestämmelser", self.act_assign),
+                  ("Kopiera bestämmelser", self.act_copy)]
+        return named
+
+    def register_shortcuts(self, manager=None) -> list[QAction]:
+        """Gör verktygen tillgängliga i QGIS kortkommandodialog, så att användaren kan tilldela dem valfria genvägar.
+
+        Varje funktion får en osynlig ombudsåtgärd med ett eget, unikt namn som utlöser den riktiga knappen. Dialogen
+        visar bara vanliga åtgärder (inte ``QShortcut``), och om de riktiga knapparna registrerades skulle QGIS skriva
+        över deras tips med knappens namn och spara genvägen på knappens text (som är ett långt tips, och i flera fall
+        samma som ett annat tilläggs). Ett tryck gör samma sak som ett klick: en avstängd knapp gör ingenting och ett
+        ritverktyg slås på eller av."""
+        self.unregister_shortcuts()
+        manager = manager or QgsGui.shortcutsManager()
+        parent = self.iface.mainWindow()
+        if not isinstance(parent, QWidget):
+            parent = self
+        self._shortcut_manager, self._shortcut_parent = manager, parent
+        for name, action in self.shortcut_actions():
+            proxy = QAction(action.icon(), SHORTCUT_PREFIX + name, parent)  # samma ikon som knappen visas i dialogen
+            proxy.triggered.connect(lambda _checked=False, target=action: target.trigger())
+            parent.addAction(proxy)  # en åtgärd behöver sitta i ett fönster för att dess genväg ska fungera
+            if manager.registerAction(proxy, ""):
+                self._shortcuts.append(proxy)
+            else:
+                parent.removeAction(proxy)
+                sip.delete(proxy)
+        return list(self._shortcuts)
+
+    def unregister_shortcuts(self) -> None:
+        """Tar bort genvägarna (och därmed deras plats i kortkommandodialogen)."""
+        for proxy in self._shortcuts:
+            try:
+                self._shortcut_manager.unregisterAction(proxy)
+                self._shortcut_parent.removeAction(proxy)
+                sip.delete(proxy)  # direkt (inte deleteLater): hanteraren ska inte hinna se både gamla och nya
+            except (RuntimeError, AttributeError):  # redan borttagen
+                pass
+        self._shortcuts.clear()
+
+    @contextmanager
+    def refresh_suspended(self):
+        """Medan en plan läses in läggs lagren till ett i taget och varje tillagt lager ger en uppdatering av
+        verktygsraden (``layersAdded``). Över en databas kostar varje uppdatering sekunder: skjut upp dem och gör en
+        enda när planen är inläst."""
+        self._refresh_suspended += 1
+        try:
+            yield
+        finally:
+            self._refresh_suspended -= 1
+            if not self._refresh_suspended and self._refresh_pending:
+                self.refresh()
+
     def refresh(self, *_):
+        if self._refresh_suspended:
+            self._refresh_pending = True
+            return
+        self._refresh_pending = False
         # QGIS egen ikonstorlek läses om varje gång (inte bara vid start): ``iface.iconSize()`` kunde ge ett för
         # litet värde när verktygsfältet byggs i ``initGui()`` (innan QGIS huvudfönster hunnit tillämpa den
         # sparade inställningen på riktigt, t.ex. direkt efter en omstart av QGIS) – ett engångsvärde vid start
@@ -380,11 +466,15 @@ class PlanToolBar(QToolBar):
         where = co.state(self.controller.project) if has_plan else co.FILE
         if where == co.DATABASE:
             co.enforce_read_only(self.controller.project)
-        self.act_checkout.setVisible(where != co.FILE)
+        # Knappen syns alltid men är grå när planen bara finns som lokal fil (eller ingen plan är öppen): det finns
+        # inget att checka ut eller in. Den blir aktiv så fort planen öppnas från eller kopplas till en databas.
+        self.act_checkout.setVisible(True)
+        self.act_checkout.setEnabled(where != co.FILE)
         checked_out = where == co.LOCAL
         self.act_checkout.setText("Checka in" if checked_out else "Checka ut")
         self.act_checkout.setIcon(icon("checkin.svg" if checked_out else "checkout.svg"))
-        self.act_checkout.setToolTip(CHECKIN_TIP if checked_out else CHECKOUT_TIP)
+        self.act_checkout.setToolTip(CHECKIN_TIP if checked_out else CHECKOUT_TIP if where != co.FILE else
+                                     CHECKOUT_FILE_TIP if has_plan else NO_PLAN)
         editing = has_plan and self.controller.editing
         if editing:
             # körs om varje gång (inte bara vid start/verktygsbyte, se _on_tool_set): samma sorts omstarts-race
@@ -392,19 +482,21 @@ class PlanToolBar(QToolBar):
             # inte alltid efter en full omstart av QGIS. Billigt och ofarligt att göra om (no-op om redan på).
             self._enable_snapping()
             self._enable_cad()
-        self.act_info.setEnabled(has_plan and self.controller.summary().has_plan)
+        light = self.controller.light_summary() if has_plan else None  # en billig räkning, inte alla ytor (se Controller)
+        plan_ready = bool(light and light.has_plan)
+        self.act_info.setEnabled(plan_ready)
         self.act_info.setToolTip(INFO_TIP if self.act_info.isEnabled() else
                                  (NO_PLAN if not has_plan else "Rita planområdet först."))
-        topology_ok = has_plan and self.controller.summary().has_plan and not editing
+        topology_ok = plan_ready and not editing
         self.act_topology.setEnabled(topology_ok)
         self.act_hide_labels.setEnabled(has_plan)
         self._apply_label_visibility()
         self.act_topology.setToolTip(TOPOLOGY_TIP if topology_ok else
                                      (NO_PLAN if not has_plan else "Rita planområdet först."
-                                      if not self.controller.summary().has_plan else TOPOLOGY_EDITING_TIP))
+                                      if not plan_ready else TOPOLOGY_EDITING_TIP))
 
         for action, tip in ((self.act_deliver, DELIVER_TIP), (self.act_planbeskrivning, PLANBESKRIVNING_TIP)):
-            action.setEnabled(has_plan and self.controller.summary().has_plan)
+            action.setEnabled(plan_ready)
             action.setToolTip(tip if action.isEnabled() else (NO_PLAN if not has_plan else "Rita planområdet först."))
         for action, tip in ((self.act_select, SELECT_TIP), (self.act_label, LABEL_TIP),
                            (self.act_deselect, DESELECT_TIP)):  # markeringsverktygen
@@ -443,7 +535,7 @@ class PlanToolBar(QToolBar):
         import_ok = has_plan and editing
         self.act_import.setEnabled(import_ok)
         self.act_import.setToolTip(IMPORT_TIP if import_ok else (NO_PLAN if not has_plan else NEEDS_EDITING))
-        has_use = has_plan and editing and self.controller.summary().has_use
+        has_use = bool(light and editing and light.has_use)
         if not has_plan:
             assign_ok, assign_reason = False, NO_PLAN
         elif not editing:
@@ -464,7 +556,7 @@ class PlanToolBar(QToolBar):
         if not copy_ok and self.act_copy.isChecked():
             self.act_copy.setChecked(False)
             self._unset_assign_tool()
-        self._show_status(self._status_text() if has_plan else "")
+        self._show_status(self._cached_status_text(where) if has_plan else "")
         self._update_bottom_toolbar_visibility()
 
     def _update_bottom_toolbar_visibility(self, *_):
@@ -479,6 +571,20 @@ class PlanToolBar(QToolBar):
             bar = self.iface.statusBarIface()
             if bar is not None:
                 bar.showMessage(text, 0)
+
+    def _cached_status_text(self, where: str) -> str:
+        """Statustexten kräver att alla ytor läses och slås ihop (``summary``): över en databas tar det sekunder, och
+        uppdateringen körs vid varje ändring av läget. En plan som läses direkt från databasen är skrivskyddad och kan
+        inte ändras, så texten räknas bara om när planens lager byts ut (nytt lager-id: ny plan, utcheckning eller
+        incheckning)."""
+        if where != co.DATABASE:
+            self._status_cache = None
+            return self._status_text()
+        plan_layer = self.controller.layer(PLAN_LAYER)
+        key = (plan_layer.id() if plan_layer is not None else None, len(plan_groups(self.controller.project)))
+        if self._status_cache is None or self._status_cache[0] != key:
+            self._status_cache = (key, self._status_text())
+        return self._status_cache[1]
 
     def _status_text(self) -> str:
         state = self.controller.summary()

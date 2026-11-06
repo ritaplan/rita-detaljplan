@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from contextlib import nullcontext
 from pathlib import Path
 
 from qgis.core import Qgis, QgsApplication, QgsProject, QgsTask
@@ -25,6 +26,7 @@ from .gui.layout_legend import LayoutLegendTool
 from .gui.plan_info_dialog import PlanInfoDialog
 from .gui.plan_toolbar import PlanToolBar
 from .gui.postgis_plan_dialog import PostgisPlanDialog
+from .gui.statusbar_guard import StatusBarHeightGuard
 from .gui.settings_dialog import SettingsDialog
 
 MENU = "&Rita Detaljplan"
@@ -42,6 +44,7 @@ class DetaljplanPlugin:
         self.controller: PlanController | None = None
         self.toolbar: PlanToolBar | None = None
         self.layout_legend: LayoutLegendTool | None = None
+        self.statusbar_guard: StatusBarHeightGuard | None = None
         self._tasks: list[QgsTask] = []
 
     # -- livscykel ----------------------------------------------------------------
@@ -51,10 +54,13 @@ class DetaljplanPlugin:
                                    self.open_plan_info, self.iface.mainWindow(), on_settings=self.open_settings,
                                    on_archive=self.open_archive, on_import=self.import_geometry)
         self.iface.addToolBar(self.toolbar, Qt.ToolBarArea.TopToolBarArea)
+        self.toolbar.register_shortcuts()  # verktygen kan få egna genvägar i Inställningar → Kortkommandon
         # det andra verktygsfältet (self.toolbar.bottom_toolbar) läggs till och dockas längst ned av PlanToolBar
         # själv (se dess __init__) – precis som ett vanligt verktygsfält, inget eget addDockWidget-anrop här.
         self.layout_legend = LayoutLegendTool(self.iface, self.controller, self._catalog)
         self.layout_legend.attach()
+        # statusraden får inte hoppa en pixel när laddningsstapeln visas: det startar om ritningen i all oändlighet
+        self.statusbar_guard = StatusBarHeightGuard.install(self.iface.mainWindow())
 
         self._add_action("Ny detaljplan…", self.new_plan, QIcon(str(ICONS / "new.svg")))  # samma ikon som i verktygsfältet
         self._add_action("Öppna detaljplan (GeoPackage)…", self.open_plan)
@@ -81,6 +87,9 @@ class DetaljplanPlugin:
         self._brand_menu()
 
     def unload(self):
+        if self.statusbar_guard is not None:
+            self.statusbar_guard.release()
+            self.statusbar_guard = None
         if self.layout_legend is not None:
             self.layout_legend.detach()
             self.layout_legend = None
@@ -89,6 +98,7 @@ class DetaljplanPlugin:
             self.controller = None
         if self.toolbar is not None:
             self.toolbar.close_planbeskrivning()
+            self.toolbar.unregister_shortcuts()
             # det andra verktygsfältet (bottom_toolbar) städas automatiskt: se PlanToolBar.__init__, som kopplar
             # det till att verktygsfältet självt förstörs.
             main_window = self.iface.mainWindow()
@@ -394,26 +404,73 @@ class DetaljplanPlugin:
         dialog = PostgisPlanDialog(self.iface.mainWindow())
         if not dialog.exec():
             return
-        connection, schema, plan_id = dialog.selection()
+        selections = dialog.selections()
+        want_checkout = dialog.checkout_requested is True
+        canvas = self.iface.mapCanvas()
+        # Kartan ritas inte om medan planerna laddas: vid utcheckning läses planen först från databasen och pekas sedan
+        # om till den lokala kopian (onödiga läsningar över nätet), och med flera planer ritas den annars om efter
+        # varje plan.
+        freeze = want_checkout or len(selections) > 1
+        if freeze:
+            canvas.freeze(True)
+        try:
+            results = [self._open_one_postgis(connection, schema, plan_id, want_checkout)
+                       for connection, schema, plan_id in selections]
+        finally:
+            if freeze:
+                canvas.freeze(False)
+                canvas.refresh()
+        self._report_postgis(results)
+
+    def _open_one_postgis(self, connection: str, schema: str, plan_id: str, want_checkout: bool) -> tuple[str, str, str]:
+        """Laddar en plan ur databasen (och checkar ut den om användaren bad om det). Returnerar (plan-id, utfall,
+        uppgift) där utfallet är ``checked_out``, ``read_only``, ``locked`` (uppgiften är vem som har den) eller
+        ``error``."""
         plan = storage.PostgisStorage(connection, schema, plan_id)
         # läggs till bredvid en ev. tidigare laddad plan och blir den aktiva (se load_plan/activate_plan_group) –
         # är flera planer laddade frågar pennan vilken som ska redigeras.
         try:
-            load_plan(plan, QgsProject.instance())
+            # verktygsraden uppdateras en gång när planen är inläst, inte för varje lager som läggs till
+            with self.toolbar.refresh_suspended() if self.toolbar is not None else nullcontext():
+                load_plan(plan, QgsProject.instance())
             lock = checkout.read_lock(plan)
         except (ValueError, storage.PostgisError) as exc:
-            self._error(str(exc))
-            return
+            self._error(f"{plan_id}: {exc}")
+            return plan_id, "error", str(exc)
         QTimer.singleShot(0, lambda: collapse_plan_group(QgsProject.instance()))
         if self.controller is not None:
             self.controller.attach()
         if self.toolbar is not None:
             self.toolbar.refresh()
+        if want_checkout and self.toolbar is not None and (lock is None or checkout.is_own_lock(lock)):
+            # användaren bad om utcheckning i dialogen: ingen ny fråga, bara själva utcheckningen. Den gäller den plan
+            # som just laddades (den blir aktiv).
+            if self.toolbar.checkout.check_out(confirm=False):
+                return plan_id, "checked_out", ""
         if lock is not None:
-            self._warn(f"Laddade planen {schema}, men den är utcheckad av {lock.describe()} och därför skrivskyddad.")
-        else:
-            self._info(f"Laddade planen {schema} från databasen {connection}. Den är skrivskyddad: klicka på Checka ut "
-                       "(eller på pennan) för att redigera en lokal kopia.")
+            return plan_id, "locked", lock.describe()
+        return plan_id, "read_only", ""
+
+    def _report_postgis(self, results: list[tuple[str, str, str]]) -> None:
+        loaded = [r for r in results if r[1] != "error"]
+        if not loaded:
+            return  # felen är redan visade
+        if len(results) == 1:
+            plan_id, outcome, detail = results[0]
+            if outcome == "locked":
+                self._warn(f"Laddade planen {plan_id}, men den är utcheckad av {detail} och därför skrivskyddad.")
+            elif outcome == "read_only":
+                self._info(f"Laddade planen {plan_id} från databasen. Den är skrivskyddad: klicka på Checka ut (eller på "
+                           "pennan) för att redigera en lokal kopia.")
+            return
+        out = sum(1 for r in loaded if r[1] == "checked_out")
+        text = f"Laddade {len(loaded)} planer från databasen"
+        text += f", {out} utcheckade" if out else ""
+        text += f" och {len(loaded) - out} skrivskyddade." if len(loaded) > out else "."
+        self._info(text + " Den senast laddade planen är den aktiva.")
+        for plan_id, outcome, detail in loaded:
+            if outcome == "locked":
+                self._warn(f"{plan_id} är utcheckad av {detail} och därför skrivskyddad.")
 
     def open_plan_file(self):
         path, _ = QFileDialog.getOpenFileName(self.iface.mainWindow(), "Öppna detaljplan", "", "GeoPackage (*.gpkg)")

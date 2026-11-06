@@ -195,6 +195,86 @@ class SecondaryBoundaryTests(RenderCase):
         self.assertNotIn("sekundar", symbology.hierarchical_boundary(self.layers, "egenskap_yta", ("detaljplan",)))
 
 
+def legacy_boundary(layers, own_table, higher_tables, same_kind=False):
+    """Kantlinjeuttrycket som det var före 0.1.77: räknar mot alla ytor i planen för varje yta (aggregate med filter på
+    @parent). Behålls här som facit: det nya uttrycket (bara grannytor) ska rita exakt samma bild, snabbare."""
+    from rita_detaljplan.core import symbology
+    empty = symbology._EMPTY
+    own_filter = "\"objektidentitet\" < attribute(@parent, 'objektidentitet')"
+    if same_kind:
+        own_filter += " AND coalesce(\"sekundar\", 0) = coalesce(attribute(@parent, 'sekundar'), 0)"
+    hidden = [f"coalesce(boundary(aggregate('{layers[table].id()}', 'collect', $geometry)), {empty})"
+              for table in higher_tables if table in layers]
+    hidden.append(f"coalesce(boundary(aggregate('{layers[own_table].id()}', 'collect', $geometry, "
+                  f"filter:={own_filter})), {empty})")
+    plan = layers["detaljplan"]
+    tolerance = (f"min({symbology.COINCIDENCE_TOLERANCE}, max(0.000001, 0.0005 * "
+                 f"sqrt(coalesce(aggregate('{plan.id()}', 'sum', $area), 1000000))))")
+    return f"difference(boundary($geometry), buffer(collect_geometries({', '.join(hidden)}), {tolerance}))"
+
+
+@unittest.skipUnless(HAVE_QGIS, "QGIS Python behövs")
+class BoundaryExpressionTests(RenderCase):
+    """Det nya kantlinjeuttrycket (bara grannytor, snabbt) ritar samma bild som det gamla (alla ytor, långsamt)."""
+    PLAN_WKT = "MultiPolygon(((0 0, 100 0, 100 100, 0 100, 0 0)))"
+
+    @staticmethod
+    def box(x0, y0, x1, y1):
+        return f"MultiPolygon((({x0} {y0}, {x1} {y0}, {x1} {y1}, {x0} {y1}, {x0} {y0})))"
+
+    def scene(self):
+        self.add("detaljplan", self.PLAN_WKT)
+        # fyra användningsytor som delar kanter, en med en smal glugg (0,03 m, under toleransen) mot grannen, och en
+        # som ligger helt inuti en annan
+        for wkt in (self.box(0, 0, 50, 50), self.box(50, 0, 100, 50), self.box(0, 50, 50, 100),
+                    self.box(50.03, 50, 100, 100), self.box(10, 10, 30, 30)):
+            self.add("anvandning_yta", wkt, bestammelser=1, farg="Gul", beteckning="")
+        # egenskapsytor: två som delar en kant, en som överlappar, en sekundär som ligger på en vanlig
+        for wkt, secondary in ((self.box(20, 20, 60, 40), 0), (self.box(60, 20, 80, 40), 0), (self.box(40, 30, 70, 70), 0),
+                               (self.box(20, 20, 60, 40), 1)):
+            self.add("egenskap_yta", wkt, bestammelser=1, beteckning="", sekundar=secondary)
+
+    def render_scene(self, boundary=None):
+        from unittest import mock
+        from rita_detaljplan.core import symbology
+        order = self.in_map_order(["detaljplan", "anvandning_yta", "egenskap_yta"])
+        if boundary is None:
+            return self.render(order, extent=(-5, -5, 105, 105), size=400)
+        with mock.patch.object(symbology, "hierarchical_boundary", boundary):
+            return self.render(order, extent=(-5, -5, 105, 105), size=400)
+
+    @staticmethod
+    def differing_pixels(a, b):
+        count = 0
+        for x in range(a.width()):
+            for y in range(a.height()):
+                p, q = a.pixelColor(x, y), b.pixelColor(x, y)
+                if abs(p.red() - q.red()) + abs(p.green() - q.green()) + abs(p.blue() - q.blue()) > 24:
+                    count += 1
+        return count
+
+    def test_the_new_expression_draws_the_same_picture_as_the_old_one(self):
+        self.scene()
+        old = self.render_scene(legacy_boundary)
+        new = self.render_scene()
+        self.assertGreater(self.count_dark(new), 200, "kantlinjer ritas i provet")
+        self.assertEqual(self.differing_pixels(old, new), 0)
+
+    @staticmethod
+    def count_dark(image):
+        return sum(1 for x in range(image.width()) for y in range(image.height()) if is_dark(image.pixelColor(x, y)))
+
+    def test_the_expression_does_not_look_up_every_area_for_each_area(self):
+        # ett aggregate med filter som beror på @parent görs om för varje yta (och för en databas: en fråga per yta);
+        # grannarna slås i stället upp med ett lokalt spatialt index. Se symbology.hierarchical_boundary.
+        from rita_detaljplan.core import symbology
+        for same_kind in (False, True):
+            expression = symbology.hierarchical_boundary(self.layers, "egenskap_yta", ("detaljplan",), same_kind)
+            self.assertNotIn("@parent", expression)
+            self.assertIn("overlay_nearest", expression)
+            self.assertIn("cache:=true", expression)
+
+
 @unittest.skipUnless(HAVE_QGIS, "QGIS Python behövs")
 class LabelTests(RenderCase):
     def settings(self, table):

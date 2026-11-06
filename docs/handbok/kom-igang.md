@@ -119,6 +119,22 @@ Här finns:
 - **Trimma/Förläng objekt**,
 - **Spårning**, **Parallell** och **Vinkelrätt** – samma knappar som i QGIS egna verktygsfält.
 
+### Tangentbordsgenvägar
+
+Alla pluginets verktyg går att styra från tangentbordet. Det gör att du kan växla mellan att rita, markera och sätta
+planbestämmelser utan att flytta musen till verktygsfältet.
+
+1. Öppna **Inställningar → Kortkommandon…** (*Settings → Keyboard Shortcuts*) i QGIS.
+2. Skriv *Rita Detaljplan* i sökrutan. Där finns varje verktyg under namn som **Rita Detaljplan: Rita användningsområden**,
+   **Rita Detaljplan: Planbestämmelser**, **Rita Detaljplan: Markera**, **Rita Detaljplan: Börja rita planbestämmelser** med
+   flera.
+3. Välj ett verktyg, klicka på **Ändra** och tryck den tangentkombination du vill ha.
+
+Ett tryck gör samma sak som ett klick på knappen: ritverktyg och andra växlingsknappar slås på och av, och en knapp som är
+grå (till exempel för att ingen plan är öppen) gör ingenting. Inga genvägar är förvalda, så inget krockar med QGIS egna
+genvägar eller andra tillägg. Genvägarna sparas i din QGIS-profil. Undvik enkla bokstäver utan Ctrl, Alt eller Skift, som
+också skrivs i formulär och tabeller i QGIS.
+
 ## Nästa steg
 
 Fortsätt med [Rita planen](rita-planen.md).

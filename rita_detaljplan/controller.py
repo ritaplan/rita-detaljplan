@@ -264,6 +264,15 @@ class PlanController(QObject):
         return errors
 
     # -- hierarki ---------------------------------------------------------------------
+    def light_summary(self) -> Summary:
+        """Bara det som behövs för att veta om knappar ska vara tillgängliga: om planområde och användningsytor finns.
+        Räknar objekt (en fråga per lager) i stället för att läsa alla ytor och slå ihop deras geometrier som ``summary``,
+        vilket över en databas tar sekunder och görs vid varje uppdatering av verktygsfältet."""
+        plan_layer, use_layer = self.layer(PLAN_LAYER), self.layer(cat.USE_LAYER)
+        if plan_layer is None or use_layer is None:
+            return Summary(editing=self.editing)
+        return Summary(editing=self.editing, plans=plan_layer.featureCount(), uses=use_layer.featureCount())
+
     def summary(self) -> Summary:
         plan_layer, use_layer = self.layer(PLAN_LAYER), self.layer(cat.USE_LAYER)
         if plan_layer is None or use_layer is None:

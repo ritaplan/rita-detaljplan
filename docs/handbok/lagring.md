@@ -28,8 +28,22 @@ Projektfilen (`.qgz`) sparas i en mapp och pekar på databasen.
 
 ## Öppna en plan
 
-Klicka på **Öppna** i verktygsfältet. Finns det databasanslutningar får du välja fil eller databas. För en databas väljer
-du sedan schema och plan.
+Klicka på **Öppna** i verktygsfältet. Finns det databasanslutningar får du välja fil eller databas.
+
+För en databas visas en **översikt över alla planer** i databasen (alla scheman som skapats med pluginet) med en rad per
+plan och kolumner för beteckning, namn, syfte, planstatus, plantyp, diarienummer, påbörjad, antagande, laga kraft,
+genomförandetid och vem som har planen utcheckad. Listan är sorterad på planbeteckning, där tal räknas som tal (1, 2, 3,
+10 och 1002 i den ordningen). Klicka på en kolumnrubrik för att sortera på något annat.
+
+- **Filtrera** genom att skriva i rutan (delar av namn, beteckning, syfte, diarienummer …, flera ord kan kombineras) och
+  med listorna för schema (bredvid databasvalet), planstatus, plantyp och utcheckning (*Bara lediga* / *Bara
+  utcheckade*). Under listan står hur många planer som syns av alla och hur många som är valda.
+- **Välj flera planer** med Ctrl eller Skift och öppna dem på en gång. De läggs till bredvid varandra, och den sist
+  laddade planen blir den aktiva.
+- **Checka ut och öppna** låser planen och skapar en lokal kopia som du redigerar. Har du valt flera hämtas och låses de
+  en i taget. Knappen är grå om någon av dem har checkats ut av någon annan.
+- **Öppna skrivskyddad** visar planerna direkt från databasen utan att låsa dem. Det är också vad dubbelklick gör. Du kan
+  checka ut en plan senare med knappen **Checka ut** i verktygsfältet.
 
 **Rita Detaljplan → Öppna detaljplan (GeoPackage)…** öppnar en plan-fil direkt.
 
@@ -45,7 +59,9 @@ tills du checkar ut den.
 
 ### Checka ut
 
-Klicka på **Checka ut** (databasikonen med pil nedåt) eller på pennan. Pluginet
+Knappen **Checka ut** (databasikonen med pil nedåt) syns alltid i verktygsfältet men är grå när planen bara ligger i en
+lokal fil. Du kan också välja **Checka ut och öppna** direkt när du öppnar planen från databasen. Klicka på knappen eller
+på pennan. Pluginet
 
 1. låser planen i databasen,
 2. kopierar den till en lokal GeoPackage som du redigerar i full fart.

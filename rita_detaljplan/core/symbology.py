@@ -206,21 +206,34 @@ def hierarchical_boundary(layers: dict[str, QgsVectorLayer], own_table: str, hig
     Delade kanter inom lagret ritas av ytan med lägst ``objektidentitet``, så att de inte ritas två gånger. Med
     ``same_kind`` döljer bara ytor av samma slag varandra (``sekundar``): egenskapsgränser och sekundära
     egenskapsgränser ritas ovanpå varandra där de sammanfaller (BFS 2020:6, 3.3)."""
-    own_filter = "\"objektidentitet\" < attribute(@parent, 'objektidentitet')"
-    if same_kind:
-        own_filter += " AND coalesce(\"sekundar\", 0) = coalesce(attribute(@parent, 'sekundar'), 0)"
-    hidden = [f"coalesce(boundary(aggregate('{layers[table].id()}', 'collect', $geometry)), {_EMPTY})"
-              for table in higher_tables if table in layers]
-    hidden.append(f"coalesce(boundary(aggregate('{layers[own_table].id()}', 'collect', $geometry, "
-                  f"filter:={own_filter})), {_EMPTY})")
     # Toleransen följer planens storlek så att en mycket liten plan (nära origo, några meter) inte får hela kanter
-    # bortdöljda; för en vanlig plan blir den COINCIDENCE_TOLERANCE.
+    # bortdöljda; för en vanlig plan blir den COINCIDENCE_TOLERANCE. Aggregatet har inget filter som beror på den
+    # aktuella ytan och hämtas därför bara en gång per ritning.
     plan = layers.get("detaljplan")
     if plan is not None:
         tolerance = (f"min({COINCIDENCE_TOLERANCE}, max(0.000001, 0.0005 * "
                      f"sqrt(coalesce(aggregate('{plan.id()}', 'sum', $area), 1000000))))")
     else:
         tolerance = str(COINCIDENCE_TOLERANCE)
+    # Bara ytor närmare än toleransen kan dölja något av kanten, så bara de räknas med (overlay_nearest med ett lokalt
+    # spatialt index som byggs en gång). Att räkna på alla ytor i planen för varje yta (aggregate över hela lagret,
+    # med ett filter som beror på @parent) gjorde ritningen mycket långsam för en större plan: ritningen tog 15–20 s
+    # för en plan med 135 ytor, lika mycket från en lokal fil som från en databas, och i en databas dessutom en
+    # fråga per yta.
+    # limit:=-1 ("ingen gräns") ger i QGIS bara de ytor som rör vid varandra och hoppar över max_distance, så en smal
+    # glugg mellan två ytor (under toleransen) skulle missas: ett stort tal ger alla grannar inom toleransen.
+    nearby = f"max_distance:={tolerance}, limit:=1000, cache:=true"
+    hidden = [f"coalesce(boundary(collect_geometries(overlay_nearest('{layers[table].id()}', $geometry, {nearby}))), "
+              f"{_EMPTY})" for table in higher_tables if table in layers]
+    # Grannarna i det egna lagret: bara de med lägre objektidentitet (och, med ``same_kind``, samma slag) döljer ytan.
+    values = '"objektidentitet", coalesce("sekundar", 0), $geometry' if same_kind else '"objektidentitet", $geometry'
+    geometry_position = 2 if same_kind else 1
+    only_earlier = '"objektidentitet" > array_get(@element, 0)'
+    if same_kind:
+        only_earlier += ' AND coalesce("sekundar", 0) = array_get(@element, 1)'
+    neighbours = f"overlay_nearest('{layers[own_table].id()}', array({values}), {nearby})"
+    hidden.append(f"coalesce(boundary(collect_geometries(array_foreach(array_filter({neighbours}, {only_earlier}), "
+                  f"array_get(@element, {geometry_position})))), {_EMPTY})")
     return (f"difference(boundary($geometry), buffer(collect_geometries({', '.join(hidden)}), {tolerance}))")
 
 

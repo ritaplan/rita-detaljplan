@@ -21,10 +21,13 @@ if HAVE_QGIS:
     from osgeo import ogr
     from qgis.core import Qgis, QgsDataSourceUri, QgsFieldConstraints, QgsProject
     import rita_detaljplan
+    from qgis.PyQt.QtCore import Qt
+    from rita_detaljplan.core import checkout as co
     from rita_detaljplan.core import geopackage, model, storage
     from rita_detaljplan.core.project import create_postgis_plan_project, find_plan_group, load_plan
     from rita_detaljplan.gui.new_plan_dialog import NewPlanDialog, NewPlanValues
-    from rita_detaljplan.gui.postgis_plan_dialog import PostgisPlanDialog
+    from rita_detaljplan.gui.postgis_plan_dialog import (COLUMN_FIELDS, LOCK_FREE, LOCK_TAKEN, ROW_ROLE, PostgisPlanDialog,
+                                                         lock_text, natural_key)
     from test_toolbar import GuiCase
     from plan_case import PlanCase
 
@@ -41,6 +44,8 @@ class FakeConnection:
         self.plugin_schemas = list(plugin_schemas)  # scheman med dp_schema, för list_plugin_schemas
         self.schema_meta = {}  # schema -> {key: value}  (dp_schema)
         self.plan_meta = {}  # schema -> {plan_id: {key: value}}  (dp_meta)
+        self.plan_rows = {}  # schema -> rader [plan, namn, beteckning, kommun, syfte, status, typ, statusdatum]
+        self.decision_rows = {}  # schema -> rader [plan, diarienummer, påbörjad, antagande, laga kraft, genomförandetid]
 
     def uri(self):
         return "dbname='planer' host=localhost port=5432 user='eric' sslmode=disable"
@@ -83,6 +88,16 @@ class FakeConnection:
         match = re.match(r'SELECT DISTINCT "plan" FROM "(\w+)"\."dp_meta"', sql)
         if match:
             return [[p] for p in sorted(self.plan_meta.get(match.group(1), {}))]
+        match = re.match(r'SELECT "plan", "value" FROM "(\w+)"\."dp_meta" WHERE "key" = \'([^\']*)\'', sql)
+        if match:
+            schema, key = match.groups()
+            return [[p, meta[key]] for p, meta in sorted(self.plan_meta.get(schema, {}).items()) if key in meta]
+        match = re.match(r'SELECT "plan", "namn".* FROM "(\w+)"\."detaljplan"', sql)
+        if match:
+            return self.plan_rows.get(match.group(1), [])
+        match = re.match(r'SELECT "plan", "diarienummerKommun".* FROM "(\w+)"\."beslutsinformation"', sql)
+        if match:
+            return self.decision_rows.get(match.group(1), [])
         return []
 
 
@@ -408,6 +423,21 @@ class LoadTests(PlanCase):
         self.assertEqual(layers["anvandning_yta"].renderer().referenceScale(), 1000)
         self.assertEqual(layers["hjalplinje"].customProperty("detaljplan_ngp/table"), "hjalplinje")
 
+    def test_the_coordinate_system_is_read_once_for_all_layers_of_the_plan(self):
+        plan = self.plan()
+        self.conn.sql.clear()
+        for layer_def in model.LAYERS:
+            plan.make_layer(layer_def)
+        reads = [s for s in self.conn.sql if '"dp_meta"' in s or '"dp_schema"' in s]
+        self.assertEqual(len(reads), 2, f"en läsning av planens och schemats uppgifter, inte en per lager: {reads}")
+
+    def test_the_layer_uri_skips_the_provider_checks_that_cost_a_query_each(self):
+        uri = QgsDataSourceUri(self.plan().layer_uri(model.LAYERS[0], 3006))
+        self.assertEqual(uri.param("checkPrimaryKeyUnicity"), "0")
+        self.assertEqual(uri.keyColumn(), "fid")
+        self.assertEqual(uri.table(), model.LAYERS[0].name)
+        self.assertIn("\"plan\" = 'dp_1'", uri.sql(), "bara den här planens rader")
+
     def test_a_plan_id_without_metadata_rows_is_not_a_plan(self):
         with self.assertRaisesRegex(ValueError, "inte en detaljplan"):
             load_plan(storage.PostgisStorage("db", "dp_test", "saknas", self.conn), QgsProject())
@@ -564,35 +594,222 @@ class OpenDialogTests(PlanCase):
             conn.plan_meta[schema][plan_id] = {"kommun": "Eskilstuna"}
         return conn
 
-    def test_the_schemas_of_the_chosen_connection_are_listed(self):
+    def detailed(self):
+        """Två scheman med tre planer: en ledig, en utcheckad av någon annan och en av den här användaren."""
+        conn = self.with_plans("dp_a", ["kv_norr", "kv_soder"])
+        self.with_plans("dp_b", ["gamla"], conn)
+        others = co.Lock("t1", "annan", "annan-dator", "2026-10-01T09:30:00")
+        mine = co.new_lock()
+        conn.plan_meta["dp_a"]["kv_soder"]["checkout"] = others.to_json()
+        conn.plan_meta["dp_b"]["gamla"]["checkout"] = mine.to_json()
+        conn.plan_rows["dp_a"] = [
+            ["kv_norr", "Kv Norr", "1-23", "Eskilstuna", "Bostäder och park", "samråd", "detaljplan", "2026-05-02"],
+            ["kv_soder", "Kv Söder", "1-24", "Eskilstuna", "Skola", "antagen", "detaljplan", None],
+        ]
+        conn.plan_rows["dp_b"] = [["gamla", "Gamla stan", "B-1", "Torshälla", "Handel", "laga kraft", "stadsplan", None]]
+        conn.decision_rows["dp_a"] = [
+            ["kv_norr", "KS 2026/12", "2026-01-15", None, None, None],
+            ["kv_soder", "KS 2025/7", "2025-03-01", "2026-02-10", "2026-03-10;2026-04-01", 10],
+            ["kv_soder", None, "2025-02-01", "2026-01-10", None, None],
+        ]
+        return conn
+
+    def visible_ids(self, dialog):
+        return [dialog.model.item(dialog.proxy.mapToSource(dialog.proxy.index(i, 0)).row(), 0).data(ROW_ROLE).plan_id
+                for i in range(dialog.proxy.rowCount())]
+
+    def select(self, dialog, *plan_ids):
+        """Väljer planerna (flera med Ctrl, som användaren)."""
+        from qgis.PyQt.QtCore import QItemSelectionModel
+        dialog.table.clearSelection()
+        visible = self.visible_ids(dialog)
+        for plan_id in plan_ids:
+            if plan_id not in visible:
+                self.fail(f"{plan_id} syns inte")
+            dialog.table.selectionModel().select(
+                dialog.proxy.index(visible.index(plan_id), 0),
+                QItemSelectionModel.SelectionFlag.Select | QItemSelectionModel.SelectionFlag.Rows)
+
+    def test_all_plans_of_all_plugin_schemas_in_the_database_are_listed(self):
+        dialog = self.dialog({"a": self.detailed()})
+        self.assertEqual(sorted(self.visible_ids(dialog)), ["gamla", "kv_norr", "kv_soder"])
+        self.assertIn("Synliga: 3 av 3", dialog.count.text())
+        self.assertIsNone(dialog.selection())
+        self.assertFalse(dialog.open_checkout.isEnabled())
+        self.assertFalse(dialog.open_readonly.isEnabled())
+
+    def test_the_columns_show_what_is_known_about_each_plan(self):
+        dialog = self.dialog({"a": self.detailed()})
+        rows = {r.plan_id: r for r in dialog._rows}
+        norr, soder = rows["kv_norr"], rows["kv_soder"]
+        self.assertEqual((norr.namn, norr.beteckning, norr.status, norr.typ, norr.kommun, norr.syfte),
+                         ("Kv Norr", "1-23", "samråd", "detaljplan", "Eskilstuna", "Bostäder och park"))
+        self.assertEqual((norr.diarienummer, norr.paborjad, norr.antagande, norr.laga_kraft),
+                         ("KS 2026/12", "2026-01-15", "", ""))
+        # flera beslut: tidigaste påbörjandet, senaste antagandet och senaste laga kraft-datumet
+        self.assertEqual((soder.paborjad, soder.antagande, soder.laga_kraft, soder.genomforandetid),
+                         ("2025-02-01", "2026-02-10", "2026-04-01", "10"))
+        self.assertEqual(rows["gamla"].status_datum, "")
+
+    def test_locks_are_shown_and_told_apart_from_the_users_own(self):
+        dialog = self.dialog({"a": self.detailed()})
+        rows = {r.plan_id: r for r in dialog._rows}
+        self.assertFalse(rows["kv_norr"].locked)
+        self.assertTrue(rows["kv_soder"].locked and not rows["kv_soder"].locked_by_me)
+        self.assertTrue(rows["gamla"].locked_by_me)
+        self.assertIn("annan", lock_text(rows["kv_soder"]))
+        self.assertTrue(lock_text(rows["gamla"]).startswith("Du"))
+        self.assertEqual(lock_text(rows["kv_norr"]), "")
+
+    def test_selecting_a_plan_gives_connection_schema_and_plan(self):
+        dialog = self.dialog({"a": self.detailed()})
+        self.select(dialog, "kv_norr")
+        self.assertEqual(dialog.selection(), ("a", "dp_a", "kv_norr"))
+        self.assertTrue(dialog.open_checkout.isEnabled())
+        self.assertTrue(dialog.open_readonly.isEnabled())
+
+    def test_a_plan_checked_out_by_someone_else_can_only_be_opened_read_only(self):
+        dialog = self.dialog({"a": self.detailed()})
+        self.select(dialog, "kv_soder")
+        self.assertFalse(dialog.open_checkout.isEnabled())
+        self.assertTrue(dialog.open_readonly.isEnabled())
+        self.assertIn("annan", dialog.hint.text())
+        dialog._accept_with(True)  # ska inte gå att tvinga fram
+        self.assertEqual(dialog.result(), 0)
+        self.assertFalse(dialog.checkout_requested)
+
+    def test_the_users_own_checkout_can_be_taken_up_again(self):
+        dialog = self.dialog({"a": self.detailed()})
+        self.select(dialog, "gamla")
+        self.assertTrue(dialog.open_checkout.isEnabled())
+
+    def test_the_two_buttons_tell_whether_the_plan_should_be_checked_out(self):
+        for check_out in (True, False):
+            dialog = self.dialog({"a": self.detailed()})
+            self.select(dialog, "kv_norr")
+            dialog._accept_with(check_out)
+            self.assertEqual(dialog.result(), 1)
+            self.assertEqual(dialog.checkout_requested, check_out)
+
+    def test_filtering_by_text_status_type_schema_and_lock(self):
+        dialog = self.dialog({"a": self.detailed()})
+        dialog.filter_text.setText("skola")  # ur syftet
+        self.assertEqual(self.visible_ids(dialog), ["kv_soder"])
+        self.assertIn("Synliga: 1 av 3", dialog.count.text())
+        dialog.filter_text.setText("ks 2026 kv norr")  # flera ord, i valfri ordning och kolumn
+        self.assertEqual(self.visible_ids(dialog), ["kv_norr"])
+        dialog.filter_text.setText("")
+        for combo, text, expected in ((dialog.filter_status, "laga kraft", ["gamla"]),
+                                      (dialog.filter_typ, "stadsplan", ["gamla"]),
+                                      (dialog.filter_schema, "dp_b", ["gamla"])):
+            combo.setCurrentIndex(combo.findText(text))
+            self.assertEqual(sorted(self.visible_ids(dialog)), expected, text)
+            combo.setCurrentIndex(0)
+        dialog.filter_lock.setCurrentIndex(dialog.filter_lock.findData(LOCK_FREE))
+        self.assertEqual(self.visible_ids(dialog), ["kv_norr"])
+        dialog.filter_lock.setCurrentIndex(dialog.filter_lock.findData(LOCK_TAKEN))
+        self.assertEqual(sorted(self.visible_ids(dialog)), ["gamla", "kv_soder"])
+        self.assertIn("Synliga: 2 av 3", dialog.count.text())
+
+    def test_the_filter_lists_hold_the_values_that_exist_in_the_database(self):
+        dialog = self.dialog({"a": self.detailed()})
+
+        def items(combo):
+            return [combo.itemText(i) for i in range(1, combo.count())]
+        self.assertEqual(items(dialog.filter_status), ["antagen", "laga kraft", "samråd"])
+        self.assertFalse(hasattr(dialog, "filter_kommun"), "en databas hör till en kommun: inget val av kommun")
+        self.assertNotIn("kommun", COLUMN_FIELDS)
+        self.assertEqual(items(dialog.filter_schema), ["dp_a", "dp_b"])
+
+    def numbered(self, designations):
+        conn = self.with_plans("dp_n", [f"p{i}" for i in range(len(designations))])
+        conn.plan_rows["dp_n"] = [[f"p{i}", f"Plan {d}", d, "Eskilstuna", "", "antagen", "detaljplan", None]
+                                  for i, d in enumerate(designations)]
+        return conn
+
+    def test_the_list_starts_sorted_on_the_plan_designation(self):
+        dialog = self.dialog({"a": self.detailed()})
+        self.assertEqual(COLUMN_FIELDS[0], "beteckning")
+        self.assertEqual(dialog.table.horizontalHeader().sortIndicatorSection(), COLUMN_FIELDS.index("beteckning"))
+        self.assertEqual(self.visible_ids(dialog), ["kv_norr", "kv_soder", "gamla"], "1-23, 1-24, B-1")
+
+    def test_numbers_in_designations_sort_as_numbers(self):
+        designations = ["1002", "10", "3", "1", "2", "", "1-10", "1-2", "A-2", "A-10"]
+        dialog = self.dialog({"a": self.numbered(designations)})
+        shown = [dialog.model.item(dialog.proxy.mapToSource(dialog.proxy.index(i, 0)).row(), 0).text()
+                 for i in range(dialog.proxy.rowCount())]
+        self.assertEqual(shown, ["1", "1-2", "1-10", "2", "3", "10", "1002", "A-2", "A-10", ""],
+                         "1, 2, 3, 10 och 1002 i talordning (inte 1, 10, 1002, 2, 3); tomt sist")
+        dialog.table.sortByColumn(0, Qt.SortOrder.DescendingOrder)
+        self.assertEqual(self.visible_ids(dialog)[0], "p5", "fallande: tomt först, sedan 1002 före 10")
+
+    def test_the_natural_key_compares_numbers_by_value_and_ignores_case(self):
+        ordered = ["1", "2", "9", "10", "11", "100", "1002", "a1", "A2", "a10"]
+        self.assertEqual(sorted(ordered, key=natural_key), ordered)
+        self.assertLess(natural_key("2"), natural_key("10"))
+        self.assertLess(natural_key("10"), natural_key("1002"))
+        self.assertLess(natural_key("1002"), natural_key(""))
+
+    def test_the_schema_filter_sits_next_to_the_database_choice(self):
+        dialog = self.dialog({"a": self.detailed()})
+        top = dialog.layout().itemAt(0).layout()
+        widgets = [top.itemAt(i).widget() for i in range(top.count()) if top.itemAt(i).widget() is not None]
+        self.assertIn(dialog.connection, widgets)
+        self.assertEqual(widgets.index(dialog.filter_schema), widgets.index(dialog.connection) + 1)
+
+    def test_several_plans_can_be_chosen_at_once(self):
+        dialog = self.dialog({"a": self.detailed()})
+        self.select(dialog, "kv_norr", "gamla")
+        self.assertEqual(dialog.selections(), [("a", "dp_a", "kv_norr"), ("a", "dp_b", "gamla")])
+        self.assertEqual(dialog.selection(), ("a", "dp_a", "kv_norr"))
+        self.assertIn("Valda: 2", dialog.count.text())
+        self.assertIn("2 planer valda", dialog.hint.text())
+        self.assertTrue(dialog.open_checkout.isEnabled())
+
+    def test_checking_out_several_needs_all_to_be_free_or_the_users_own(self):
+        dialog = self.dialog({"a": self.detailed()})
+        self.select(dialog, "kv_norr", "kv_soder")  # den andra är utcheckad av någon annan
+        self.assertFalse(dialog.open_checkout.isEnabled())
+        self.assertTrue(dialog.open_readonly.isEnabled())
+        self.assertIn("1-24", dialog.hint.text(), "namnger den som någon annan har")
+        dialog._accept_with(True)
+        self.assertEqual(dialog.result(), 0, "går inte att tvinga fram")
+        dialog._accept_with(False)
+        self.assertEqual(dialog.result(), 1, "men de kan öppnas skrivskyddade")
+        self.assertEqual(len(dialog.selections()), 2)
+
+    def test_the_table_can_be_sorted_on_a_column(self):
+        dialog = self.dialog({"a": self.detailed()})
+        column = COLUMN_FIELDS.index("namn")
+        dialog.table.sortByColumn(column, Qt.SortOrder.AscendingOrder)
+        self.assertEqual(self.visible_ids(dialog), ["gamla", "kv_norr", "kv_soder"])
+        dialog.table.sortByColumn(column, Qt.SortOrder.DescendingOrder)
+        self.assertEqual(self.visible_ids(dialog), ["kv_soder", "kv_norr", "gamla"])
+
+    def test_the_connection_chooses_which_database_is_shown(self):
         a = self.with_plans("dp_a", ["p1"])
         b = self.with_plans("dp_b", ["p9"])
         dialog = self.dialog({"a": a, "b": b})
-        self.assertEqual([dialog.schema.itemText(i) for i in range(dialog.schema.count())], ["dp_a"])
+        self.assertEqual(self.visible_ids(dialog), ["p1"])
         dialog.connection.setCurrentIndex(1)
-        self.assertEqual([dialog.schema.itemText(i) for i in range(dialog.schema.count())], ["dp_b"])
+        self.assertEqual(self.visible_ids(dialog), ["p9"])
 
-    def test_the_plans_of_the_chosen_schema_are_listed(self):
-        conn = self.with_plans("dp_shared", ["p1", "p2"])
+    def test_plans_without_details_are_still_listed_when_a_table_cannot_be_read(self):
+        conn = self.with_plans("dp_a", ["p1"])
+        conn.fail_on = '"beslutsinformation"'
         dialog = self.dialog({"a": conn})
-        self.assertEqual([dialog.plans.item(i).text() for i in range(dialog.plans.count())], ["p1", "p2"])
-        self.assertIsNone(dialog.selection())
-        self.assertFalse(dialog.buttons.buttons()[0].isEnabled())
-
-    def test_selecting_a_plan_enables_opening_and_gives_connection_schema_and_plan(self):
-        conn = self.with_plans("dp_shared", ["p1", "p2"])
-        dialog = self.dialog({"a": conn})
-        dialog.plans.setCurrentRow(1)
-        self.assertEqual(dialog.selection(), ("a", "dp_shared", "p2"))
-        self.assertTrue(dialog.buttons.buttons()[0].isEnabled())
+        self.assertEqual(self.visible_ids(dialog), ["p1"])
+        self.assertEqual(dialog.error.text(), "")
 
     def test_an_empty_database_and_a_failing_one_are_explained(self):
         self.assertIn("inga scheman", self.dialog({"a": FakeConnection()}).error.text())
+        self.assertIn("inga planer", self.dialog({"a": self.with_plans("dp_a", [])}).error.text())
         broken = mock.Mock()
         broken.executeSql.side_effect = RuntimeError("timeout")
         dialog = self.dialog({"a": broken})
         self.assertIn("timeout", dialog.error.text())
-        self.assertEqual(dialog.plans.count(), 0)
+        self.assertEqual(dialog.proxy.rowCount(), 0)
+        self.assertIn("Synliga: 0 av 0", dialog.count.text())
 
 
 @unittest.skipUnless(HAVE_QGIS, "QGIS Python behövs")
@@ -602,6 +819,18 @@ class PluginTests(GuiCase):
         self.plugin = rita_detaljplan.classFactory(self.iface)
         self.plugin.initGui()
         self.addCleanup(self.plugin.unload)
+
+    def test_the_tools_are_in_the_shortcut_dialog_and_removed_when_the_plugin_unloads(self):
+        from qgis.gui import QgsGui
+        manager = QgsGui.shortcutsManager()
+
+        def ours():
+            return [a for a in manager.listActions() if a.text().startswith("Rita Detaljplan: ")]
+
+        self.assertGreaterEqual(len(ours()), 25)
+        self.plugin.unload()
+        self.assertEqual(ours(), [])
+        self.plugin.initGui()  # cleanup anropar unload igen: ska tåla att initGui körts om
 
     def critical(self):
         return [c.args[1] for c in self.iface.messageBar().pushMessage.call_args_list
@@ -660,7 +889,8 @@ class PluginTests(GuiCase):
         with mock.patch("rita_detaljplan.plugin.PostgisPlanDialog") as dialog_cls, \
                 mock.patch("rita_detaljplan.plugin.load_plan") as load:
             dialog_cls.return_value.exec.return_value = True
-            dialog_cls.return_value.selection.return_value = ("planer", "dp_shared", "dp_1")
+            dialog_cls.return_value.selections.return_value = [("planer", "dp_shared", "dp_1")]
+            dialog_cls.return_value.checkout_requested = False
             self.plugin.open_plan_postgis()
         self.assertEqual(load.call_args.args[0], storage.PostgisStorage("planer", "dp_shared", "dp_1"))
 
@@ -673,16 +903,79 @@ class PluginTests(GuiCase):
         with mock.patch("rita_detaljplan.plugin.PostgisPlanDialog") as dialog_cls, \
                 mock.patch("rita_detaljplan.plugin.load_plan") as load:
             dialog_cls.return_value.exec.return_value = True
-            dialog_cls.return_value.selection.return_value = ("planer", "dp_shared", "dp_1")
+            dialog_cls.return_value.selections.return_value = [("planer", "dp_shared", "dp_1")]
+            dialog_cls.return_value.checkout_requested = False
             self.plugin.open_plan_postgis()
         load.assert_called_once()
         self.assertIn(old_plan_layer_id, QgsProject.instance().mapLayers(), "den gamla planens lager ligger kvar")
+
+    def open_from_dialog(self, checkout_requested, lock=None, checked_out=True, plan_ids=("dp_1",)):
+        toolbar = self.plugin.toolbar
+        with mock.patch("rita_detaljplan.plugin.PostgisPlanDialog") as dialog_cls,                 mock.patch("rita_detaljplan.plugin.load_plan") as load,                 mock.patch("rita_detaljplan.plugin.checkout.read_lock", return_value=lock),                 mock.patch.object(toolbar.checkout, "check_out", return_value=checked_out) as check_out:
+            dialog_cls.return_value.exec.return_value = True
+            dialog_cls.return_value.selections.return_value = [("planer", "dp_shared", p) for p in plan_ids]
+            dialog_cls.return_value.checkout_requested = checkout_requested
+            self.plugin.open_plan_postgis()
+        self.load = load
+        return check_out
+
+    def test_checking_out_from_the_dialog_checks_the_plan_out_without_asking_again(self):
+        check_out = self.open_from_dialog(True)
+        check_out.assert_called_once_with(confirm=False)
+        self.assertFalse(any("skrivskyddad" in c.args[1] for c in self.iface.messageBar().pushMessage.call_args_list))
+
+    def test_opening_read_only_from_the_dialog_does_not_check_out(self):
+        check_out = self.open_from_dialog(False)
+        check_out.assert_not_called()
+        self.assertTrue(any("skrivskyddad" in c.args[1] for c in self.iface.messageBar().pushMessage.call_args_list))
+
+    def test_a_plan_taken_by_someone_else_in_the_meantime_is_opened_read_only(self):
+        taken = co.Lock("t1", "annan", "annan-dator", "2026-10-01T09:30:00")
+        check_out = self.open_from_dialog(True, lock=taken)
+        check_out.assert_not_called()
+        self.assertTrue(any("annan" in c.args[1] for c in self.iface.messageBar().pushMessage.call_args_list))
+
+    def test_a_declined_or_failed_checkout_leaves_the_plan_open_read_only(self):
+        self.open_from_dialog(True, checked_out=False)
+        self.assertTrue(any("skrivskyddad" in c.args[1] for c in self.iface.messageBar().pushMessage.call_args_list))
+
+    def test_several_plans_are_loaded_in_turn_and_the_last_one_is_active(self):
+        check_out = self.open_from_dialog(False, plan_ids=("dp_1", "dp_2", "dp_3"))
+        self.assertEqual([c.args[0].plan_id for c in self.load.call_args_list], ["dp_1", "dp_2", "dp_3"])
+        check_out.assert_not_called()
+        self.assertTrue(any("Laddade 3 planer" in c.args[1] and "3 skrivskyddade" in c.args[1]
+                            for c in self.iface.messageBar().pushMessage.call_args_list))
+
+    def test_several_plans_can_be_checked_out_one_after_the_other(self):
+        check_out = self.open_from_dialog(True, plan_ids=("dp_1", "dp_2"))
+        self.assertEqual(check_out.call_count, 2)
+        check_out.assert_called_with(confirm=False)
+        self.assertTrue(any("2 utcheckade" in c.args[1] for c in self.iface.messageBar().pushMessage.call_args_list))
+
+    def test_the_map_is_not_redrawn_while_several_plans_load(self):
+        canvas = self.iface.mapCanvas()
+        with mock.patch.object(canvas, "freeze", wraps=canvas.freeze) as freeze:
+            self.open_from_dialog(False, plan_ids=("dp_1", "dp_2"))
+            self.assertEqual([c.args[0] for c in freeze.call_args_list], [True, False])
+        self.assertFalse(canvas.isFrozen(), "kartan är upptinad igen")
+
+    def test_a_plan_that_fails_does_not_stop_the_others(self):
+        with mock.patch("rita_detaljplan.plugin.PostgisPlanDialog") as dialog_cls,                 mock.patch("rita_detaljplan.plugin.load_plan",
+                           side_effect=[None, storage.PostgisError("ingen kontakt"), None]) as load,                 mock.patch("rita_detaljplan.plugin.checkout.read_lock", return_value=None):
+            dialog_cls.return_value.exec.return_value = True
+            dialog_cls.return_value.selections.return_value = [("planer", "dp_shared", p) for p in ("a", "b", "c")]
+            dialog_cls.return_value.checkout_requested = False
+            self.plugin.open_plan_postgis()
+        self.assertEqual(load.call_count, 3)
+        self.assertTrue(any("b" in t and "ingen kontakt" in t for t in self.critical()), self.critical())
+        self.assertTrue(any("Laddade 2 planer" in c.args[1] for c in self.iface.messageBar().pushMessage.call_args_list))
 
     def test_a_plan_that_cannot_be_read_is_reported(self):
         with mock.patch("rita_detaljplan.plugin.PostgisPlanDialog") as dialog_cls, \
                 mock.patch("rita_detaljplan.plugin.load_plan", side_effect=storage.PostgisError("ingen kontakt")):
             dialog_cls.return_value.exec.return_value = True
-            dialog_cls.return_value.selection.return_value = ("planer", "dp_shared", "dp_1")
+            dialog_cls.return_value.selections.return_value = [("planer", "dp_shared", "dp_1")]
+            dialog_cls.return_value.checkout_requested = False
             self.plugin.open_plan_postgis()
         self.assertTrue(any("ingen kontakt" in t for t in self.critical()))
 

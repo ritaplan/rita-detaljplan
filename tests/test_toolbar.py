@@ -832,6 +832,119 @@ class ToolBarTests(GuiCase):
         dialog_cls.return_value.exec.assert_called_once()
 
 
+class ShortcutTests(GuiCase):
+    """Verktygen finns i QGIS kortkommandodialog och kan få valfria genvägar (ärende 10)."""
+
+    def setUp(self):
+        super().setUp()
+        from qgis.gui import QgsShortcutsManager
+        # en egen hanterare med egen inställningsplats: testet ska varken bero på eller skriva i användarens sparade genvägar
+        self.manager = QgsShortcutsManager(None, "/rita_detaljplan_test_shortcuts/")
+        self.toolbar = PlanToolBar(self.iface, self.controller, lambda: self.catalog)
+        self.addCleanup(self.toolbar.deleteLater)
+        self.addCleanup(self.toolbar.unregister_shortcuts)
+        self.shortcuts = self.toolbar.register_shortcuts(self.manager)
+
+    def proxy(self, name):
+        return next(a for a in self.shortcuts if a.text() == "Rita Detaljplan: " + name)
+
+    def dialog_texts(self, with_icons=False):
+        """Allt som QGIS riktiga kortkommandodialog listar för hanteraren (eller, med ``with_icons``, text och om raden
+        har en ikon)."""
+        from qgis.gui import QgsConfigureShortcutsDialog
+        from qgis.PyQt.QtCore import QEventLoop, QModelIndex, QTimer
+        from qgis.PyQt.QtWidgets import QAbstractItemView
+        dialog = QgsConfigureShortcutsDialog(None, self.manager)
+        self.addCleanup(dialog.deleteLater)
+        loop = QEventLoop()
+        QTimer.singleShot(200, loop.quit)
+        loop.exec()
+        found = []
+        for view in dialog.findChildren(QAbstractItemView):
+            model = view.model()
+            if model is None:
+                continue
+
+            def walk(parent):
+                for row in range(model.rowCount(parent)):
+                    index = model.index(row, 0, parent)
+                    icon = model.data(index, Qt.ItemDataRole.DecorationRole)
+                    found.append((str(model.data(index)), icon is not None and not icon.isNull())
+                                 if with_icons else str(model.data(index)))
+                    walk(index)
+            walk(QModelIndex())
+        return found
+
+    def test_every_tool_is_listed_in_the_qgis_shortcut_dialog(self):
+        # dialogen visar bara vanliga åtgärder: att hanteraren har en QShortcut räcker inte (det var ett tidigare fel)
+        shown = self.dialog_texts()
+        for name, _action in self.toolbar.shortcut_actions():
+            self.assertIn("Rita Detaljplan: " + name, shown, name)
+        self.assertGreaterEqual(len([t for t in shown if t.startswith("Rita Detaljplan: ")]), 25)
+
+    def test_the_icons_of_the_buttons_are_shown_in_the_dialog_too(self):
+        rows = [(text, has_icon) for text, has_icon in self.dialog_texts(with_icons=True)
+                if text.startswith("Rita Detaljplan: ")]
+        self.assertGreaterEqual(len(rows), 25)
+        self.assertEqual([text for text, has_icon in rows if not has_icon], [], "alla verktyg visas med ikon")
+        for proxy in self.shortcuts:  # och de är samma ikoner som på knapparna
+            self.assertFalse(proxy.icon().isNull(), proxy.text())
+
+    def test_every_tool_has_a_named_action_in_the_qgis_shortcut_manager(self):
+        expected = {"Rita Detaljplan: " + name for name, _ in self.toolbar.shortcut_actions()}
+        self.assertEqual({a.text() for a in self.shortcuts}, expected)
+        registered = {a.text() for a in self.manager.listActions()}
+        self.assertLessEqual(expected, registered)
+        for name in ("Rita användningsområden", "Rita planområdet", "Planbestämmelser", "Markera",
+                     "Börja rita planbestämmelser", "Fyll användning", "Checka ut / checka in"):
+            self.assertIn("Rita Detaljplan: " + name, expected)
+
+    def test_the_names_are_unique_and_every_draw_button_is_covered(self):
+        names = [name for name, _ in self.toolbar.shortcut_actions()]
+        self.assertEqual(len(names), len(set(names)))
+        from rita_detaljplan.gui.plan_toolbar import SHORTCUT_DRAW_NAMES
+        self.assertEqual(set(SHORTCUT_DRAW_NAMES), set(self.toolbar.draw_actions), "alla ritverktyg har en genväg")
+
+    def test_no_shortcut_keys_are_chosen_for_the_user(self):
+        # inga förvalda genvägar: de skulle kunna krocka med QGIS egna eller andra tilläggs
+        for proxy in self.shortcuts:
+            self.assertTrue(proxy.shortcut().isEmpty(), proxy.text())
+
+    def test_a_shortcut_does_the_same_as_clicking_the_button(self):
+        hide = self.toolbar.act_hide_labels  # ett växlingsverktyg: tryck slår på, nytt tryck slår av
+        hide.setEnabled(True)
+        self.proxy("Dölj texter").trigger()
+        self.assertTrue(hide.isChecked())
+        self.proxy("Dölj texter").trigger()
+        self.assertFalse(hide.isChecked())
+        clicked = []
+        self.toolbar.act_info.setEnabled(True)
+        self.toolbar.act_info.triggered.connect(lambda *_: clicked.append(1))
+        self.proxy("Planens uppgifter").trigger()
+        self.assertEqual(clicked, [1])
+
+    def test_a_disabled_button_ignores_its_shortcut(self):
+        hide = self.toolbar.act_hide_labels
+        hide.setEnabled(False)
+        self.proxy("Dölj texter").trigger()
+        self.assertFalse(hide.isChecked())
+
+    def test_a_key_chosen_in_qgis_is_set_and_the_buttons_keep_their_tips(self):
+        tip = self.toolbar.act_start.toolTip()
+        self.manager.setKeySequence("Rita Detaljplan: Börja rita planbestämmelser", "Ctrl+Alt+F9")
+        self.assertEqual(self.proxy("Börja rita planbestämmelser").shortcut().toString(), "Ctrl+Alt+F9")
+        self.assertEqual(self.toolbar.act_start.toolTip(), tip, "knappens tips skrivs inte över")
+        self.manager.setKeySequence("Rita Detaljplan: Börja rita planbestämmelser", "")  # städa i testhanterarens plats
+
+    def test_registering_again_does_not_double_the_shortcuts_and_unregistering_removes_them(self):
+        again = self.toolbar.register_shortcuts(self.manager)
+        names = [a.text() for a in self.manager.listActions() if a.text().startswith("Rita Detaljplan: ")]
+        self.assertEqual(len(names), len(again))
+        self.assertEqual(len(names), len(set(names)))
+        self.toolbar.unregister_shortcuts()
+        self.assertEqual([a for a in self.manager.listActions() if a.text().startswith("Rita Detaljplan: ")], [])
+
+
 class BottomToolBarTests(GuiCase):
     """Den flytande verktygsraden längst ned i kartvyn: t.ex. Markera, Fyll, Parallell.
 

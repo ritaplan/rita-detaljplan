@@ -2,6 +2,48 @@
 
 Formatet följer [Keep a Changelog](https://keepachangelog.com/sv/1.1.0/), versionsnumren [Semantic Versioning](https://semver.org/lang/sv/).
 
+## [0.1.77] – databasplaner: ny öppna-dialog, utcheckning, snabbare ritning och genvägar
+
+- **Ny dialog för att öppna en plan från databasen:** en översikt över alla planer i databasen i stället för en enkel
+  lista. Kolumner för beteckning, namn, syfte, planstatus, plantyp, diarienummer, påbörjad, antagande, laga kraft,
+  genomförandetid och utcheckning; fritextfilter och filter för schema (bredvid databasvalet), planstatus, plantyp och
+  utcheckning; "Synliga: X av Y · Valda: N". Listan är sorterad på planbeteckning med tal som tal (1, 2, 3, 10, 1002).
+  Flera planer kan väljas och öppnas på en gång. Uppgifterna hämtas med några få frågor per schema, inte en per plan.
+- **Erbjudande om utcheckning vid öppning:** *Checka ut och öppna* låser planen och öppnar den som en lokal kopia direkt
+  (kartan ritas inte först om mot databasen). *Öppna skrivskyddad* öppnar den som förut. Är planen utcheckad av någon
+  annan är bara den senare möjlig.
+- **Utcheckningsknappen syns alltid** i verktygsfältet och är grå när planen bara ligger i en lokal fil eller ingen plan
+  är öppen.
+- **Snabbare ritning av kantlinjerna:** användnings- och egenskapsgränserna räknade varje yta mot alla andra ytor i planen
+  vid varje ritning (ett `aggregate` med filter på `@parent`, som QGIS inte kan återanvända). För en plan med 135 ytor tog
+  en ritning 15–20 sekunder, lika mycket från en lokal fil som från en databas. Nu räknas bara på de grannytor som ligger
+  närmare än kantlinjetoleransen (`overlay_nearest` med ett lokalt spatialt index): ungefär fyra gånger snabbare, och bilden
+  är densamma (jämförd pixel för pixel mot det gamla uttrycket, se `BoundaryExpressionTests`).
+- **Snabbare inläsning från databasen:** att öppna en plan med pluginet tog 29 sekunder och går nu på 11 (mätt mot en
+  server över en SSH-tunnel). Verktygsraden räknade om allt mot databasen vid varje inläst lager och vid varje ändring: den
+  läste alla ytor och slog ihop deras geometrier ungefär sju gånger per uppdatering. Nu räknas bara planområde och
+  användningsytor för knapparna, statustexten för en skrivskyddad databasplan räknas en gång, och uppdateringarna skjuts upp
+  tills planen är inläst. Planens koordinatsystem läses en gång i stället för en gång per lager, och lagren skapas utan
+  standardstil ur databasen och utan kontroll av att nyckeln är unik (9 i stället för 14–15 databasanrop per lager).
+  Första ritningen av en liten plan gick från 7,6 till 3,3 sekunder.
+
+- **Kartan blinkar och rör sig inte längre av sig själv:** när planen ritades så långsamt att QGIS laddningsstapel hann
+  visas (en plan som läses från en databas) kunde statusraden växa en pixel medan kartan ritades och krympa när den var
+  klar. Det ändrade kartfönstrets höjd med en pixel, vilket ändrade utsnittet och skalan lite och startade en ny ritning,
+  och så vidare utan slut: stapeln blinkade och planen rörde sig. Det syns när delar av statusraden är dolda med en
+  anpassad QGIS-profil. Pluginet mäter statusradens höjd första gången stapeln visas och låter den inte bli lägre; den
+  ändrar bara minimihöjden och återställer den när pluginet laddas ur. Hittat med `tools/felsok_omritning.py`.
+
+- **Tangentbordsgenvägar för verktygen** (ärende 10): alla pluginets verktyg finns nu i QGIS kortkommandodialog
+  (Inställningar → Kortkommandon, sök på *Rita Detaljplan*) och kan få valfria genvägar: de sex ritverktygen och
+  hjälpverktygen, Markera, Avmarkera alla, Text, Dölj texter, Fyll användning och egenskap, Planbestämmelser, Kopiera
+  bestämmelser, Börja och Avsluta redigering, Importera, Checka ut och in, Planens uppgifter, Topologikontroll, Leverans,
+  Tagga planbeskrivning, Ny och Öppna. Inga förvalda genvägar. Ett tryck gör samma sak som ett klick, och en avstängd knapp
+  gör ingenting. Genvägarna registreras på osynliga ombudsåtgärder med egna namn i stället för på själva knapparna: QGIS
+  skriver annars över knapparnas tips med knappens namn när en genväg tilldelas, och kortkommandodialogen visar bara
+  vanliga åtgärder (ett test öppnar den riktiga dialogen och kontrollerar att alla verktygen finns i den). Se handboken
+  (kom-igang.md). Knapparnas ikoner visas bredvid namnen i dialogen.
+
 ## [0.1.76] – Tagga planbeskrivning på webben
 
 - **Tagga planbeskrivning som webbsida:** programmet finns nu också på [ritaplan.xyz/tagga.html](https://ritaplan.xyz/tagga.html),

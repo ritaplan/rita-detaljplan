@@ -80,8 +80,11 @@ class CheckoutActions:
     def _idle():
         QApplication.restoreOverrideCursor()
 
-    def check_out(self) -> bool:
-        """Checkar ut planen för redigering (eller tar upp en tidigare utcheckning). True om planen nu är utcheckad."""
+    def check_out(self, confirm: bool = True) -> bool:
+        """Checkar ut planen för redigering (eller tar upp en tidigare utcheckning). True om planen nu är utcheckad.
+
+        ``confirm=False`` hoppar över frågan "Checka ut planen?" när användaren redan har bett om utcheckningen (t.ex.
+        med "Checka ut och öppna" i dialogen för att öppna en plan)."""
         if self.state() == co.LOCAL:
             return True
         if self.state() != co.DATABASE:
@@ -113,9 +116,9 @@ class CheckoutActions:
             self.report("Fortsätter med din utcheckade kopia. Checka in planen när du är klar.", False)
             self.after()
             return True
-        if not self._ask_yes_no("Checka ut planen", "Planen låses för andra och en lokal kopia skapas som du "
-                                "redigerar. Det går snabbare än att rita direkt mot databasen. När du är klar checkar "
-                                "du in planen igen.", "Checka ut"):
+        if confirm and not self._ask_yes_no("Checka ut planen", "Planen låses för andra och en lokal kopia skapas som du "
+                                            "redigerar. Det går snabbare än att rita direkt mot databasen. När du är "
+                                            "klar checkar du in planen igen.", "Checka ut"):
             return False
         return self._do_check_out(retry=True)
 

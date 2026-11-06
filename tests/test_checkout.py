@@ -660,20 +660,72 @@ class ToolBarTests(CheckoutCase):
         self.toolbar.show()
         self.addCleanup(self.toolbar.hide)
 
-    def test_the_button_is_shown_for_database_plans_only_and_changes_with_the_state(self):
+    def test_the_button_is_always_shown_but_only_usable_for_database_plans_and_changes_with_the_state(self):
         self.toolbar.refresh()
         self.assertTrue(self.toolbar.act_checkout.isVisible())
+        self.assertTrue(self.toolbar.act_checkout.isEnabled())
         self.assertEqual(self.toolbar.act_checkout.text(), "Checka ut")
         self.assertFalse(self.toolbar.act_checkout.icon().isNull())
         co.check_out(self.project, self.copies)
         self.toolbar.refresh()
+        self.assertTrue(self.toolbar.act_checkout.isEnabled())
         self.assertEqual(self.toolbar.act_checkout.text(), "Checka in")
         self.assertIn("Checka in", self.toolbar.act_checkout.toolTip())
         with mock.patch.object(co, "_is_db_layer", lambda layer: False):
-            # planen ligger nu i en fil ur pluginets synvinkel
+            # planen ligger nu i en fil ur pluginets synvinkel: knappen syns men är grå
             self.project.writeEntry(DB_SCOPE, "checkout_path", "")
             self.toolbar.refresh()
-            self.assertFalse(self.toolbar.act_checkout.isVisible())
+            self.assertTrue(self.toolbar.act_checkout.isVisible())
+            self.assertFalse(self.toolbar.act_checkout.isEnabled())
+            self.assertIn("lokal fil", self.toolbar.act_checkout.toolTip())
+
+    def test_the_button_is_grey_when_no_plan_is_open(self):
+        with mock.patch.object(self.toolbar, "has_plan", return_value=False):
+            self.toolbar.refresh()
+        self.assertTrue(self.toolbar.act_checkout.isVisible())
+        self.assertFalse(self.toolbar.act_checkout.isEnabled())
+
+    def test_updating_the_toolbar_does_not_read_every_area_again_for_a_database_plan(self):
+        # summary() läser alla ytor och slår ihop geometrierna: över en databas tar det sekunder, och verktygsraden
+        # uppdateras vid varje ändring av läget. En skrivskyddad databasplan kan inte ändras: räkna bara en gång.
+        self.toolbar._status_cache = None
+        with mock.patch.object(self.controller, "summary", wraps=self.controller.summary) as full:
+            for _ in range(3):
+                self.toolbar.refresh()
+        self.assertEqual(full.call_count, 1)
+
+    def test_an_updated_status_is_still_read_for_a_checked_out_plan(self):
+        co.check_out(self.project, self.copies)
+        self.toolbar._status_cache = None
+        with mock.patch.object(self.controller, "summary", wraps=self.controller.summary) as full:
+            for _ in range(3):
+                self.toolbar.refresh()
+        self.assertEqual(full.call_count, 3, "en utcheckad plan kan ändras: texten räknas om varje gång")
+
+    def test_the_buttons_are_decided_from_a_cheap_count_not_from_reading_every_area(self):
+        with mock.patch.object(self.controller, "light_summary", wraps=self.controller.light_summary) as light:
+            self.toolbar.refresh()
+        self.assertGreaterEqual(light.call_count, 1)
+        self.assertEqual(self.controller.light_summary().plans, self.controller.summary().plans)
+        self.assertEqual(self.controller.light_summary().uses, self.controller.summary().uses)
+
+    def test_updates_are_postponed_while_a_plan_loads_and_done_once_afterwards(self):
+        with mock.patch.object(self.controller, "light_summary", wraps=self.controller.light_summary) as light:
+            with self.toolbar.refresh_suspended():
+                for _ in range(5):  # ett layersAdded per inläst lager
+                    self.toolbar.refresh()
+                self.assertEqual(light.call_count, 0, "inget görs medan planen läses in")
+            self.assertEqual(light.call_count, 1, "en enda uppdatering efteråt")
+        with mock.patch.object(self.controller, "light_summary", wraps=self.controller.light_summary) as light:
+            with self.toolbar.refresh_suspended():
+                pass
+            self.assertEqual(light.call_count, 0, "ingen uppdatering om ingen begärdes")
+
+    def test_check_out_can_skip_the_question_when_the_user_has_already_asked_for_it(self):
+        with mock.patch.object(self.toolbar.checkout, "_ask_yes_no", return_value=False) as ask:
+            self.assertTrue(self.toolbar.checkout.check_out(confirm=False))
+        ask.assert_not_called()
+        self.assertEqual(co.state(self.project), co.LOCAL)
 
     def test_the_button_checks_out_and_then_in(self):
         with mock.patch.object(self.toolbar.checkout, "_ask_yes_no", return_value=True), \
