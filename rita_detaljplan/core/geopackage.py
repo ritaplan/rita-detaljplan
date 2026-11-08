@@ -113,6 +113,30 @@ def snapshot(path: str | Path, target: str | Path) -> Path:
     return Path(target)
 
 
+def checkpoint(path: str | Path) -> bool:
+    """Skriver in det som ligger i filen ``<plan>.gpkg-wal`` i själva ``.gpkg``-filen, så att en kopia av bara
+    ``.gpkg``-filen är komplett (QGIS håller GeoPackage i WAL-läge, där de senaste ändringarna annars ligger kvar i
+    ``-wal``-filen). Rör inte planens innehåll. Returnerar True om allt kunde skrivas in; False om något läser filen
+    just nu (resten skrivs in nästa gång) eller filen inte går att öppna (t.ex. låst nätverksfil)."""
+    if not Path(path).is_file():  # sqlite3.connect skulle annars skapa en tom fil
+        return False
+    try:
+        con = sqlite3.connect(str(path), timeout=1)
+    except sqlite3.Error:
+        return False
+    try:
+        for mode in ("TRUNCATE", "PASSIVE"):  # TRUNCATE tömmer även -wal-filen, men kräver att ingen läser
+            try:
+                busy, log, done = con.execute(f"PRAGMA wal_checkpoint({mode})").fetchone()
+            except sqlite3.Error:
+                return False
+            if log <= 0 or (not busy and done >= log):  # log -1 = filen är inte i WAL-läge: inget att göra
+                return True
+        return False
+    finally:
+        con.close()
+
+
 def read_meta(path: str | Path) -> dict[str, str]:
     """Läser planens metadata (kommun, kommunkod, schemaversion m.m.). Tom dict om filen inte är en plan."""
     con = sqlite3.connect(read_only_uri(path), uri=True)

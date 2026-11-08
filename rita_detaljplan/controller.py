@@ -22,7 +22,7 @@ from qgis.core import (NULL, Qgis, QgsExpressionContext, QgsExpressionContextUti
                        QgsProviderRegistry, QgsRectangle, QgsVectorLayer, QgsVectorLayerUtils)
 from qgis.PyQt.QtCore import QObject, QTimer, pyqtSignal
 
-from .core import assignments, export_ngp, model, requirements, rows, rules, settings, topology, validation, vertical
+from .core import assignments, export_ngp, geopackage, model, requirements, rows, rules, settings, topology, validation, vertical
 from .core import catalog as cat
 from .core import bestammelse as bm
 from .core import import_ngp as import_ngp_module
@@ -143,6 +143,7 @@ class PlanController(QObject):
         self._split_parts: dict[tuple[str, int], int] = {}  # (lager, id) för nya ytor som uppstått genom en delning
         # -> id för ytan som delades (den som bestämmelserna kopieras från)
         self._notify_pending = False
+        self._checkpoint_pending = False
         self.project.layersAdded.connect(self.attach)
         # när ett sparat projekt öppnas avfyras layersAdded innan lagerträdet (och planens grupp) är återställt, så
         # find_layer hittar inget då: koppla om när projektet är färdigläst
@@ -182,6 +183,7 @@ class PlanController(QObject):
             layer.editingStarted.connect(lambda *_: self._changed())
             layer.editingStopped.connect(lambda *_: self._changed())
             layer.afterCommitChanges.connect(lambda *_: self._changed())
+            layer.afterCommitChanges.connect(lambda *_: self._checkpoint_soon())
         self._changed()
 
     @staticmethod
@@ -217,6 +219,21 @@ class PlanController(QObject):
     def _emit_changed(self):
         self._notify_pending = False
         self.changed.emit()
+
+    def _checkpoint_soon(self):
+        """Efter sparade ändringar: skriver in GeoPackage-filens WAL-fil i själva filen, så att en kopia av bara
+        ``.gpkg``-filen blir komplett. En gång per varv i händelseslingan, eftersom ett sparande ger en incheckning per lager."""
+        if not self._checkpoint_pending:
+            self._checkpoint_pending = True
+            QTimer.singleShot(0, self._checkpoint)
+
+    def _checkpoint(self):
+        self._checkpoint_pending = False
+        if self._detached:
+            return
+        path = self.plan_file()
+        if path is not None:
+            geopackage.checkpoint(path)
 
     def layer(self, table: str) -> Optional[QgsVectorLayer]:
         return find_layer(self.project, table)
