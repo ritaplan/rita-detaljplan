@@ -634,7 +634,7 @@ class OpenDialogTests(PlanCase):
         dialog = self.dialog({"a": self.detailed()})
         self.assertEqual(sorted(self.visible_ids(dialog)), ["gamla", "kv_norr", "kv_soder"])
         self.assertIn("Synliga: 3 av 3", dialog.count.text())
-        self.assertIsNone(dialog.selection())
+        self.assertEqual(dialog.selections(), [])
         self.assertFalse(dialog.open_checkout.isEnabled())
         self.assertFalse(dialog.open_readonly.isEnabled())
 
@@ -649,7 +649,6 @@ class OpenDialogTests(PlanCase):
         # flera beslut: tidigaste påbörjandet, senaste antagandet och senaste laga kraft-datumet
         self.assertEqual((soder.paborjad, soder.antagande, soder.laga_kraft, soder.genomforandetid),
                          ("2025-02-01", "2026-02-10", "2026-04-01", "10"))
-        self.assertEqual(rows["gamla"].status_datum, "")
 
     def test_locks_are_shown_and_told_apart_from_the_users_own(self):
         dialog = self.dialog({"a": self.detailed()})
@@ -664,7 +663,7 @@ class OpenDialogTests(PlanCase):
     def test_selecting_a_plan_gives_connection_schema_and_plan(self):
         dialog = self.dialog({"a": self.detailed()})
         self.select(dialog, "kv_norr")
-        self.assertEqual(dialog.selection(), ("a", "dp_a", "kv_norr"))
+        self.assertEqual(dialog.selections(), [("a", "dp_a", "kv_norr")])
         self.assertTrue(dialog.open_checkout.isEnabled())
         self.assertTrue(dialog.open_readonly.isEnabled())
 
@@ -761,7 +760,6 @@ class OpenDialogTests(PlanCase):
         dialog = self.dialog({"a": self.detailed()})
         self.select(dialog, "kv_norr", "gamla")
         self.assertEqual(dialog.selections(), [("a", "dp_a", "kv_norr"), ("a", "dp_b", "gamla")])
-        self.assertEqual(dialog.selection(), ("a", "dp_a", "kv_norr"))
         self.assertIn("Valda: 2", dialog.count.text())
         self.assertIn("2 planer valda", dialog.hint.text())
         self.assertTrue(dialog.open_checkout.isEnabled())

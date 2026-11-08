@@ -206,22 +206,19 @@ def hierarchical_boundary(layers: dict[str, QgsVectorLayer], own_table: str, hig
     Delade kanter inom lagret ritas av ytan med lägst ``objektidentitet``, så att de inte ritas två gånger. Med
     ``same_kind`` döljer bara ytor av samma slag varandra (``sekundar``): egenskapsgränser och sekundära
     egenskapsgränser ritas ovanpå varandra där de sammanfaller (BFS 2020:6, 3.3)."""
-    # Toleransen följer planens storlek så att en mycket liten plan (nära origo, några meter) inte får hela kanter
-    # bortdöljda; för en vanlig plan blir den COINCIDENCE_TOLERANCE. Aggregatet har inget filter som beror på den
-    # aktuella ytan och hämtas därför bara en gång per ritning.
+    # Toleransen följer planens storlek så att en mycket liten plan inte får hela kanter bortdöljda; för en vanlig plan
+    # blir den COINCIDENCE_TOLERANCE.
     plan = layers.get("detaljplan")
     if plan is not None:
         tolerance = (f"min({COINCIDENCE_TOLERANCE}, max(0.000001, 0.0005 * "
                      f"sqrt(coalesce(aggregate('{plan.id()}', 'sum', $area), 1000000))))")
     else:
         tolerance = str(COINCIDENCE_TOLERANCE)
-    # Bara ytor närmare än toleransen kan dölja något av kanten, så bara de räknas med (overlay_nearest med ett lokalt
-    # spatialt index som byggs en gång). Att räkna på alla ytor i planen för varje yta (aggregate över hela lagret,
-    # med ett filter som beror på @parent) gjorde ritningen mycket långsam för en större plan: ritningen tog 15–20 s
-    # för en plan med 135 ytor, lika mycket från en lokal fil som från en databas, och i en databas dessutom en
-    # fråga per yta.
-    # limit:=-1 ("ingen gräns") ger i QGIS bara de ytor som rör vid varandra och hoppar över max_distance, så en smal
-    # glugg mellan två ytor (under toleransen) skulle missas: ett stort tal ger alla grannar inom toleransen.
+    # Bara ytor närmare än toleransen kan dölja något av kanten, så bara de hämtas (overlay_nearest, med ett spatialt
+    # index som byggs en gång). Ett aggregat med filter på @parent räknar om alla ytor för varje yta och blir mycket
+    # långsamt för stora planer.
+    # limit:=-1 ger bara de ytor som rör vid varandra och hoppar över max_distance, så en smal glugg under toleransen
+    # missas: ett stort tal ger alla grannar inom toleransen.
     nearby = f"max_distance:={tolerance}, limit:=1000, cache:=true"
     hidden = [f"coalesce(boundary(collect_geometries(overlay_nearest('{layers[table].id()}', $geometry, {nearby}))), "
               f"{_EMPTY})" for table in higher_tables if table in layers]

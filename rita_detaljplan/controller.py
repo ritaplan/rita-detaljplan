@@ -22,7 +22,8 @@ from qgis.core import (NULL, Qgis, QgsExpressionContext, QgsExpressionContextUti
                        QgsProviderRegistry, QgsRectangle, QgsVectorLayer, QgsVectorLayerUtils)
 from qgis.PyQt.QtCore import QObject, QTimer, pyqtSignal
 
-from .core import assignments, export_ngp, geopackage, model, requirements, rows, rules, settings, topology, validation, vertical
+from .core import (assignments, export_ngp, geopackage, model, requirements, rows, rules, settings, topology,
+                   validation, vertical)
 from .core import catalog as cat
 from .core import bestammelse as bm
 from .core import import_ngp as import_ngp_module
@@ -283,8 +284,7 @@ class PlanController(QObject):
     # -- hierarki ---------------------------------------------------------------------
     def light_summary(self) -> Summary:
         """Bara det som behövs för att veta om knappar ska vara tillgängliga: om planområde och användningsytor finns.
-        Räknar objekt (en fråga per lager) i stället för att läsa alla ytor och slå ihop deras geometrier som ``summary``,
-        vilket över en databas tar sekunder och görs vid varje uppdatering av verktygsfältet."""
+        Räknar objekt i stället för att läsa och slå ihop alla ytor som ``summary``, vilket över en databas tar sekunder."""
         plan_layer, use_layer = self.layer(PLAN_LAYER), self.layer(cat.USE_LAYER)
         if plan_layer is None or use_layer is None:
             return Summary(editing=self.editing)

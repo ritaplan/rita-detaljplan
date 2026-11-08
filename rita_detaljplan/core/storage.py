@@ -275,7 +275,7 @@ class PostgisStorage(Storage):
         uri = QgsDataSourceUri(self.connection.uri())
         geometry = "geom" if layer_def.geometry else ""
         uri.setDataSource(self.schema, layer_def.name, geometry, f'"plan" = {literal(self.plan_id)}', "fid")
-        # fid är primärnyckel: hoppa över leverantörens kontroll av att nyckeln är unik (en fråga över nätet per lager)
+        # fid är primärnyckel: hoppa över leverantörens kontroll av att den är unik (en fråga per lager)
         uri.setParam("checkPrimaryKeyUnicity", "0")
         if layer_def.geometry:
             if epsg:
@@ -284,15 +284,13 @@ class PostgisStorage(Storage):
         return uri.uri(True)
 
     def _open(self, uri: str, alias: str) -> QgsVectorLayer:  # särskilt för att kunna bytas ut i tester
-        # Ingen standardstil ur databasen (pluginet sätter egen symbologi): sparar frågor per lager. Att skapa ett
-        # PostGIS-lager kostar annars ungefär en sekund över nätet, och en plan har tolv lager.
+        # Ingen standardstil ur databasen: pluginet sätter egen symbologi, och varje lager sparar då frågor över nätet.
         options = QgsVectorLayer.LayerOptions()
         options.loadDefaultStyle = False
         return QgsVectorLayer(uri, alias, PROVIDER, options)
 
     def _epsg(self) -> Optional[int]:
-        """Schemats koordinatsystem. Läses en gång: det ligger fast för schemat, och varje läsning är ett par frågor
-        över nätet (planens alla tolv lager gjorde annars tolv läsningar när planen öppnades)."""
+        """Schemats koordinatsystem. Läses en gång (det ligger fast), inte en gång per lager."""
         if self._epsg_cache is None:
             epsg = self.read_meta().get("epsg")
             self._epsg_cache = int(epsg) if epsg else None

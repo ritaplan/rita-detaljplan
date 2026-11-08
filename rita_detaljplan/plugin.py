@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import json
 from contextlib import nullcontext
+from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
 
 from qgis.core import Qgis, QgsApplication, QgsProject, QgsTask
@@ -26,10 +28,29 @@ from .gui.layout_legend import LayoutLegendTool
 from .gui.plan_info_dialog import PlanInfoDialog
 from .gui.plan_toolbar import PlanToolBar
 from .gui.postgis_plan_dialog import PostgisPlanDialog
-from .gui.statusbar_guard import StatusBarHeightGuard
 from .gui.settings_dialog import SettingsDialog
+from .gui.statusbar_guard import StatusBarHeightGuard
 
 MENU = "&Rita Detaljplan"
+
+
+class Outcome(Enum):
+    """Hur det gick med en plan som öppnades ur databasen."""
+    CHECKED_OUT = "utcheckad"
+    READ_ONLY = "skrivskyddad"
+    LOCKED = "utcheckad av någon annan"
+    ERROR = "kunde inte läsas"
+
+
+@dataclass(frozen=True)
+class OpenResult:
+    plan_id: str
+    outcome: Outcome
+    locked_by: str = ""  # vem som har planen utcheckad (bara när utfallet är LOCKED)
+
+    @property
+    def loaded(self) -> bool:
+        return self.outcome is not Outcome.ERROR
 TITLE = "Rita Detaljplan"
 BUNDLED_CATALOG = Path(__file__).parent / "data" / "planbestammelsekatalog.json"
 ICONS = Path(__file__).parent / "icons"
@@ -407,9 +428,8 @@ class DetaljplanPlugin:
         selections = dialog.selections()
         want_checkout = dialog.checkout_requested is True
         canvas = self.iface.mapCanvas()
-        # Kartan ritas inte om medan planerna laddas: vid utcheckning läses planen först från databasen och pekas sedan
-        # om till den lokala kopian (onödiga läsningar över nätet), och med flera planer ritas den annars om efter
-        # varje plan.
+        # Kartan ritas inte om medan planerna laddas: vid utcheckning pekas lagren om till den lokala kopian, och med
+        # flera planer ritas den annars om efter varje plan.
         freeze = want_checkout or len(selections) > 1
         if freeze:
             canvas.freeze(True)
@@ -422,10 +442,8 @@ class DetaljplanPlugin:
                 canvas.refresh()
         self._report_postgis(results)
 
-    def _open_one_postgis(self, connection: str, schema: str, plan_id: str, want_checkout: bool) -> tuple[str, str, str]:
-        """Laddar en plan ur databasen (och checkar ut den om användaren bad om det). Returnerar (plan-id, utfall,
-        uppgift) där utfallet är ``checked_out``, ``read_only``, ``locked`` (uppgiften är vem som har den) eller
-        ``error``."""
+    def _open_one_postgis(self, connection: str, schema: str, plan_id: str, want_checkout: bool) -> OpenResult:
+        """Laddar en plan ur databasen (och checkar ut den om användaren bad om det)."""
         plan = storage.PostgisStorage(connection, schema, plan_id)
         # läggs till bredvid en ev. tidigare laddad plan och blir den aktiva (se load_plan/activate_plan_group) –
         # är flera planer laddade frågar pennan vilken som ska redigeras.
@@ -436,41 +454,41 @@ class DetaljplanPlugin:
             lock = checkout.read_lock(plan)
         except (ValueError, storage.PostgisError) as exc:
             self._error(f"{plan_id}: {exc}")
-            return plan_id, "error", str(exc)
+            return OpenResult(plan_id, Outcome.ERROR)
         QTimer.singleShot(0, lambda: collapse_plan_group(QgsProject.instance()))
         if self.controller is not None:
             self.controller.attach()
         if self.toolbar is not None:
             self.toolbar.refresh()
         if want_checkout and self.toolbar is not None and (lock is None or checkout.is_own_lock(lock)):
-            # användaren bad om utcheckning i dialogen: ingen ny fråga, bara själva utcheckningen. Den gäller den plan
-            # som just laddades (den blir aktiv).
+            # Användaren bad om utcheckning i dialogen: ingen ny fråga. Gäller planen som just laddades (den är aktiv).
             if self.toolbar.checkout.check_out(confirm=False):
-                return plan_id, "checked_out", ""
+                return OpenResult(plan_id, Outcome.CHECKED_OUT)
         if lock is not None:
-            return plan_id, "locked", lock.describe()
-        return plan_id, "read_only", ""
+            return OpenResult(plan_id, Outcome.LOCKED, lock.describe())
+        return OpenResult(plan_id, Outcome.READ_ONLY)
 
-    def _report_postgis(self, results: list[tuple[str, str, str]]) -> None:
-        loaded = [r for r in results if r[1] != "error"]
+    def _report_postgis(self, results: list[OpenResult]) -> None:
+        loaded = [r for r in results if r.loaded]
         if not loaded:
             return  # felen är redan visade
         if len(results) == 1:
-            plan_id, outcome, detail = results[0]
-            if outcome == "locked":
-                self._warn(f"Laddade planen {plan_id}, men den är utcheckad av {detail} och därför skrivskyddad.")
-            elif outcome == "read_only":
-                self._info(f"Laddade planen {plan_id} från databasen. Den är skrivskyddad: klicka på Checka ut (eller på "
-                           "pennan) för att redigera en lokal kopia.")
+            result = results[0]
+            if result.outcome is Outcome.LOCKED:
+                self._warn(f"Laddade planen {result.plan_id}, men den är utcheckad av {result.locked_by} och därför "
+                           "skrivskyddad.")
+            elif result.outcome is Outcome.READ_ONLY:
+                self._info(f"Laddade planen {result.plan_id} från databasen. Den är skrivskyddad: klicka på Checka ut "
+                           "(eller på pennan) för att redigera en lokal kopia.")
             return
-        out = sum(1 for r in loaded if r[1] == "checked_out")
+        out = sum(1 for r in loaded if r.outcome is Outcome.CHECKED_OUT)
         text = f"Laddade {len(loaded)} planer från databasen"
         text += f", {out} utcheckade" if out else ""
         text += f" och {len(loaded) - out} skrivskyddade." if len(loaded) > out else "."
         self._info(text + " Den senast laddade planen är den aktiva.")
-        for plan_id, outcome, detail in loaded:
-            if outcome == "locked":
-                self._warn(f"{plan_id} är utcheckad av {detail} och därför skrivskyddad.")
+        for result in loaded:
+            if result.outcome is Outcome.LOCKED:
+                self._warn(f"{result.plan_id} är utcheckad av {result.locked_by} och därför skrivskyddad.")
 
     def open_plan_file(self):
         path, _ = QFileDialog.getOpenFileName(self.iface.mainWindow(), "Öppna detaljplan", "", "GeoPackage (*.gpkg)")

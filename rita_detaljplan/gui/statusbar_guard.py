@@ -1,12 +1,9 @@
 """Håller QGIS statusrad på samma höjd när laddningsstapeln visas.
 
-Är laddningsstapeln högre än det övriga i statusraden (t.ex. när delar av statusraden är dolda med en anpassad
-QGIS-profil) blir raden en pixel högre medan kartan ritas och en pixel lägre när ritningen är klar. Det ändrar kartfönstrets
-höjd med en pixel, vilket ändrar utsnittet och skalan lite och startar en ny ritning, och så vidare i det oändliga så länge
-ritningen är så långsam att stapeln hinner visas (en plan som läses från en databas): stapeln blinkar och planen rör sig
-lite. Spärren mäter statusradens höjd första gången en laddningsstapel visas och låter den inte bli lägre än så.
-
-Ingen gissad höjd: spärren gör ingenting om stapeln aldrig gör raden högre, och den ändrar bara minimihöjden (som
+Är laddningsstapeln högre än resten av statusraden (t.ex. med en anpassad QGIS-profil där delar av raden är dolda) växlar
+raden en pixel i höjd medan kartan ritas. Kartfönstret ändrar då storlek, utsnittet ändras något och en ny ritning startar,
+om och om igen så länge ritningen är långsam nog att stapeln hinner visas. Spärren mäter radens höjd när stapeln visas och
+låter den inte bli lägre än så. Den gör ingenting om stapeln aldrig gör raden högre, och ändrar bara minimihöjden (som
 återställs när pluginet laddas ur).
 """
 from __future__ import annotations

@@ -12,8 +12,6 @@ from typing import Optional
 from . import checkout, model, storage
 from .storage import PostgisError, literal, quote
 
-BESLUT_TABLE = "beslutsinformation"
-
 
 @dataclass(frozen=True)
 class PlanRow:
@@ -26,7 +24,6 @@ class PlanRow:
     syfte: str = ""
     status: str = ""
     typ: str = ""
-    status_datum: str = ""
     diarienummer: str = ""
     paborjad: str = ""
     antagande: str = ""
@@ -42,6 +39,11 @@ class PlanRow:
     def locked_by_me(self) -> bool:
         """Utcheckad av den här användaren på den här datorn (då kan utcheckningen tas upp igen)."""
         return self.lock is not None and checkout.is_own_lock(self.lock)
+
+    @property
+    def locked_by_other(self) -> bool:
+        """Utcheckad av någon annan (kan öppnas skrivskyddad men inte checkas ut)."""
+        return self.locked and not self.locked_by_me
 
 
 def _text(value) -> str:
@@ -69,8 +71,12 @@ def _query(connection, sql: str) -> list:
         return []
 
 
+def _table(schema: str, layer_name: str) -> str:
+    return f"{quote(schema)}.{quote(layer_name)}"
+
+
 def _locks(connection, schema: str) -> dict[str, checkout.Lock]:
-    rows = _query(connection, f'SELECT "plan", "value" FROM {quote(schema)}.{quote(model.META_TABLE)} '
+    rows = _query(connection, f'SELECT "plan", "value" FROM {_table(schema, model.META_TABLE)} '
                               f'WHERE "key" = {literal(checkout.LOCK_KEY)}')
     locks = {}
     for row in rows:
@@ -81,10 +87,20 @@ def _locks(connection, schema: str) -> dict[str, checkout.Lock]:
 
 
 def _plan_fields(connection, schema: str) -> dict[str, dict[str, str]]:
-    rows = _query(connection, 'SELECT "plan", "namn", "beteckning", "kommun", "syfte", "status", "typ", '
-                              f'"datumStatusforandring" FROM {quote(schema)}.{quote(model.DETALJPLAN.name)}')
-    keys = ("namn", "beteckning", "kommun", "syfte", "status", "typ", "status_datum")
+    rows = _query(connection, 'SELECT "plan", "namn", "beteckning", "kommun", "syfte", "status", "typ" '
+                              f'FROM {_table(schema, model.DETALJPLAN.name)}')
+    keys = ("namn", "beteckning", "kommun", "syfte", "status", "typ")
     return {_text(row[0]): dict(zip(keys, (_text(v) for v in row[1:]))) for row in rows}
+
+
+def _first(items: list[list[str]], index: int) -> str:
+    """Första icke-tomma värdet i kolumnen ``index``."""
+    return next((item[index] for item in items if item[index]), "")
+
+
+def _dates(items: list[list[str]], index: int) -> list[str]:
+    """Alla datum i kolumnen ``index`` (ett fält kan innehålla flera, skilda med semikolon)."""
+    return [d.strip() for item in items for d in item[index].split(";") if d.strip()]
 
 
 def _decision_fields(connection, schema: str) -> dict[str, dict[str, str]]:
@@ -92,25 +108,17 @@ def _decision_fields(connection, schema: str) -> dict[str, dict[str, str]]:
     senaste antagandet och laga kraft-datumet)."""
     rows = _query(connection, 'SELECT "plan", "diarienummerKommun", "datumPaborjat", "datumAntagande", '
                               '"datumLagakraft", "genomforandetid" FROM '
-                              f'{quote(schema)}.{quote(BESLUT_TABLE)} ORDER BY "plan"')
+                              f'{_table(schema, model.BESLUTSINFORMATION.name)} ORDER BY "plan"')
     grouped: dict[str, list[list[str]]] = {}
     for row in rows:
         grouped.setdefault(_text(row[0]), []).append([_text(v) for v in row[1:]])
-    result = {}
-    for plan_id, items in grouped.items():
-        def first(index):
-            return next((item[index] for item in items if item[index]), "")
-
-        def dates(index):
-            return [d.strip() for item in items for d in item[index].split(";") if d.strip()]
-        result[plan_id] = {
-            "diarienummer": first(0),
-            "paborjad": min(dates(1), default=""),
-            "antagande": max(dates(2), default=""),
-            "laga_kraft": max(dates(3), default=""),
-            "genomforandetid": first(4),
-        }
-    return result
+    return {plan_id: {
+        "diarienummer": _first(items, 0),
+        "paborjad": min(_dates(items, 1), default=""),
+        "antagande": max(_dates(items, 2), default=""),
+        "laga_kraft": max(_dates(items, 3), default=""),
+        "genomforandetid": _first(items, 4),
+    } for plan_id, items in grouped.items()}
 
 
 def list_plans(connection_name: str, connection, schema: str) -> list[PlanRow]:

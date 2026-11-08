@@ -188,7 +188,7 @@ class PostgisPlanDialog(QDialog):
         self.proxy.rowsRemoved.connect(self._update_state)
         self.proxy.modelReset.connect(self._update_state)
         self.table.selectionModel().selectionChanged.connect(lambda *_: self._update_state())
-        self.table.doubleClicked.connect(lambda *_: self._accept_with(False) if self.selected_rows() else None)
+        self.table.doubleClicked.connect(lambda *_: self._accept_with(False))
         self.table.sortByColumn(COLUMN_FIELDS.index("beteckning"), Qt.SortOrder.AscendingOrder)
         self.reload()
 
@@ -202,7 +202,6 @@ class PostgisPlanDialog(QDialog):
     def reload(self, *_) -> None:
         """Läser om översikten över alla planer i alla scheman (skapade med pluginet) i den valda databasen."""
         self._rows = []
-        self.error.setText("")
         problems = []
         connection = self._connections.get(self.connection.currentData() or "")
         if connection is not None:
@@ -239,7 +238,7 @@ class PostgisPlanDialog(QDialog):
                     item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
                 if field == "syfte" and text:
                     item.setToolTip(text)
-                if row.locked and not row.locked_by_me:
+                if row.locked_by_other:
                     item.setForeground(grey)
                 items.append(item)
             items[0].setData(row, ROW_ROLE)
@@ -278,19 +277,9 @@ class PostgisPlanDialog(QDialog):
         """(anslutning, schema, plan-id) för varje vald plan."""
         return [(row.connection, row.schema, row.plan_id) for row in self.selected_rows()]
 
-    def selection(self) -> Optional[tuple[str, str, str]]:
-        """Den första valda planen, eller None."""
-        chosen = self.selections()
-        return chosen[0] if chosen else None
-
-    @staticmethod
-    def can_check_out(row: Optional[PlanRow]) -> bool:
-        """En plan som någon annan har checkat ut kan inte checkas ut (bara öppnas skrivskyddad)."""
-        return row is not None and (not row.locked or row.locked_by_me)
-
     def _accept_with(self, check_out: bool) -> None:
         rows = self.selected_rows()
-        if not rows or (check_out and not all(self.can_check_out(row) for row in rows)):
+        if not rows or (check_out and any(row.locked_by_other for row in rows)):
             return
         self.checkout_requested = check_out
         self.accept()
@@ -299,7 +288,7 @@ class PostgisPlanDialog(QDialog):
         total, shown = self.model.rowCount(), self.proxy.rowCount()
         rows = self.selected_rows()
         self.count.setText(f"Synliga: {shown} av {total}   ·   Valda: {len(rows)}")
-        taken = [row for row in rows if row.locked and not row.locked_by_me]
+        taken = [row for row in rows if row.locked_by_other]
         self.open_readonly.setEnabled(bool(rows))
         self.open_checkout.setEnabled(bool(rows) and not taken)
         if not rows:
