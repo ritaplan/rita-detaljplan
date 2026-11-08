@@ -2,7 +2,7 @@
 
 Formatet följer [Keep a Changelog](https://keepachangelog.com/sv/1.1.0/), versionsnumren [Semantic Versioning](https://semver.org/lang/sv/).
 
-## Ej utgivet
+## [0.1.78] – GeoPackage blir komplett vid kopiering
 
 - **En kopia av bara `.gpkg`-filen blir komplett.** QGIS håller planens GeoPackage i WAL-läge medan den är öppen, och de
   senaste sparade ändringarna kunde då ligga kvar i filen `<namn>.gpkg-wal` bredvid planfilen. Kopierade någon bara
