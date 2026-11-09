@@ -50,6 +50,30 @@ genomförandetid och vem som har planen utcheckad. Listan är sorterad på planb
 > Lägg inte till planens PostGIS-lager med QGIS egen lagerdialog. Använd pluginets **Öppna**, annars visas alla planers
 > rader i schemat blandade och pluginets verktyg känner inte igen lagret.
 
+## Planmosaik: alla planer i ett schema på en gång
+
+Vill du se alla planer i ett schema tillsammans, som en enda karta, klickar du på **Planmosaik…** i dialogen för att
+öppna en plan ur databasen (*Öppna → PostGIS-databas…*). Det finns också i menyn som **Rita Detaljplan → Öppna planmosaik
+(alla planer i ett schema)…**. Då läser QGIS databasens tabeller direkt, utan att ladda varje plan för sig.
+
+1. Kontrollera **databas** och **schema**. Det du valt i översikten följer med.
+2. Välj vilka planer som ska med efter **planstatus**. Rutorna visar hur många planer det finns med varje status.
+   Förvalt är de som gäller: *antagen* och *laga kraft*. Äldre, ersatta och upphävda planer ligger ofta över nyare, så
+   ta bara med dem om du vill se dem.
+3. Klicka på **Öppna planmosaik**. Kartan zoomar till planerna.
+
+Mosaiken är en grupp i lagerpanelen med planområden, användning och egenskaper, med samma färger och mönster som i en
+plan. Några saker att veta:
+
+- **Den är skrivskyddad.** Du kan inte rita eller ändra i den, och pluginets verktyg räknar den inte som en plan. Vill du
+  redigera en plan öppnar du den med **Öppna** som vanligt. Den kan ligga i projektet bredvid mosaiken.
+- **Detaljerna visas från skalan 1:200 000.** Användning och egenskaper ritas inte när du zoomar ut längre, annars blir
+  kartan långsam med många planer. Planområdena syns alltid. Gränsen kan ändras i lagrens egenskaper (*Återgivning*).
+- **Ett schema i taget.** Varje schema har sitt eget koordinatsystem. Öppna mosaiken igen för samma schema med andra
+  statusar så ersätts den förra. Mosaiker för olika scheman kan ligga bredvid varandra.
+- **Klicka på en yta med QGIS Identifiera** för att se vilken plan den hör till.
+- Har schemat skapats med en äldre version av pluginet får du veta det. Öppna en plan i schemat först, så uppgraderas det.
+
 ## Checka ut och checka in
 
 Att rita direkt mot en databas över nätet blir långsamt. En plan som öppnas från en databas är därför skrivskyddad

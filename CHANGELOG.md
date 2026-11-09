@@ -2,6 +2,17 @@
 
 Formatet följer [Keep a Changelog](https://keepachangelog.com/sv/1.1.0/), versionsnumren [Semantic Versioning](https://semver.org/lang/sv/).
 
+## [0.1.80] – planmosaik: alla planer i ett schema som en karta
+
+- **Planmosaik:** ny knapp med ikon, *Planmosaik…*, i dialogen för att öppna en plan ur databasen (och *Öppna planmosaik (alla planer
+  i ett schema)…* i menyn Rita Detaljplan), som visar alla planer i ett PostGIS-schema som en enda skrivskyddad karta i stället för att ladda varje plan
+  för sig. Du väljer databas och schema och vilka planstatusar som ska med (förvalt: antagen och laga kraft). Lagren läses
+  utan filter på en enskild plan, med planens utseende, och ligger i en egen grupp som pluginets verktyg inte räknar som en
+  plan. Användning och egenskaper ritas från skalan 1:200 000, inga etiketter visas, planområdesgränsen är heldragen med planens egen bredd och referensskala (grannplaner delar gräns, och den streckprickade gränsen blev oläslig ovanpå varandra), och det som saknar bestämmelse ritas som övrigt (inte rött eller skrafferat). Ersätter en tidigare
+  mosaik för samma schema.
+- Valen i menyn som kommer upp vid *Öppna* (lokal fil och PostGIS-databas) har ikoner, som i Rita Översiktsplan.
+- Schemats koordinatsystem läses nu ur schemats egna uppgifter (en fråga mindre när en plan öppnas).
+
 ## [0.1.79] – städning av koden för att öppna planer ur databasen
 
 Inga nya funktioner. Koden som kom till i de senaste versionerna är städad; beteendet ska vara detsamma.

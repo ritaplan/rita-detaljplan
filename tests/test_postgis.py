@@ -44,7 +44,8 @@ class FakeConnection:
         self.plugin_schemas = list(plugin_schemas)  # scheman med dp_schema, för list_plugin_schemas
         self.schema_meta = {}  # schema -> {key: value}  (dp_schema)
         self.plan_meta = {}  # schema -> {plan_id: {key: value}}  (dp_meta)
-        self.plan_rows = {}  # schema -> rader [plan, namn, beteckning, kommun, syfte, status, typ, statusdatum]
+        self.plan_rows = {}  # schema -> rader [plan, namn, beteckning, kommun, syfte, status, typ]
+        self.status_counts = {}  # schema -> {status: antal planer}, för planmosaiken
         self.decision_rows = {}  # schema -> rader [plan, diarienummer, påbörjad, antagande, laga kraft, genomförandetid]
 
     def uri(self):
@@ -92,6 +93,9 @@ class FakeConnection:
         if match:
             schema, key = match.groups()
             return [[p, meta[key]] for p, meta in sorted(self.plan_meta.get(schema, {}).items()) if key in meta]
+        match = re.match(r'SELECT "status", count\(DISTINCT "plan"\) FROM "(\w+)"\."detaljplan" GROUP BY "status"', sql)
+        if match:
+            return [[status, number] for status, number in self.status_counts.get(match.group(1), {}).items()]
         match = re.match(r'SELECT "plan", "namn".* FROM "(\w+)"\."detaljplan"', sql)
         if match:
             return self.plan_rows.get(match.group(1), [])
@@ -429,7 +433,7 @@ class LoadTests(PlanCase):
         for layer_def in model.LAYERS:
             plan.make_layer(layer_def)
         reads = [s for s in self.conn.sql if '"dp_meta"' in s or '"dp_schema"' in s]
-        self.assertEqual(len(reads), 2, f"en läsning av planens och schemats uppgifter, inte en per lager: {reads}")
+        self.assertEqual(len(reads), 1, f"en läsning av schemats uppgifter, inte en per lager: {reads}")
 
     def test_the_layer_uri_skips_the_provider_checks_that_cost_a_query_each(self):
         uri = QgsDataSourceUri(self.plan().layer_uri(model.LAYERS[0], 3006))
@@ -756,6 +760,21 @@ class OpenDialogTests(PlanCase):
         self.assertIn(dialog.connection, widgets)
         self.assertEqual(widgets.index(dialog.filter_schema), widgets.index(dialog.connection) + 1)
 
+    def test_the_mosaic_button_closes_the_dialog_and_hands_over_the_database_and_schema_chosen(self):
+        dialog = self.dialog({"a": self.detailed()})
+        self.assertTrue(dialog.open_mosaic.isEnabled(), "kräver ingen vald plan")
+        dialog.filter_schema.setCurrentIndex(dialog.filter_schema.findData("dp_a"))
+        self.assertFalse(dialog.mosaic_requested)
+        self.assertFalse(dialog.open_mosaic.icon().isNull(), "knappen har en ikon")
+        dialog.open_mosaic.click()
+        self.assertTrue(dialog.mosaic_requested)
+        self.assertEqual(dialog.result(), 1, "dialogen stängs som godkänd")
+        self.assertEqual(dialog.mosaic_target(), ("a", "dp_a"))
+
+    def test_the_mosaic_has_no_schema_to_start_from_when_all_schemas_are_shown(self):
+        dialog = self.dialog({"a": self.detailed()})
+        self.assertEqual(dialog.mosaic_target(), ("a", None))
+
     def test_several_plans_can_be_chosen_at_once(self):
         dialog = self.dialog({"a": self.detailed()})
         self.select(dialog, "kv_norr", "gamla")
@@ -882,6 +901,15 @@ class PluginTests(GuiCase):
             called[target].assert_called_once()
             other = open_db if target == "open_plan_file" else open_file
             other.assert_not_called()
+
+    def test_the_open_menu_choices_have_icons_like_the_toolbar_buttons(self):
+        with mock.patch.object(storage, "postgis_connections", return_value={"db": FakeConnection()}),                 mock.patch("rita_detaljplan.plugin.QMenu") as menu_cls:
+            menu_cls.return_value.exec.return_value = None
+            self.plugin.open_plan()
+        calls = menu_cls.return_value.addAction.call_args_list
+        self.assertEqual([c.args[1] for c in calls], ["Lokal fil (GeoPackage)…", "PostGIS-databas…"])
+        for call in calls:
+            self.assertFalse(call.args[0].isNull(), call.args[1])
 
     def test_opening_a_postgis_plan_loads_it_into_the_project(self):
         with mock.patch("rita_detaljplan.plugin.PostgisPlanDialog") as dialog_cls, \

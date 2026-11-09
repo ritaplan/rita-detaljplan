@@ -15,7 +15,8 @@ from qgis.PyQt.QtWidgets import QAction, QApplication, QFileDialog, QInputDialog
 from .controller import PlanController
 from .core import catalog as cat
 from .core.catalog_store import CatalogError, CatalogService
-from .core import archive, checkout, example_sheet, example_sheet_layout, importer, legend_layout, storage
+from .core import (archive, checkout, example_sheet, example_sheet_layout, importer, legend_layout, mosaic,
+                   storage)
 from .core import import_ngp as import_ngp_module
 from .core.project import (activate_plan_group, collapse_plan_group, create_plan_project, create_postgis_plan_project,
                            find_plan_group, load_plan, plan_groups, remove_plan)
@@ -25,6 +26,7 @@ from .gui.archive_dialog import ArchiveDialog, build_archive
 from .gui.messages import push
 from .gui.new_plan_dialog import NewPlanDialog
 from .gui.layout_legend import LayoutLegendTool
+from .gui.mosaic_dialog import MosaicDialog
 from .gui.plan_info_dialog import PlanInfoDialog
 from .gui.plan_toolbar import PlanToolBar
 from .gui.postgis_plan_dialog import PostgisPlanDialog
@@ -85,6 +87,7 @@ class DetaljplanPlugin:
 
         self._add_action("Ny detaljplan…", self.new_plan, QIcon(str(ICONS / "new.svg")))  # samma ikon som i verktygsfältet
         self._add_action("Öppna detaljplan (GeoPackage)…", self.open_plan)
+        self._add_action("Öppna planmosaik (alla planer i ett schema)…", self.open_mosaic)
         self._add_action("Importera leverans (JSON)…", self.import_plan)
         self._add_action("Importera geometrier…", self.import_geometry)
         self._add_action("Byt aktiv plan…", self.switch_plan)  # flera planer kan vara laddade samtidigt
@@ -413,17 +416,47 @@ class DetaljplanPlugin:
             self.open_plan_file()
             return
         menu = QMenu(self.iface.mainWindow())
-        file_action = menu.addAction("Lokal fil (GeoPackage)…")
-        db_action = menu.addAction("PostGIS-databas…")
+        file_action = menu.addAction(QIcon(str(ICONS / "open.svg")), "Lokal fil (GeoPackage)…")
+        db_action = menu.addAction(QIcon(str(ICONS / "checkout.svg")), "PostGIS-databas…")
         chosen = menu.exec(QCursor.pos())
         if chosen is file_action:
             self.open_plan_file()
         elif chosen is db_action:
             self.open_plan_postgis()
 
+    def open_mosaic(self, connection: str | None = None, schema: str | None = None):
+        """Visar alla planer i ett schema som en skrivskyddad planmosaik (se ``core.mosaic``). ``connection`` och
+        ``schema`` är det som redan är valt när man kommer från dialogen för att öppna en plan ur databasen."""
+        if not storage.postgis_connections():
+            self._warn("Det finns ingen sparad PostgreSQL-anslutning i QGIS. Lägg till en under Datakällshanteraren.")
+            return
+        dialog = MosaicDialog(self.iface.mainWindow(), connection=connection, schema=schema)
+        if not dialog.exec() or dialog.selection() is None:
+            return
+        connection, schema, statuses = dialog.selection()
+        canvas = self.iface.mapCanvas()
+        canvas.freeze(True)  # kartan ritas om en gång när hela mosaiken är inläst
+        try:
+            opened = mosaic.load_mosaic(QgsProject.instance(), connection, schema, statuses)
+        except (ValueError, storage.PostgisError) as exc:
+            self._error(str(exc))
+            return
+        finally:
+            canvas.freeze(False)
+        extent = mosaic.full_extent(opened)
+        if extent is not None:
+            canvas.setExtent(extent)
+        canvas.refresh()
+        self._info(f"Öppnade planmosaiken för schemat {schema}: {dialog.plan_count()} planer "
+                   f"({', '.join(mosaic.status_label(s) for s in statuses)}). Den är skrivskyddad: öppna en plan med "
+                   "Öppna för att redigera den.")
+
     def open_plan_postgis(self):
         dialog = PostgisPlanDialog(self.iface.mainWindow())
         if not dialog.exec():
+            return
+        if dialog.mosaic_requested is True:
+            self.open_mosaic(*dialog.mosaic_target())
             return
         selections = dialog.selections()
         want_checkout = dialog.checkout_requested is True

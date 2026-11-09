@@ -475,6 +475,17 @@ def style_plan_area(layer: QgsVectorLayer, style: QgsStyle, layers: dict[str, Qg
     _set_renderer(layer, QgsSingleSymbolRenderer(_fill(None, _outline_from(style, "Planområdesgräns"))), reference_scale)
 
 
+def style_plan_area_solid(layer: QgsVectorLayer, style: QgsStyle | None = None, reference_scale: float = 1000) -> None:
+    """Planområdesgränsen som en heldragen linje, för planmosaiken. Samma bredd, färg och referensskala som planens egen
+    gräns, så att den håller proportion mot användningsgränsen vid alla skalor. Planerna ligger intill varandra och delar
+    gräns: den streckprickade gränsen ritas då ovanpå varandra med olika fas och blir oläslig."""
+    outline = _outline_from(style or load_style(), "Planområdesgräns")
+    if isinstance(outline, QgsSimpleLineSymbolLayer):
+        outline.setUseCustomDashPattern(False)
+        outline.setPenStyle(Qt.PenStyle.SolidLine)
+    _set_renderer(layer, QgsSingleSymbolRenderer(_fill(None, outline)), reference_scale)
+
+
 def style_use(layer: QgsVectorLayer, style: QgsStyle, layers: dict[str, QgsVectorLayer],
               reference_scale: float = 1000) -> None:
     expression = hierarchical_boundary(layers, "anvandning_yta", ("detaljplan",))
@@ -596,6 +607,22 @@ _STYLERS = {
     "egenskap_linje": style_property_line,
     "egenskap_punkt": style_property_point,
 }
+
+
+def draw_unassigned_as_others(layer: QgsVectorLayer) -> None:
+    """Ritar objekt som saknar bestämmelse som övriga objekt (ingen röd skraffering, streckad linje eller kryss). I en
+    plan visar markeringen vad som återstår att göra; i planmosaiken tittar man bara på planerna."""
+    renderer = layer.renderer()
+    if not isinstance(renderer, QgsCategorizedSymbolRenderer):
+        return
+    categories = renderer.categories()  # kopior: hålls kvar medan symbolen klonas
+    default = next((c for c in categories if c.value() == ""), None)
+    unassigned = next((i for i, c in enumerate(categories) if c.value() == UNASSIGNED), None)
+    if default is None or unassigned is None:
+        return
+    symbol = default.symbol().clone()
+    renderer.updateCategorySymbol(unassigned, symbol)
+    renderer.updateCategoryLabel(unassigned, default.label())
 
 
 def apply_symbology(layers: dict[str, QgsVectorLayer], style: QgsStyle | None = None,

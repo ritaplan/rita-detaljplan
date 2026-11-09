@@ -4,16 +4,18 @@ skrivskyddad (se ``core.checkout``)."""
 from __future__ import annotations
 
 import re
+from pathlib import Path
 from typing import Optional
 
 from qgis.PyQt.QtCore import QModelIndex, QSortFilterProxyModel, Qt
-from qgis.PyQt.QtGui import QBrush, QColor, QStandardItem, QStandardItemModel
+from qgis.PyQt.QtGui import QBrush, QColor, QIcon, QStandardItem, QStandardItemModel
 from qgis.PyQt.QtWidgets import (QAbstractItemView, QComboBox, QDialog, QDialogButtonBox, QHBoxLayout, QHeaderView,
                                  QLabel, QLineEdit, QTableView, QVBoxLayout)
 
 from ..core import plan_overview, storage
 from ..core.plan_overview import PlanRow
 
+ICONS = Path(__file__).resolve().parent.parent / "icons"
 ALL = ""  # filtervärde för "alla"
 LOCK_FREE, LOCK_TAKEN = "free", "taken"
 
@@ -107,6 +109,7 @@ class PostgisPlanDialog(QDialog):
         self._connections = connections if connections is not None else storage.postgis_connections()
         self._rows: list[PlanRow] = []
         self.checkout_requested = False
+        self.mosaic_requested = False  # användaren valde Planmosaik i stället för att öppna planer
 
         self.connection = QComboBox()
         for name in sorted(self._connections):
@@ -152,8 +155,13 @@ class PostgisPlanDialog(QDialog):
         self.open_readonly = self.buttons.addButton("Öppna skrivskyddad", QDialogButtonBox.ButtonRole.AcceptRole)
         self.open_readonly.setToolTip("Visar planen direkt från databasen utan att låsa den. Den går inte att redigera "
                                       "förrän du checkar ut den.")
+        self.open_mosaic = self.buttons.addButton("Planmosaik…", QDialogButtonBox.ButtonRole.ActionRole)
+        self.open_mosaic.setIcon(QIcon(str(ICONS / "mosaic.svg")))
+        self.open_mosaic.setToolTip("Visar alla planer i schemat tillsammans som en enda skrivskyddad karta, i stället för "
+                                    "att öppna planerna var för sig.")
         self.buttons.addButton("Avbryt", QDialogButtonBox.ButtonRole.RejectRole)
         self.open_checkout.clicked.connect(lambda: self._accept_with(True))
+        self.open_mosaic.clicked.connect(self._request_mosaic)
         self.open_readonly.clicked.connect(lambda: self._accept_with(False))
         self.buttons.rejected.connect(self.reject)
 
@@ -277,6 +285,15 @@ class PostgisPlanDialog(QDialog):
         """(anslutning, schema, plan-id) för varje vald plan."""
         return [(row.connection, row.schema, row.plan_id) for row in self.selected_rows()]
 
+    def _request_mosaic(self) -> None:
+        self.mosaic_requested = True
+        self.accept()
+
+    def mosaic_target(self) -> tuple[Optional[str], Optional[str]]:
+        """Databasen och schemat som är valda i dialogen (schemat är None när alla scheman visas), som utgångsläge för
+        planmosaiken."""
+        return self.connection.currentData() or None, self.filter_schema.currentData() or None
+
     def _accept_with(self, check_out: bool) -> None:
         rows = self.selected_rows()
         if not rows or (check_out and any(row.locked_by_other for row in rows)):
@@ -290,6 +307,7 @@ class PostgisPlanDialog(QDialog):
         self.count.setText(f"Synliga: {shown} av {total}   ·   Valda: {len(rows)}")
         taken = [row for row in rows if row.locked_by_other]
         self.open_readonly.setEnabled(bool(rows))
+        self.open_mosaic.setEnabled(bool(self.connection.count()))
         self.open_checkout.setEnabled(bool(rows) and not taken)
         if not rows:
             self.hint.setText("Välj en eller flera planer i listan (Ctrl eller Skift för flera).")

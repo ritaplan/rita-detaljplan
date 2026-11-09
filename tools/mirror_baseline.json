@@ -36,8 +36,8 @@
   "lines": 0
  },
  "gui/postgis_plan_dialog.py": {
-  "fingerprint": "385275df4251142b",
-  "lines": 54
+  "fingerprint": "2d95ce0a04fbcc48",
+  "lines": 74
  },
  "gui/settings_dialog.py": {
   "fingerprint": "689e460bd57ca363",

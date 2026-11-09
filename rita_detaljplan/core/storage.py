@@ -243,7 +243,7 @@ class PostgisStorage(Storage):
     def _sql(self, sql: str):
         return _execute(self.connection, sql)
 
-    def _read_schema_meta(self) -> dict[str, str]:
+    def read_schema_meta(self) -> dict[str, str]:
         """Schemats egna nycklar (schema_version, epsg): gemensamma för alla planer i schemat."""
         try:
             rows = self._sql(f'SELECT "key", "value" FROM {quote(self.schema)}.{quote(SCHEMA_TABLE)}')
@@ -259,11 +259,11 @@ class PostgisStorage(Storage):
             return {}
         meta = {row[0]: row[1] for row in rows}
         if meta:  # bara en riktig plan (annars ska t.ex. load_plan se en tom meta och neka)
-            meta.update(self._read_schema_meta())
+            meta.update(self.read_schema_meta())
         return meta
 
     def upgrade(self) -> bool:
-        schema_meta = self._read_schema_meta()
+        schema_meta = self.read_schema_meta()
         version = schema_meta.get("schema_version", "")
         if not version.isdigit() or not 3 <= int(version) < model.SCHEMA_VERSION:
             return False
@@ -271,10 +271,12 @@ class PostgisStorage(Storage):
             self._sql(statement)
         return True
 
-    def layer_uri(self, layer_def: model.LayerDef, epsg: Optional[int] = None) -> str:
+    def layer_uri(self, layer_def: model.LayerDef, epsg: Optional[int] = None, subset: Optional[str] = None) -> str:
+        """Adressen till lagret. ``subset`` är ett eget urval (SQL); utan det visas bara den här planens rader."""
         uri = QgsDataSourceUri(self.connection.uri())
         geometry = "geom" if layer_def.geometry else ""
-        uri.setDataSource(self.schema, layer_def.name, geometry, f'"plan" = {literal(self.plan_id)}', "fid")
+        where = subset if subset is not None else f'"plan" = {literal(self.plan_id)}'
+        uri.setDataSource(self.schema, layer_def.name, geometry, where, "fid")
         # fid är primärnyckel: hoppa över leverantörens kontroll av att den är unik (en fråga per lager)
         uri.setParam("checkPrimaryKeyUnicity", "0")
         if layer_def.geometry:
@@ -292,12 +294,12 @@ class PostgisStorage(Storage):
     def _epsg(self) -> Optional[int]:
         """Schemats koordinatsystem. Läses en gång (det ligger fast), inte en gång per lager."""
         if self._epsg_cache is None:
-            epsg = self.read_meta().get("epsg")
+            epsg = self.read_schema_meta().get("epsg")
             self._epsg_cache = int(epsg) if epsg else None
         return self._epsg_cache
 
-    def make_layer(self, layer_def: model.LayerDef) -> QgsVectorLayer:
-        return self._open(self.layer_uri(layer_def, self._epsg()), layer_def.alias)
+    def make_layer(self, layer_def: model.LayerDef, subset: Optional[str] = None) -> QgsVectorLayer:
+        return self._open(self.layer_uri(layer_def, self._epsg(), subset), layer_def.alias)
 
     def describe(self) -> str:
         return f"{self.connection_name} · {self.schema} · {self.plan_id}"
@@ -334,7 +336,7 @@ def create_postgis_plan(connection_name: str, schema: str, plan_id: str, epsg: i
     except PostgisError as exc:
         raise PostgisError("Databasen saknar PostGIS (eller anslutningen fungerar inte). "
                            f"Aktivera tillägget med CREATE EXTENSION postgis. {exc}") from exc
-    existing = plan._read_schema_meta()
+    existing = plan.read_schema_meta()
     if existing:  # schemat finns redan (från en tidigare plan): återanvänd det, men kräv samma koordinatsystem
         existing_epsg = int(existing.get("epsg", epsg))
         if existing_epsg != int(epsg):
@@ -377,6 +379,17 @@ def list_plugin_schemas(connection) -> list[str]:
     rows = _execute(connection, "SELECT table_schema FROM information_schema.tables WHERE table_name = "
                                 f"{literal(SCHEMA_TABLE)} ORDER BY table_schema")
     return [row[0] for row in rows]
+
+
+def count_plans_by_status(connection, schema: str) -> dict[str, int]:
+    """Antal planer per planstatus i ett schema (planer utan status räknas under tom text)."""
+    rows = _execute(connection, f'SELECT "status", count(DISTINCT "plan") FROM {quote(schema)}.{quote(model.DETALJPLAN.name)} '
+                                'GROUP BY "status"')
+    counts: dict[str, int] = {}
+    for status, number in rows:
+        key = "" if str(status) in ("None", "NULL") else str(status)  # NULL kommer som None eller QVariant NULL
+        counts[key] = counts.get(key, 0) + int(number)
+    return counts
 
 
 def list_plans_in_schema(connection, schema: str) -> list[str]:
