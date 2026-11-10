@@ -17,11 +17,22 @@ MOSAIC_GROUP_PROPERTY = "detaljplan_ngp/mosaic_group"  # markerar gruppen som h�
 MOSAIC_CONNECTION_PROPERTY = "detaljplan_ngp/mosaic_connection"
 MOSAIC_SCHEMA_PROPERTY = "detaljplan_ngp/mosaic_schema"
 
-# Lagren i samma ordning som i en plan (överst först), utan tabeller och hjälplager.
-MOSAIC_LAYERS = (model.EGENSKAP_PUNKT, model.EGENSKAP_LINJE, model.DETALJPLAN, model.EGENSKAP_YTA, model.ANVANDNING_YTA)
+# Lagren i samma ordning som i en plan (överst först), utan tabeller och hjälplager. Egenskapspunkter laddas inte: de ritar
+# bara en etikett intill punkten, och etiketter visas inte i mosaiken, så lagret skulle frågas i databasen för ingenting.
+MOSAIC_LAYERS = (model.EGENSKAP_LINJE, model.DETALJPLAN, model.EGENSKAP_YTA, model.ANVANDNING_YTA)
 DEFAULT_STATUSES = ("antagen", "laga kraft")
 NO_STATUS = ""  # planer som saknar status
-DETAIL_SCALE = 200_000  # användning och egenskaper ritas inte i en mindre skala än 1:200 000 (planområdena alltid)
+DETAIL_SCALE = 200_000  # användningsytor ritas inte i en mindre skala än 1:200 000 (planområdena alltid)
+PROPERTY_SCALE = 2_000  # egenskapsytor och -linjer är många och tunga: de ritas först från 1:2 000. Där byter användningen kant
+OVERVIEW_USE = "anvandning_yta_oversikt"  # nyckeln för användningslagret för översiktsskalor (se load_mosaic)
+
+
+def visible_from_scale(layer_def: model.LayerDef):
+    """Den minsta skala (största nämnaren) som lagret ritas i, eller None för lager som alltid ritas. Användningslagret
+    med den vanliga streckade kanten ritas bara inzoomat (som egenskaperna); utzoomat ritas ``OVERVIEW_USE``."""
+    if layer_def is model.DETALJPLAN:
+        return None
+    return PROPERTY_SCALE
 
 
 @dataclass(frozen=True)
@@ -88,24 +99,40 @@ def load_mosaic(project: QgsProject, connection_name: str, schema: str, statuses
         if not layer.isValid():
             raise ValueError(f"Kunde inte läsa tabellen {layer_def.name} i schemat {schema}")
         layer.setReadOnly(True)
-        if layer_def is not model.DETALJPLAN:
+        scale = visible_from_scale(layer_def)
+        if scale is not None:
             layer.setScaleBasedVisibility(True)
-            layer.setMinimumScale(DETAIL_SCALE)
+            layer.setMinimumScale(scale)
         layers[layer_def.name] = layer
+    # Användningsytorna ritas av två lager med olika skalgränser, ett för översiktsskalor (heldragen kant) och ett för
+    # inzoomat (den vanliga streckade kanten). Ett skikt som byter kant med ett skaluttryck blev mätbart långsammare.
+    overview = source.make_layer(model.ANVANDNING_YTA, subset(model.ANVANDNING_YTA, schema, statuses))
+    if not overview.isValid():
+        raise ValueError(f"Kunde inte läsa tabellen {model.ANVANDNING_YTA.name} i schemat {schema}")
+    overview.setName(f"{model.ANVANDNING_YTA.alias} (översikt)")
+    overview.setReadOnly(True)
+    overview.setScaleBasedVisibility(True)
+    overview.setMinimumScale(DETAIL_SCALE)
+    overview.setMaximumScale(PROPERTY_SCALE)
+    layers[OVERVIEW_USE] = overview
     project.setCrs(QgsCoordinateReferenceSystem(f"EPSG:{meta['epsg']}"))
     group = project.layerTreeRoot().insertGroup(0, f"Planmosaik {schema}: " + ", ".join(status_label(s) for s in statuses))
     group.setCustomProperty(MOSAIC_GROUP_PROPERTY, "1")
     group.setCustomProperty(MOSAIC_CONNECTION_PROPERTY, connection_name)
     group.setCustomProperty(MOSAIC_SCHEMA_PROPERTY, schema)
-    for layer_def in MOSAIC_LAYERS:
-        project.addMapLayer(layers[layer_def.name], False)
-        group.addLayer(layers[layer_def.name])
-    symbology.apply_symbology(layers, reference_scale=settings.reference_scale())
+    for key in (*(d.name for d in MOSAIC_LAYERS), OVERVIEW_USE):
+        project.addMapLayer(layers[key], False)
+        group.addLayer(layers[key])
+    reference_scale = settings.reference_scale()
+    style = symbology.load_style()
+    symbology.apply_symbology({name: layer for name, layer in layers.items() if name != OVERVIEW_USE}, style=style,
+                              reference_scale=reference_scale)
+    symbology.style_use_overview(overview, style, reference_scale)
     for layer in layers.values():
         layer.setLabelsEnabled(False)  # bestämmelsernas texter behövs inte i en översikt, och hundratals planer blir tungt
         symbology.draw_unassigned_as_others(layer)  # inget rött för det som saknar bestämmelse
-    # grannplaner delar gräns: heldragen i stället för streckprickad
-    symbology.style_plan_area_solid(layers[model.DETALJPLAN.name], reference_scale=settings.reference_scale())
+    # grannplaner delar gräns: planområdesgränsen heldragen i stället för streckprickad
+    symbology.style_plan_area_solid(layers[model.DETALJPLAN.name], style, reference_scale)
     return Mosaic(group, layers)
 
 

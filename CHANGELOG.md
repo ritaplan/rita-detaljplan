@@ -2,6 +2,25 @@
 
 Formatet följer [Keep a Changelog](https://keepachangelog.com/sv/1.1.0/), versionsnumren [Semantic Versioning](https://semver.org/lang/sv/).
 
+## [0.1.81] – färger enligt kommunens mall, och planmosaikens detaljer
+
+- **Ny färgplatta för användningsområdena.** Färgnamnen och vilka användningar som har dem följer BFS 2020:6, och kulörerna
+  utgår från akvarellfärgerna i Boverkets *Boken om detaljplan* (2002), men är utjämnade så att ingen färg tar över kartan: alla
+  ligger i ett smalt band av ljushet och med begränsad mättnad (OKLCH), och inget par ligger närmare än 5 (förut 2,8, där
+  Beige och Ljusgrön nästan var samma färg). Gul #faee91, Brun #c59760, **Beige #d7d79e (Z verksamheter, förut orange)**,
+  Orange #f4b67c (O och R), Röd #f09e86, Rosa #f9b4bf (en dämpad rosenlack, passar akvarellskalan), Lila #c3adca, Blå #bfe6fe,
+  Blågrå #a7c7e2, Grön #9bcda5, Ljusgrön #c7edb9, Grå #d8d7d7 och Ljusgrå #efeeea. Färgerna gäller kartan, teckenförklaringen
+  och layouter. Prov kontrollerar att katalogens färgnamn stämmer med BFS 2020:6 för varje användning, att ingen färg är för
+  mörk eller intensiv och att färgerna går att skilja åt. Ett sparat QGIS-projekt med de gamla färgerna ritas om med de nya när
+  det öppnas.
+- **Planmosaiken ritas snabbare.** Egenskapsytor och egenskapslinjer ritas först från skalan 1:2 000 och närmare (förut
+  1:200 000), eftersom de är många och tunga; användningsytorna ritas som förut från 1:200 000 och planområdena alltid.
+  Användningsytorna ritas av två lager med olika skalgränser: inzoomat med den vanliga streckade kanten (med gränshierarkin,
+  som döljer kanter som redan ritas) och utzoomat, förbi 1:2 000, med en heldragen kant som är smalare än planområdesgränsen,
+  ritad som en vanlig linje i fyllningen utan den dyra kantberäkningen. En första version styrde kanten med ett uttryck på
+  skalan, vilket mättes göra kantberäkningen cirka 2,7 gånger dyrare per yta. Egenskapspunkter laddas inte längre i mosaiken:
+  de ritar bara en etikett, och etiketter visas inte, så lagret frågades i databasen utan att något syntes.
+
 ## [0.1.80] – planmosaik: alla planer i ett schema som en karta
 
 - **Planmosaik:** ny knapp med ikon, *Planmosaik…*, i dialogen för att öppna en plan ur databasen (och *Öppna planmosaik (alla planer

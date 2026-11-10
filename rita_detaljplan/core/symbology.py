@@ -52,21 +52,25 @@ from qgis.PyQt.QtGui import QColor, QFont, QPainter
 
 STYLE_FILE = Path(__file__).resolve().parent.parent / "data" / "styles" / "detaljplaner-bfs-2020-6.xml"
 
-# Boverkets färgnamn -> färg. Hämtade ur färgskalan "Användningsområden" i stilbiblioteket.
+# Boverkets färgnamn -> färg. Färgnamnen och vilka användningar som har dem följer BFS 2020:6. Kulörerna utgår från
+# akvarellfärgerna i färgguiden i Boverkets "Boken om detaljplan och områdesbestämmelser" (2002), men är utjämnade till en
+# färgplatta där ingen färg tar över kartan: alla ligger i ett smalt band av ljushet (OKLCH-ljushet 0,71 till 0,95) och
+# mättnad (högst 0,12), och inget färgpar ligger närmare än 5 (OKLab, gånger 100). Beige (Z verksamheter) är den beige
+# användaren angett; Rosa (Y) är en dämpad rosenlack.
 FARGER: dict[str, tuple[int, int, int]] = {
-    "Gul": (255, 255, 206),
-    "Brun": (218, 191, 140),
-    "Beige": (255, 203, 131),
-    "Orange": (255, 128, 64),
-    "Röd": (250, 75, 60),
-    "Rosa": (255, 188, 225),
-    "Lila": (209, 182, 225),
-    "Blå": (165, 218, 251),
-    "Blågrå": (182, 204, 225),
-    "Grön": (178, 236, 64),
-    "Ljusgrön": (222, 255, 206),
-    "Grå": (217, 217, 217),
-    "Ljusgrå": (233, 233, 233),
+    "Gul": (250, 238, 145),
+    "Brun": (197, 151, 96),
+    "Beige": (215, 215, 158),
+    "Orange": (244, 182, 124),
+    "Röd": (240, 158, 134),
+    "Rosa": (249, 180, 191),
+    "Lila": (195, 173, 202),
+    "Blå": (191, 230, 254),
+    "Blågrå": (167, 199, 226),
+    "Grön": (155, 205, 165),
+    "Ljusgrön": (199, 237, 185),
+    "Grå": (216, 215, 215),
+    "Ljusgrå": (239, 238, 234),
 }
 FALLBACK_FARG = (245, 245, 245)
 UNASSIGNED = "ej tilldelad"  # klassvärde för objekt som ännu saknar bestämmelse
@@ -489,10 +493,25 @@ def style_plan_area_solid(layer: QgsVectorLayer, style: QgsStyle | None = None, 
 def style_use(layer: QgsVectorLayer, style: QgsStyle, layers: dict[str, QgsVectorLayer],
               reference_scale: float = 1000) -> None:
     expression = hierarchical_boundary(layers, "anvandning_yta", ("detaljplan",))
+    _style_use(layer, reference_scale, lambda: _generated_outline(style, "Användningsgräns", expression))
 
+
+def style_use_overview(layer: QgsVectorLayer, style: QgsStyle, reference_scale: float = 1000) -> None:
+    """Användningsytor för översiktsskalor (planmosaiken utzoomad): samma fyllning, men kanten är en vanlig heldragen linje
+    i symbolen i stället för den beräknade kanten (geometrigenerator med gränshierarki). Hierarkin döljer kanter som redan
+    ritas, för att streckmönster inte ska hamna ovanpå varandra; heldragna linjer som ligger på varandra syns inte som
+    dubbla, så den behövs inte här. Att rita ytans egen kant är mycket billigare."""
     def outline():
-        return _generated_outline(style, "Användningsgräns", expression)
+        line = _outline_from(style, "Användningsgräns")
+        if isinstance(line, QgsSimpleLineSymbolLayer):
+            line.setUseCustomDashPattern(False)
+            line.setPenStyle(Qt.PenStyle.SolidLine)
+        return line
 
+    _style_use(layer, reference_scale, outline)
+
+
+def _style_use(layer: QgsVectorLayer, reference_scale: float, outline) -> None:
     categories = [QgsRendererCategory(name, _fill(rgb, outline()), name) for name, rgb in FARGER.items()]
     categories.append(QgsRendererCategory(UNASSIGNED, _hatched(UNASSIGNED_COLOR, (250, 250, 250), outline()),
                                           "Saknar bestämmelse"))
@@ -607,6 +626,22 @@ _STYLERS = {
     "egenskap_linje": style_property_line,
     "egenskap_punkt": style_property_point,
 }
+
+
+def has_current_colours(layer: QgsVectorLayer) -> bool:
+    """Om användningsytornas färger är dem i ``FARGER`` (ett projekt som sparats med äldre färger har andra)."""
+    renderer = layer.renderer()
+    if not isinstance(renderer, QgsCategorizedSymbolRenderer):
+        return True
+    for category in renderer.categories():  # kopior: hålls kvar medan symbolen läses
+        expected = FARGER.get(category.value())
+        symbol = category.symbol()
+        if expected is None or symbol is None or not symbol.symbolLayerCount():
+            continue
+        colour = symbol.symbolLayer(0).color()
+        if (colour.red(), colour.green(), colour.blue()) != expected:
+            return False
+    return True
 
 
 def draw_unassigned_as_others(layer: QgsVectorLayer) -> None:

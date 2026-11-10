@@ -67,9 +67,9 @@ class LoadMosaicTests(PlanCase):
 
     def test_the_mosaic_is_one_group_with_the_layers_of_the_plan_areas_and_their_content(self):
         project, opened = self.load()
-        self.assertEqual(set(opened.layers), {d.name for d in mosaic.MOSAIC_LAYERS})
+        self.assertEqual(set(opened.layers), {d.name for d in mosaic.MOSAIC_LAYERS} | {mosaic.OVERVIEW_USE})
         self.assertEqual([c.layer().name() for c in opened.group.children()],
-                         [d.alias for d in mosaic.MOSAIC_LAYERS])
+                         [d.alias for d in mosaic.MOSAIC_LAYERS] + ["Användning (yta) (översikt)"])
         self.assertEqual([g.name() for g in mosaic.mosaic_groups(project)], [opened.group.name()])
         self.assertIn("dp_test", opened.group.name())
         self.assertIn("laga kraft", opened.group.name())
@@ -97,7 +97,7 @@ class LoadMosaicTests(PlanCase):
 
     def test_what_lacks_provisions_is_drawn_like_the_rest_not_red_or_hatched(self):
         _project, opened = self.load()
-        for table in ("anvandning_yta", "egenskap_yta", "egenskap_linje", "egenskap_punkt"):
+        for table in ("anvandning_yta", "egenskap_yta", "egenskap_linje"):
             renderer = opened.layers[table].renderer()
             categories = {c.value(): c for c in renderer.categories()}
             missing, others = categories[symbology.UNASSIGNED], categories[""]
@@ -132,11 +132,168 @@ class LoadMosaicTests(PlanCase):
         self.assertGreater(scales["detaljplan"], 0)
         self.assertEqual(set(scales.values()), {scales["detaljplan"]}, f"samma referensskala i alla lager: {scales}")
 
+    def line_of(self, layer, category_index=0):
+        """Kantlinjens egenskaper (som vanliga värden: objekten hör till kopior som tas bort när funktionen är klar) och
+        uttrycket i användningslagrets första kategori: (penna, eget streckmönster, bredd, uttryck)."""
+        categories = layer.renderer().categories()  # mellanleden binds till variabler: temporära objekt kan krascha
+        symbol = categories[category_index].symbol()
+        generators = [l for l in symbol.symbolLayers() if l.layerType() == "GeometryGenerator"]
+        self.assertEqual(len(generators), 1, "ett kantlinjeskikt per kategori, inget skaluttryck")
+        sub = generators[0].subSymbol()
+        line = [l for l in sub.symbolLayers() if l.layerType() == "SimpleLine"][0]
+        return line.penStyle(), line.useCustomDashPattern(), line.width(), generators[0].geometryExpression()
+
+    def plain_line_of(self, layer, category_index=0):
+        """Kantlinjen när den är en vanlig linje i fyllningssymbolen (inget kantlinjeskikt med uttryck): (penna, eget
+        streckmönster, bredd, antal geometrigeneratorer)."""
+        categories = layer.renderer().categories()
+        symbol = categories[category_index].symbol()
+        types = [l.layerType() for l in symbol.symbolLayers()]
+        line = [l for l in symbol.symbolLayers() if l.layerType() == "SimpleLine"][0]
+        return line.penStyle(), line.useCustomDashPattern(), line.width(), types.count("GeometryGenerator")
+
+    def test_the_use_areas_are_two_layers_dashed_boundary_when_zoomed_in_and_solid_when_zoomed_out(self):
+        _project, opened = self.load()
+        detail, overview = opened.layers["anvandning_yta"], opened.layers[mosaic.OVERVIEW_USE]
+        for layer in (detail, overview):
+            self.assertTrue(layer.hasScaleBasedVisibility())
+            self.assertTrue(layer.readOnly())
+        # exakt ett av dem ritas i varje skala (QGIS räknar minimiskalan som exklusiv och maxskalan som inklusiv)
+        for scale in (100, 500, 1999, 2000, 2001, 6000, 50_000, 199_999, 200_000, 250_000, 5_000_000):
+            self.assertLessEqual(int(detail.isInScaleRange(scale)) + int(overview.isInScaleRange(scale)), 1, scale)
+        for scale in (100, 1999):
+            self.assertTrue(detail.isInScaleRange(scale), scale)
+            self.assertFalse(overview.isInScaleRange(scale), scale)
+        for scale in (2001, 6000, 50_000, 199_999):
+            self.assertFalse(detail.isInScaleRange(scale), scale)
+            self.assertTrue(overview.isInScaleRange(scale), scale)
+        self.assertFalse(detail.isInScaleRange(250_000) or overview.isInScaleRange(250_000), "längre ut ritas inget")
+        dashed_pen, dashed_custom, _width, hierarchy = self.line_of(detail)
+        solid_pen, solid_custom, _width, generators = self.plain_line_of(overview)
+        self.assertTrue(dashed_custom or dashed_pen != Qt.PenStyle.SolidLine, "streckad inzoomat")
+        self.assertEqual(solid_pen, Qt.PenStyle.SolidLine)
+        self.assertFalse(solid_custom)
+        self.assertEqual(generators, 0, "översikten har ingen beräknad kant, bara fyllningens egen kantlinje")
+        self.assertIn("overlay_nearest", hierarchy, "inzoomat döljs kanter som redan ritas, som i en plan")
+        self.assertNotIn("@map_scale", hierarchy, "inget skaluttryck: det gjorde ritningen långsammare")
+
+    def test_both_use_layers_have_the_same_fill_and_categories(self):
+        _project, opened = self.load()
+        detail = opened.layers["anvandning_yta"].renderer().categories()
+        overview = opened.layers[mosaic.OVERVIEW_USE].renderer().categories()
+        self.assertEqual([(c.value(), c.label()) for c in detail], [(c.value(), c.label()) for c in overview])
+        for a, b in zip(detail, overview):
+            fill_a = a.symbol().symbolLayer(0).color().name()
+            fill_b = b.symbol().symbolLayer(0).color().name()
+            self.assertEqual(fill_a, fill_b, a.label())
+        self.assertEqual(opened.layers[mosaic.OVERVIEW_USE].blendMode(), opened.layers["anvandning_yta"].blendMode())
+
+    def test_the_solid_use_boundary_is_narrower_than_the_plan_area_boundary(self):
+        _project, opened = self.load()
+        _pen, _custom, use_width, _generators = self.plain_line_of(opened.layers[mosaic.OVERVIEW_USE])
+        plan_symbol = opened.layers["detaljplan"].renderer().symbol()
+        plan_line = [l for l in plan_symbol.symbolLayers() if l.layerType() == "SimpleLine"][0]
+        self.assertLess(use_width, plan_line.width())
+
+    def fill_backing_with_a_plan_of_two_uses(self):
+        """Ett planområde (0-100 m) med två användningsytor sida vid sida, i den GeoPackage som lagren läses ur."""
+        from qgis.core import QgsExpressionContext, QgsExpressionContextUtils, QgsGeometry, QgsVectorLayerUtils
+        setup_project = QgsProject()  # hålls kvar: ett temporärt projekt tar bort lagren
+        loaded = load_plan(self.backing, setup_project)
+
+        def add(table, x0, x1, **attributes):
+            layer = loaded[table]
+            layer.startEditing()
+            context = QgsExpressionContext()
+            context.appendScopes(QgsExpressionContextUtils.globalProjectLayerScopes(layer))
+            wkt = f"MultiPolygon((({x0} 0, {x1} 0, {x1} 100, {x0} 100, {x0} 0)))"
+            indexes = {layer.fields().indexOf(k): v for k, v in attributes.items()}
+            layer.addFeature(QgsVectorLayerUtils.createFeature(layer, QgsGeometry.fromWkt(wkt), indexes, context))
+            self.assertTrue(layer.commitChanges(), layer.commitErrors())
+
+        add("detaljplan", 0, 100, status="laga kraft")
+        add("anvandning_yta", 0, 50, bestammelser=1, farg="Gul")
+        add("anvandning_yta", 50, 100, bestammelser=1, farg="Brun")
+
+    def render_mosaic(self, opened, scale):
+        """Ritar mosaiken centrerad på mitten av planen i skalan 1:``scale`` (med kartans uttryckskontext, som i QGIS)."""
+        from qgis.core import (QgsCoordinateReferenceSystem, QgsExpressionContext, QgsExpressionContextUtils,
+                               QgsMapRendererParallelJob, QgsMapSettings)
+        from qgis.PyQt.QtCore import QEventLoop, QSize, QTimer
+        from qgis.PyQt.QtGui import QColor
+        width, height, dpi = 700, 420, 96
+        extent_w = scale * (width / dpi * 0.0254)
+        extent_h = extent_w * height / width
+        settings = QgsMapSettings()
+        settings.setDestinationCrs(QgsCoordinateReferenceSystem("EPSG:3006"))
+        settings.setLayers(list(opened.layers.values()))
+        settings.setExtent(QgsRectangle(50 - extent_w / 2, 50 - extent_h / 2, 50 + extent_w / 2, 50 + extent_h / 2))
+        settings.setOutputSize(QSize(width, height))
+        settings.setOutputDpi(dpi)
+        settings.setBackgroundColor(QColor("white"))
+        context = QgsExpressionContext()
+        context.appendScope(QgsExpressionContextUtils.mapSettingsScope(settings))
+        settings.setExpressionContext(context)
+        job = QgsMapRendererParallelJob(settings)
+        # vänta med en händelseslinga (waitForFinished blockerar och ger dödläge när uttryck hämtar från andra lager)
+        loop = QEventLoop()
+        job.finished.connect(loop.quit)
+        QTimer.singleShot(60_000, loop.quit)
+        job.start()
+        loop.exec()
+        self.assertFalse(job.isActive(), "renderingen blev inte klar")
+        return job.renderedImage()
+
+    @staticmethod
+    def boundary_column(image):
+        """Kolumnen i mitten av bilden (mellan de två användningsytorna) med de värden som finns längs den."""
+        columns = {x: [image.pixelColor(x, y).red() for y in range(195, 225)] for x in range(344, 357)}
+        x = min(columns, key=lambda c: sum(columns[c]))  # den mörkaste kolumnen är linjen
+        return x, columns[x]
+
+    def test_the_use_boundary_is_solid_when_zoomed_out_past_1_to_2000_and_dashed_closer(self):
+        self.fill_backing_with_a_plan_of_two_uses()
+        _project, opened = self.load(QgsProject.instance())  # uttrycken slår upp lager i det globala projektet
+        _x, near = self.boundary_column(self.render_mosaic(opened, 1500))
+        _x, far = self.boundary_column(self.render_mosaic(opened, 6000))
+        self.assertGreater(max(near) - min(near), 100, f"streckad närmare än 1:2000: {near}")
+        self.assertLessEqual(max(far) - min(far), 12, f"heldragen längre ut än 1:2000: {far}")
+        self.assertLess(max(far), 218, f"linjen syns (mörkare än ytan intill): {far}")
+
+    def test_in_a_plan_the_use_boundary_has_no_scale_dependence(self):
+        project = QgsProject()
+        layers = load_plan(storage.PostgisStorage("db", "dp_test", "dp_1", self.conn), project)
+        for category in layers["anvandning_yta"].renderer().categories():
+            generators = [l for l in category.symbol().symbolLayers() if l.layerType() == "GeometryGenerator"]
+            self.assertEqual(len(generators), 1, category.label())
+
     def test_details_are_drawn_from_a_scale_but_the_plan_areas_always(self):
         _project, opened = self.load()
-        self.assertTrue(opened.layers["anvandning_yta"].hasScaleBasedVisibility())
-        self.assertEqual(opened.layers["anvandning_yta"].minimumScale(), mosaic.DETAIL_SCALE)
+        overview = opened.layers[mosaic.OVERVIEW_USE]
+        self.assertTrue(overview.hasScaleBasedVisibility())
+        self.assertEqual(overview.minimumScale(), mosaic.DETAIL_SCALE)
         self.assertFalse(opened.layers["detaljplan"].hasScaleBasedVisibility())
+
+    def test_property_points_are_not_loaded_because_they_draw_nothing_in_the_mosaic(self):
+        _project, opened = self.load()
+        self.assertNotIn("egenskap_punkt", opened.layers)
+        tables = {QgsDataSourceUri(uri).table() for uri in self.uris}
+        self.assertNotIn("egenskap_punkt", tables, "ingen fråga mot en tabell som inte ritas")
+        self.assertEqual(tables, {"detaljplan", "anvandning_yta", "egenskap_yta", "egenskap_linje"})
+
+    def test_property_areas_and_lines_are_drawn_only_from_1_to_2000(self):
+        _project, opened = self.load()
+        self.assertEqual(mosaic.PROPERTY_SCALE, 2000)
+        for table in ("egenskap_yta", "egenskap_linje"):
+            layer = opened.layers[table]
+            self.assertTrue(layer.hasScaleBasedVisibility(), table)
+            self.assertEqual(layer.minimumScale(), 2000, table)
+            # QGIS räknar minimiskalan som exklusiv, som i lagerdialogen: 1:2000 är gränsen, 1:1999 ritas
+            self.assertTrue(layer.isInScaleRange(1999) and layer.isInScaleRange(500), table)
+            self.assertFalse(layer.isInScaleRange(2001) or layer.isInScaleRange(5000), table)
+        use = opened.layers[mosaic.OVERVIEW_USE]
+        self.assertTrue(use.isInScaleRange(50_000), "användningsytorna ritas i en mycket mindre skala")
+        self.assertEqual(use.minimumScale(), mosaic.DETAIL_SCALE)
 
     def test_the_plugins_tools_never_see_the_mosaic_as_a_plan(self):
         project, opened = self.load()
@@ -232,6 +389,7 @@ class MosaicDialogTests(PlanCase):
         text = dialog.intro.text()
         self.assertIn("tillsammans, som en enda", text)
         self.assertIn("1:200 000", text)
+        self.assertIn("1:2 000", text)
 
     def test_a_schema_that_cannot_be_read_gives_a_message_that_goes_away_when_another_is_chosen(self):
         conn = FakeConnection(plugin_schemas=["dp_a", "dp_b"], fail_on='"dp_a"."detaljplan"')

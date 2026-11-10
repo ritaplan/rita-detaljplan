@@ -324,6 +324,9 @@ def upgrade_symbology(project: QgsProject) -> bool:
     stale = [layer for layer in layers if layer is not None
              and not (symbology.has_outlines_last(layer.renderer()) and symbology.labels_in_millimeters(layer)
                       and not symbology.has_fragile_dashes(layer.renderer()))]
+    use_layer = find_layer(project, "anvandning_yta")
+    if use_layer is not None and use_layer not in stale and not symbology.has_current_colours(use_layer):
+        stale.append(use_layer)  # sparat med äldre färger (kommunens mall, 0.1.81)
     use, prop = find_layer(project, "anvandning_yta"), find_layer(project, "egenskap_yta")
     group = find_plan_group(project)
     if use is not None and prop is not None and group is not None:

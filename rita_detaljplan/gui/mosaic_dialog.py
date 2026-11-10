@@ -20,10 +20,12 @@ class MosaicDialog(QDialog):
         self._checks: dict[str, QCheckBox] = {}
         self._counts: dict[str, int] = {}
 
-        scale = f"{mosaic.DETAIL_SCALE:,}".replace(",", " ")
+        def scale(number: int) -> str:
+            return f"1:{number:,}".replace(",", " ")
+
         self.intro = QLabel("En planmosaik visar alla planer i ett schema tillsammans, som en enda skrivskyddad karta. "
-                       "Välj vilka planer som ska med efter deras planstatus. Användning och egenskaper ritas från "
-                       f"skalan 1:{scale}.")
+                            "Välj vilka planer som ska med efter deras planstatus. Användningsytor ritas från skalan "
+                            f"{scale(mosaic.DETAIL_SCALE)} och egenskaper från {scale(mosaic.PROPERTY_SCALE)}.")
         self.intro.setWordWrap(True)
         self.connection = QComboBox()
         for name in sorted(self._connections):

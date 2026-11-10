@@ -89,8 +89,8 @@ class LegendContentTests(unittest.TestCase):
         self.assertEqual([e.code for e in kvarter], ["C₁", "R₁", "R₂"])
         self.assertEqual([e.text for e in kvarter], ["Samlingslokal", "Badanläggning", "Museum"])
         self.assertTrue(all(e.swatch == lg.FILL for e in kvarter))
-        self.assertEqual(kvarter[1].color, (255, 255, 206), "färgen ur Boverkets färgnamn")
-        self.assertEqual(kvarter[0].color, (233, 233, 233))
+        self.assertEqual(kvarter[1].color, (250, 238, 145), "färgen ur Boverkets färgnamn")
+        self.assertEqual(kvarter[0].color, (239, 238, 234))
 
     def test_the_same_provision_on_several_areas_is_listed_once(self):
         rows = [use_row("R1", "Badanläggning", ref="x"), use_row("R1", "Badanläggning", ref="x")]

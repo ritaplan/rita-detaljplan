@@ -67,8 +67,10 @@ plan. Några saker att veta:
 
 - **Den är skrivskyddad.** Du kan inte rita eller ändra i den, och pluginets verktyg räknar den inte som en plan. Vill du
   redigera en plan öppnar du den med **Öppna** som vanligt. Den kan ligga i projektet bredvid mosaiken.
-- **Detaljerna visas från skalan 1:200 000.** Användning och egenskaper ritas inte när du zoomar ut längre, annars blir
-  kartan långsam med många planer. Planområdena syns alltid. Gränsen kan ändras i lagrens egenskaper (*Återgivning*).
+- **Detaljerna visas först när du zoomat in.** Användningsytor ritas från skalan 1:200 000, och egenskapsytor
+  och egenskapslinjer från 1:2 000, annars blir kartan långsam med många planer. Egenskapspunkter visas inte i mosaiken
+  (de ritar bara en text intill punkten). Planområdena syns alltid. Gränserna kan ändras i
+  lagrens egenskaper (*Återgivning*).
 - **Ett schema i taget.** Varje schema har sitt eget koordinatsystem. Öppna mosaiken igen för samma schema med andra
   statusar så ersätts den förra. Mosaiker för olika scheman kan ligga bredvid varandra.
 - **Klicka på en yta med QGIS Identifiera** för att se vilken plan den hör till.
