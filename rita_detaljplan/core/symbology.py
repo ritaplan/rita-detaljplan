@@ -52,25 +52,25 @@ from qgis.PyQt.QtGui import QColor, QFont, QPainter
 
 STYLE_FILE = Path(__file__).resolve().parent.parent / "data" / "styles" / "detaljplaner-bfs-2020-6.xml"
 
-# Boverkets färgnamn -> färg. Färgnamnen och vilka användningar som har dem följer BFS 2020:6. Kulörerna utgår från
-# akvarellfärgerna i färgguiden i Boverkets "Boken om detaljplan och områdesbestämmelser" (2002), men är utjämnade till en
-# färgplatta där ingen färg tar över kartan: alla ligger i ett smalt band av ljushet (OKLCH-ljushet 0,71 till 0,95) och
-# mättnad (högst 0,12), och inget färgpar ligger närmare än 5 (OKLab, gånger 100). Beige (Z verksamheter) är den beige
-# användaren angett; Rosa (Y) är en dämpad rosenlack.
+# Boverkets färgnamn -> färg. Färgnamnen och vilka användningar som har dem följer BFS 2020:6. Kulörerna är användarens
+# palett (kolumnen Kulör i tabellen över användningar), mappad till färgnamnen: ljusa och dämpade färger där ingen tar över
+# kartan (OKLCH-ljushet 0,73 till 0,92, mättnad högst 0,12, inget färgpar närmare än 5, OKLab gånger 100). Rosa (Y, annan
+# kvartersmark) saknas i tabellen och är oförändrad. Parkering på kvartersmark (P) är Grå enligt BFS 2020:6 och får därför
+# gråns färg, inte den ljusare grå (#dce0dd) som tabellen anger för P.
 FARGER: dict[str, tuple[int, int, int]] = {
-    "Gul": (250, 238, 145),
-    "Brun": (197, 151, 96),
-    "Beige": (215, 215, 158),
-    "Orange": (244, 182, 124),
-    "Röd": (240, 158, 134),
+    "Gul": (255, 228, 133),
+    "Brun": (179, 169, 148),
+    "Beige": (220, 207, 166),
+    "Orange": (235, 181, 127),
+    "Röd": (219, 154, 142),
     "Rosa": (249, 180, 191),
-    "Lila": (195, 173, 202),
-    "Blå": (191, 230, 254),
-    "Blågrå": (167, 199, 226),
-    "Grön": (155, 205, 165),
-    "Ljusgrön": (199, 237, 185),
-    "Grå": (216, 215, 215),
-    "Ljusgrå": (239, 238, 234),
+    "Lila": (195, 177, 214),
+    "Blå": (169, 207, 234),
+    "Blågrå": (154, 172, 184),
+    "Grön": (143, 203, 138),
+    "Ljusgrön": (169, 224, 155),
+    "Grå": (187, 191, 189),
+    "Ljusgrå": (220, 224, 221),
 }
 FALLBACK_FARG = (245, 245, 245)
 UNASSIGNED = "ej tilldelad"  # klassvärde för objekt som ännu saknar bestämmelse

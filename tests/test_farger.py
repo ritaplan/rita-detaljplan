@@ -33,13 +33,24 @@ BFS_2020_6 = {
 }
 
 # Färgplattan ("lite mer färg"): bokens akvarellfärger utjämnade till ett gemensamt band av ljushet och mättnad.
+# Färgplatta: användarens palett (kolumnen Kulör), mappad till BFS 2020:6:s färgnamn. Y (annan kvartersmark) saknas i
+# tabellen och behåller sin rosa; parkering på kvartersmark (P) är Grå (tabellen anger en ljusare grå för P).
 PALETT = {
-    "Gul": (250, 238, 145), "Brun": (197, 151, 96), "Beige": (215, 215, 158), "Orange": (244, 182, 124),
-    "Röd": (240, 158, 134), "Rosa": (249, 180, 191), "Lila": (195, 173, 202), "Blå": (191, 230, 254),
-    "Blågrå": (167, 199, 226), "Grön": (155, 205, 165), "Ljusgrön": (199, 237, 185), "Grå": (216, 215, 215),
-    "Ljusgrå": (239, 238, 234),
+    "Gul": (255, 228, 133),
+    "Brun": (179, 169, 148),
+    "Beige": (220, 207, 166),
+    "Orange": (235, 181, 127),
+    "Röd": (219, 154, 142),
+    "Rosa": (249, 180, 191),
+    "Lila": (195, 177, 214),
+    "Blå": (169, 207, 234),
+    "Blågrå": (154, 172, 184),
+    "Grön": (143, 203, 138),
+    "Ljusgrön": (169, 224, 155),
+    "Grå": (187, 191, 189),
+    "Ljusgrå": (220, 224, 221),
 }
-BEIGE = (215, 215, 158)  # Z verksamheter: fastställd av användaren
+BEIGE = (220, 207, 166)  # Z verksamheter
 
 
 def oklab(rgb):
@@ -83,7 +94,9 @@ class ColourTests(unittest.TestCase):
     def test_z_is_beige_o_and_r_are_orange_and_y_is_a_muted_rose(self):
         self.assertEqual(FARGER[BFS_2020_6["Z"]], BEIGE)
         red, green, blue = FARGER["Beige"]
-        self.assertLessEqual(abs(red - green), 10, "beige är en dämpad gulbrun ton, inte orange")
+        self.assertGreater(red, green, "beige är gulbrun")
+        self.assertGreater(green, blue)
+        self.assertLessEqual(red - green, 20, "beige är en dämpad gulbrun ton, inte orange")
         for letter in ("O", "R"):
             self.assertEqual(BFS_2020_6[letter], "Orange", letter)
         self.assertEqual(BFS_2020_6["Y"], "Rosa")

@@ -87,7 +87,6 @@ class DetaljplanPlugin:
 
         self._add_action("Ny detaljplan…", self.new_plan, QIcon(str(ICONS / "new.svg")))  # samma ikon som i verktygsfältet
         self._add_action("Öppna detaljplan (GeoPackage)…", self.open_plan)
-        self._add_action("Öppna planmosaik (alla planer i ett schema)…", self.open_mosaic)
         self._add_action("Importera leverans (JSON)…", self.import_plan)
         self._add_action("Importera geometrier…", self.import_geometry)
         self._add_action("Byt aktiv plan…", self.switch_plan)  # flera planer kan vara laddade samtidigt

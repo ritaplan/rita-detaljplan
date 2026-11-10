@@ -53,8 +53,8 @@ genomförandetid och vem som har planen utcheckad. Listan är sorterad på planb
 ## Planmosaik: alla planer i ett schema på en gång
 
 Vill du se alla planer i ett schema tillsammans, som en enda karta, klickar du på **Planmosaik…** i dialogen för att
-öppna en plan ur databasen (*Öppna → PostGIS-databas…*). Det finns också i menyn som **Rita Detaljplan → Öppna planmosaik
-(alla planer i ett schema)…**. Då läser QGIS databasens tabeller direkt, utan att ladda varje plan för sig.
+öppna en plan ur databasen (*Öppna → PostGIS-databas…*). Då läser QGIS databasens tabeller direkt, utan att ladda varje
+plan för sig.
 
 1. Kontrollera **databas** och **schema**. Det du valt i översikten följer med.
 2. Välj vilka planer som ska med efter **planstatus**. Rutorna visar hur många planer det finns med varje status.

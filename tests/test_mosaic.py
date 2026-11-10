@@ -415,9 +415,9 @@ class PluginMosaicTests(GuiCase):
         self.plugin.initGui()
         self.addCleanup(self.plugin.unload)
 
-    def test_it_is_in_the_plugin_menu(self):
+    def test_it_is_not_a_separate_menu_choice_only_a_button_in_the_database_dialog(self):
         texts = [a.text() for a in self.plugin.actions]
-        self.assertIn("Öppna planmosaik (alla planer i ett schema)…", texts)
+        self.assertFalse([t for t in texts if "planmosaik" in t.lower()], texts)
 
     def test_it_is_started_from_the_database_dialog_not_from_the_open_menu(self):
         with mock.patch.object(storage, "postgis_connections", return_value={"db": FakeConnection()}), \
