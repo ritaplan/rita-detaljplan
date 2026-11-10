@@ -6,3 +6,9 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    # Stegen i github/codeql-action måste ha samma version (annars fallerar analysen), så de uppdateras i samma förslag
+    groups:
+      codeql-action:
+        patterns:
+          - "github/codeql-action"
+          - "github/codeql-action/*"
