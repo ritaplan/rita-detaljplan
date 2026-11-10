@@ -27,8 +27,10 @@ BASELINE = Path(__file__).resolve().parent / "mirror_baseline.json"
 MIRRORED = (
     "core/archive.py", "core/ngp_client.py", "core/kommuner.py", "core/importer.py",
     "gui/messages.py", "gui/kommun_combo.py", "gui/delivery_dialog.py", "gui/about_dialog.py",
-    "gui/settings_dialog.py", "gui/import_dialog.py", "gui/postgis_plan_dialog.py",
+    "gui/settings_dialog.py", "gui/import_dialog.py",
 )
+# gui/postgis_plan_dialog.py (ÖP) är i Rita Detaljplan databashanteraren (gui/database_manager_dialog.py), som ännu inte finns i
+# Rita Översiktsplan
 _NAMES = ((re.compile(r"rita_detaljplan|rita_oversiktsplan"), "rita_X"),
           (re.compile(r"detaljplan|oversiktsplan", re.I), "X"),
           (re.compile(r"Översiktsplan|översiktsplan", re.I), "X"),

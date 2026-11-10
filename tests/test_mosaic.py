@@ -421,14 +421,14 @@ class PluginMosaicTests(GuiCase):
 
     def test_it_is_started_from_the_database_dialog_not_from_the_open_menu(self):
         with mock.patch.object(storage, "postgis_connections", return_value={"db": FakeConnection()}), \
-                mock.patch("rita_detaljplan.plugin.PostgisPlanDialog") as dialog_cls, \
+                mock.patch("rita_detaljplan.plugin.DatabaseManagerDialog") as dialog_cls, \
                 mock.patch.object(self.plugin, "open_mosaic") as open_mosaic, \
                 mock.patch("rita_detaljplan.plugin.load_plan") as load:
             dialog = dialog_cls.return_value
             dialog.exec.return_value = True
             dialog.mosaic_requested = True
             dialog.mosaic_target.return_value = ("db", "dp_a")
-            self.plugin.open_plan_postgis()
+            self.plugin.open_database_manager()
         open_mosaic.assert_called_once_with("db", "dp_a")
         load.assert_not_called()  # inga planer öppnas
 

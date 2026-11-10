@@ -99,6 +99,7 @@ Pluginet har två verktygsfält. Knapparna visas som ikoner; håll muspekaren ö
 | Topologikontroll | Hittar och rättar små glapp och brytpunkter. | [Kontrollera planen](kontrollera.md) |
 | Leverans och export | Leverera till NGP, spara som JSON eller skapa arkivpaket. | [Leverera](leverera.md) |
 | Tagga planbeskrivning | Taggar planbeskrivningen i Word. | [Tagga planbeskrivning](tagga-planbeskrivning.md) |
+| Databashanteraren | Öppnar, importerar och exporterar planer i en PostGIS-databas. | [Lagring](lagring.md#importera-och-exportera-planer) |
 | Checka ut / Checka in | För planer i en PostGIS-databas. | [Lagring](lagring.md#checka-ut-och-checka-in) |
 
 Det övre verktygsfältet har också **Markera**, **Avmarkera alla**, **Text**, **Dölj texter**, **Fyll användning** och

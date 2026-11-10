@@ -2,6 +2,38 @@
 
 Formatet följer [Keep a Changelog](https://keepachangelog.com/sv/1.1.0/), versionsnumren [Semantic Versioning](https://semver.org/lang/sv/).
 
+## [0.1.83] – databashanteraren: importera, exportera, kopiera och ta bort planer
+
+- **Dialogen för planer i en databas är nu en databashanterare**, med knapparna *Importera plan…* och *Exportera valda*.
+  Den öppnas fortfarande med *Öppna → PostGIS-databas…*, och nu också med en egen knapp i verktygsfältet och med
+  **Rita Detaljplan → Databashanteraren…**.
+- **Importera plan…** lägger en plan ur en GeoPackage-fil eller en leverans i JSON-format (Lantmäteriets format) i ett
+  schema i databasen som en ny plan: du väljer fil, databas,
+  schema (ett nytt skapas) och plan-id. Alla lager och planens uppgifter följer med, allt skrivs i en transaktion, och antalet
+  rader i varje tabell kontrolleras efteråt. Går något fel tas planen bort igen. Filen rörs inte, och en plan som redan finns
+  skrivs aldrig över. Äldre planfiler går att importera (tabeller som kom senare blir tomma). För en leverans anger du också
+  kommun och koordinatsystem (de följer inte med filen), planen byggs som vid *Importera leverans (JSON)*, och det som
+  hoppades över visas efteråt.
+- **Exportera valda** sparar de markerade planerna som GeoPackage-filer eller som leveranser (JSON) i en mapp, en fil per
+  plan, utan att checka ut eller låsa dem. Filen visar planen som den ligger i databasen, och det öppna projektet rörs
+  inte. En fil som redan finns skrivs aldrig över.
+- **Kopiera plan…** gör nya planer av de valda, i samma eller en annan databas eller ett annat schema (ett nytt skapas om det
+  behövs). En vald plan kan få ett nytt plan-id, flera behåller sina och måste kopieras till en annan plats. Samma regler som
+  vid import: en plan som redan finns skrivs aldrig över, och går något fel tas kopian bort igen.
+- **Ta bort plan…** tar bort de valda planerna ur databasen i en transaktion, efter en bekräftelse. Som standard sparas först
+  en säkerhetskopia (GeoPackage) i en mapp du väljer, och en plan vars säkerhetskopia misslyckas tas inte bort. En utcheckad
+  plan kan inte tas bort (databasen kontrollerar det också medan borttagningen pågår, så att ingen hinner checka ut den).
+- **Bryt lås…** tar bort utcheckningen av valda planer, efter en bekräftelse som visar vem som har dem.
+- Knapparna för att hantera planerna ligger på en egen rad under listan, och valet av databas och schema delas av
+  dialogerna för import och kopiering (`gui/database_target.py`, `gui/copy_plan_dialog.py`).
+- **Dialogen Leverans och export har fått ett modernare utseende.** Varje val (leverera till NGP, spara som JSON-fil, skapa
+  arkivpaket) är ett kort med ikon, rubrik och förklaring. Det valda kortet har en färgad ram, ett klick var som helst på ett
+  kort väljer det, och ett val som inte går (leverans utan inställningar) är grått. Kontrollen överst visar resultatet med en
+  tydlig markering (✔ inga avvikelser, ▲ varningar, ✘ fel), och knapparna har ikoner. Innehållet och reglerna är oförändrade.
+- Fil för fil: `core/transfer.py` (GeoPackage, kopiera, ta bort), `json_transfer.py` (leveranser), `gui/database_manager_dialog.py` (förut `postgis_plan_dialog.py`),
+  `gui/import_plan_dialog.py`. Prov i `tests/test_transfer.py`. Provet för utcheckning hade inte följt med när lagren fick ett
+  eget urval i 0.1.80 och är rättat.
+
 ## [0.1.82] – kommunens palett, och planmosaiken bara från dialogen för databasplaner
 
 - **Ny färgpalett.** Kulörerna är nu kommunens egen palett (kolumnen *Kulör* i tabellen över användningar): Gul #ffe485, Brun #b3a994,

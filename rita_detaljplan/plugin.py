@@ -29,7 +29,7 @@ from .gui.layout_legend import LayoutLegendTool
 from .gui.mosaic_dialog import MosaicDialog
 from .gui.plan_info_dialog import PlanInfoDialog
 from .gui.plan_toolbar import PlanToolBar
-from .gui.postgis_plan_dialog import PostgisPlanDialog
+from .gui.database_manager_dialog import DatabaseManagerDialog
 from .gui.settings_dialog import SettingsDialog
 from .gui.statusbar_guard import StatusBarHeightGuard
 
@@ -75,7 +75,8 @@ class DetaljplanPlugin:
         self.controller = PlanController(self._error, self._warn, open_form=self._open_plan_form)
         self.toolbar = PlanToolBar(self.iface, self.controller, self._catalog, self.new_plan, self.open_plan,
                                    self.open_plan_info, self.iface.mainWindow(), on_settings=self.open_settings,
-                                   on_archive=self.open_archive, on_import=self.import_geometry)
+                                   on_archive=self.open_archive, on_import=self.import_geometry,
+                                   on_database=self.open_database_manager)
         self.iface.addToolBar(self.toolbar, Qt.ToolBarArea.TopToolBarArea)
         self.toolbar.register_shortcuts()  # verktygen kan få egna genvägar i Inställningar → Kortkommandon
         # det andra verktygsfältet (self.toolbar.bottom_toolbar) läggs till och dockas längst ned av PlanToolBar
@@ -87,6 +88,7 @@ class DetaljplanPlugin:
 
         self._add_action("Ny detaljplan…", self.new_plan, QIcon(str(ICONS / "new.svg")))  # samma ikon som i verktygsfältet
         self._add_action("Öppna detaljplan (GeoPackage)…", self.open_plan)
+        self._add_action("Databashanteraren…", self.open_database_manager, QIcon(str(ICONS / "database.svg")))
         self._add_action("Importera leverans (JSON)…", self.import_plan)
         self._add_action("Importera geometrier…", self.import_geometry)
         self._add_action("Byt aktiv plan…", self.switch_plan)  # flera planer kan vara laddade samtidigt
@@ -421,7 +423,7 @@ class DetaljplanPlugin:
         if chosen is file_action:
             self.open_plan_file()
         elif chosen is db_action:
-            self.open_plan_postgis()
+            self.open_database_manager()
 
     def open_mosaic(self, connection: str | None = None, schema: str | None = None):
         """Visar alla planer i ett schema som en skrivskyddad planmosaik (se ``core.mosaic``). ``connection`` och
@@ -450,8 +452,10 @@ class DetaljplanPlugin:
                    f"({', '.join(mosaic.status_label(s) for s in statuses)}). Den är skrivskyddad: öppna en plan med "
                    "Öppna för att redigera den.")
 
-    def open_plan_postgis(self):
-        dialog = PostgisPlanDialog(self.iface.mainWindow())
+    def open_database_manager(self):
+        """Databashanteraren: planerna i en PostGIS-databas. Härifrån öppnas planer (utcheckade eller skrivskyddade) och
+        planmosaiken, och planer importeras och exporteras (de två sista sköter dialogen själv)."""
+        dialog = DatabaseManagerDialog(self.iface.mainWindow(), catalog_provider=self._catalog)
         if not dialog.exec():
             return
         if dialog.mosaic_requested is True:

@@ -26,7 +26,7 @@ if HAVE_QGIS:
     from rita_detaljplan.core import geopackage, model, storage
     from rita_detaljplan.core.project import create_postgis_plan_project, find_plan_group, load_plan
     from rita_detaljplan.gui.new_plan_dialog import NewPlanDialog, NewPlanValues
-    from rita_detaljplan.gui.postgis_plan_dialog import (COLUMN_FIELDS, LOCK_FREE, LOCK_TAKEN, ROW_ROLE, PostgisPlanDialog,
+    from rita_detaljplan.gui.database_manager_dialog import (COLUMN_FIELDS, LOCK_FREE, LOCK_TAKEN, ROW_ROLE, DatabaseManagerDialog,
                                                          lock_text, natural_key)
     from test_toolbar import GuiCase
     from plan_case import PlanCase
@@ -586,7 +586,7 @@ class NewPlanDialogPostgisTests(PlanCase):
 @unittest.skipUnless(HAVE_QGIS, "QGIS Python behövs")
 class OpenDialogTests(PlanCase):
     def dialog(self, connections):
-        dialog = PostgisPlanDialog(None, connections)
+        dialog = DatabaseManagerDialog(None, connections)
         self.addCleanup(dialog.deleteLater)
         return dialog
 
@@ -888,16 +888,16 @@ class PluginTests(GuiCase):
         open_file.assert_called_once()
 
     def test_open_offers_a_choice_when_there_are_connections(self):
-        for index, target in ((0, "open_plan_file"), (1, "open_plan_postgis")):
+        for index, target in ((0, "open_plan_file"), (1, "open_database_manager")):
             with mock.patch.object(storage, "postgis_connections", return_value={"db": FakeConnection()}), \
                     mock.patch("rita_detaljplan.plugin.QMenu") as menu_cls, \
                     mock.patch.object(self.plugin, "open_plan_file") as open_file, \
-                    mock.patch.object(self.plugin, "open_plan_postgis") as open_db:
+                    mock.patch.object(self.plugin, "open_database_manager") as open_db:
                 actions = [object(), object()]
                 menu_cls.return_value.addAction.side_effect = actions
                 menu_cls.return_value.exec.return_value = actions[index]
                 self.plugin.open_plan()
-            called = {"open_plan_file": open_file, "open_plan_postgis": open_db}
+            called = {"open_plan_file": open_file, "open_database_manager": open_db}
             called[target].assert_called_once()
             other = open_db if target == "open_plan_file" else open_file
             other.assert_not_called()
@@ -912,12 +912,12 @@ class PluginTests(GuiCase):
             self.assertFalse(call.args[0].isNull(), call.args[1])
 
     def test_opening_a_postgis_plan_loads_it_into_the_project(self):
-        with mock.patch("rita_detaljplan.plugin.PostgisPlanDialog") as dialog_cls, \
+        with mock.patch("rita_detaljplan.plugin.DatabaseManagerDialog") as dialog_cls, \
                 mock.patch("rita_detaljplan.plugin.load_plan") as load:
             dialog_cls.return_value.exec.return_value = True
             dialog_cls.return_value.selections.return_value = [("planer", "dp_shared", "dp_1")]
             dialog_cls.return_value.checkout_requested = False
-            self.plugin.open_plan_postgis()
+            self.plugin.open_database_manager()
         self.assertEqual(load.call_args.args[0], storage.PostgisStorage("planer", "dp_shared", "dp_1"))
 
     def test_opening_a_postgis_plan_keeps_a_previously_loaded_plan_loaded(self):
@@ -926,22 +926,22 @@ class PluginTests(GuiCase):
         # test_opening_a_plan_keeps_other_layers_and_plans_but_makes_the_new_one_active för det riktiga flödet,
         # med en verklig GeoPackage-plan – här räcker det att bevisa att ``remove_plan`` inte längre anropas).
         old_plan_layer_id = self.layers["detaljplan"].id()
-        with mock.patch("rita_detaljplan.plugin.PostgisPlanDialog") as dialog_cls, \
+        with mock.patch("rita_detaljplan.plugin.DatabaseManagerDialog") as dialog_cls, \
                 mock.patch("rita_detaljplan.plugin.load_plan") as load:
             dialog_cls.return_value.exec.return_value = True
             dialog_cls.return_value.selections.return_value = [("planer", "dp_shared", "dp_1")]
             dialog_cls.return_value.checkout_requested = False
-            self.plugin.open_plan_postgis()
+            self.plugin.open_database_manager()
         load.assert_called_once()
         self.assertIn(old_plan_layer_id, QgsProject.instance().mapLayers(), "den gamla planens lager ligger kvar")
 
     def open_from_dialog(self, checkout_requested, lock=None, checked_out=True, plan_ids=("dp_1",)):
         toolbar = self.plugin.toolbar
-        with mock.patch("rita_detaljplan.plugin.PostgisPlanDialog") as dialog_cls,                 mock.patch("rita_detaljplan.plugin.load_plan") as load,                 mock.patch("rita_detaljplan.plugin.checkout.read_lock", return_value=lock),                 mock.patch.object(toolbar.checkout, "check_out", return_value=checked_out) as check_out:
+        with mock.patch("rita_detaljplan.plugin.DatabaseManagerDialog") as dialog_cls,                 mock.patch("rita_detaljplan.plugin.load_plan") as load,                 mock.patch("rita_detaljplan.plugin.checkout.read_lock", return_value=lock),                 mock.patch.object(toolbar.checkout, "check_out", return_value=checked_out) as check_out:
             dialog_cls.return_value.exec.return_value = True
             dialog_cls.return_value.selections.return_value = [("planer", "dp_shared", p) for p in plan_ids]
             dialog_cls.return_value.checkout_requested = checkout_requested
-            self.plugin.open_plan_postgis()
+            self.plugin.open_database_manager()
         self.load = load
         return check_out
 
@@ -986,23 +986,23 @@ class PluginTests(GuiCase):
         self.assertFalse(canvas.isFrozen(), "kartan är upptinad igen")
 
     def test_a_plan_that_fails_does_not_stop_the_others(self):
-        with mock.patch("rita_detaljplan.plugin.PostgisPlanDialog") as dialog_cls,                 mock.patch("rita_detaljplan.plugin.load_plan",
+        with mock.patch("rita_detaljplan.plugin.DatabaseManagerDialog") as dialog_cls,                 mock.patch("rita_detaljplan.plugin.load_plan",
                            side_effect=[None, storage.PostgisError("ingen kontakt"), None]) as load,                 mock.patch("rita_detaljplan.plugin.checkout.read_lock", return_value=None):
             dialog_cls.return_value.exec.return_value = True
             dialog_cls.return_value.selections.return_value = [("planer", "dp_shared", p) for p in ("a", "b", "c")]
             dialog_cls.return_value.checkout_requested = False
-            self.plugin.open_plan_postgis()
+            self.plugin.open_database_manager()
         self.assertEqual(load.call_count, 3)
         self.assertTrue(any("b" in t and "ingen kontakt" in t for t in self.critical()), self.critical())
         self.assertTrue(any("Laddade 2 planer" in c.args[1] for c in self.iface.messageBar().pushMessage.call_args_list))
 
     def test_a_plan_that_cannot_be_read_is_reported(self):
-        with mock.patch("rita_detaljplan.plugin.PostgisPlanDialog") as dialog_cls, \
+        with mock.patch("rita_detaljplan.plugin.DatabaseManagerDialog") as dialog_cls, \
                 mock.patch("rita_detaljplan.plugin.load_plan", side_effect=storage.PostgisError("ingen kontakt")):
             dialog_cls.return_value.exec.return_value = True
             dialog_cls.return_value.selections.return_value = [("planer", "dp_shared", "dp_1")]
             dialog_cls.return_value.checkout_requested = False
-            self.plugin.open_plan_postgis()
+            self.plugin.open_database_manager()
         self.assertTrue(any("ingen kontakt" in t for t in self.critical()))
 
 

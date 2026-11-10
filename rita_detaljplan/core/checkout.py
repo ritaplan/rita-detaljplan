@@ -276,14 +276,16 @@ def _copy_layer(source: QgsVectorLayer, target: QgsVectorLayer) -> int:
     return len(features)
 
 
-def download(plan: PostgisStorage, path: Path, lock: Lock) -> Path:
-    """Kopierar planens alla tabeller från databasen till en ny GeoPackage."""
+def copy_to_geopackage(plan: PostgisStorage, path: Path, extra: Optional[dict[str, str]] = None) -> Path:
+    """Kopierar planens alla tabeller från databasen till en ny GeoPackage. Planens uppgifter följer med, utom det som
+    hör till schemat och låset; ``extra`` läggs till (eller skriver över)."""
     meta = plan.read_meta()
-    extra = {k: v for k, v in meta.items() if k not in ("schema_version", "spec_version", "epsg", LOCK_KEY)}
-    extra.update({"checkout_token": lock.token, "checkout_connection": plan.connection_name,
-                  "checkout_schema": plan.schema, "checkout_plan": plan.plan_id, "checkout_since": lock.since})
+    if "epsg" not in meta:
+        raise CheckoutError(f"Planen {plan.plan_id} finns inte i schemat {plan.schema}.")
+    kept = {k: v for k, v in meta.items() if k not in ("schema_version", "spec_version", "epsg", LOCK_KEY)}
+    kept.update(extra or {})
     path.parent.mkdir(parents=True, exist_ok=True)
-    geopackage.create_geopackage(path, int(meta["epsg"]), extra)
+    geopackage.create_geopackage(path, int(meta["epsg"]), kept)
     local = storage.GeoPackageStorage(path)
     for layer_def in model.LAYERS:
         source = plan.make_layer(layer_def)
@@ -294,6 +296,13 @@ def download(plan: PostgisStorage, path: Path, lock: Lock) -> Path:
         if target.featureCount() != source.featureCount():
             raise CheckoutError(f"Kopian av {layer_def.name} blev inte komplett.")
     return path
+
+
+def download(plan: PostgisStorage, path: Path, lock: Lock) -> Path:
+    """Kopierar planen till en lokal GeoPackage som utcheckningens arbetskopia (märkt med låset)."""
+    return copy_to_geopackage(plan, path, {"checkout_token": lock.token, "checkout_connection": plan.connection_name,
+                                           "checkout_schema": plan.schema, "checkout_plan": plan.plan_id,
+                                           "checkout_since": lock.since})
 
 
 def local_copies(plan: PostgisStorage, directory: Optional[Path] = None) -> list[tuple[Path, dict]]:
@@ -372,10 +381,10 @@ def _cleanup_after_failed_checkout(project, plan, lock, path) -> None:
         release_lock(plan, lock.token)
     except Exception:  # noqa: BLE001
         pass
-    _remove(path)
+    remove_copy(path)
 
 
-def _remove(path: Path) -> bool:
+def remove_copy(path: Path) -> bool:
     """Tar bort kopian (och SQLites hjälpfiler). Returnerar False om något inte gick att ta bort."""
     clean = True
     for suffix in ("", "-wal", "-shm", "-journal"):
@@ -484,7 +493,7 @@ def check_in(project: QgsProject) -> tuple[Path, bool]:
     _to_database(project, plan)
     for key in ("checkout_path", "checkout_token"):
         _write(project, key, "")
-    return path, _remove(path)
+    return path, remove_copy(path)
 
 
 def discard(project: QgsProject) -> tuple[Path, bool]:
@@ -503,4 +512,4 @@ def discard(project: QgsProject) -> tuple[Path, bool]:
     _to_database(project, plan)
     for key in ("checkout_path", "checkout_token"):
         _write(project, key, "")
-    return path, _remove(path)
+    return path, remove_copy(path)

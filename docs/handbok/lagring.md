@@ -30,7 +30,8 @@ Projektfilen (`.qgz`) sparas i en mapp och pekar på databasen.
 
 Klicka på **Öppna** i verktygsfältet. Finns det databasanslutningar får du välja fil eller databas.
 
-För en databas visas en **översikt över alla planer** i databasen (alla scheman som skapats med pluginet) med en rad per
+För en databas öppnas **databashanteraren**. Den nås också direkt med databasknappen *Databashanteraren* i verktygsfältet
+och med **Rita Detaljplan → Databashanteraren…**. Där finns en **översikt över alla planer** i databasen (alla scheman som skapats med pluginet) med en rad per
 plan och kolumner för beteckning, namn, syfte, planstatus, plantyp, diarienummer, påbörjad, antagande, laga kraft,
 genomförandetid och vem som har planen utcheckad. Listan är sorterad på planbeteckning, där tal räknas som tal (1, 2, 3,
 10 och 1002 i den ordningen). Klicka på en kolumnrubrik för att sortera på något annat.
@@ -75,6 +76,77 @@ plan. Några saker att veta:
   statusar så ersätts den förra. Mosaiker för olika scheman kan ligga bredvid varandra.
 - **Klicka på en yta med QGIS Identifiera** för att se vilken plan den hör till.
 - Har schemat skapats med en äldre version av pluginet får du veta det. Öppna en plan i schemat först, så uppgraderas det.
+
+## Importera och exportera planer
+
+Under listan har databashanteraren knappar för att hantera planerna: **Importera plan…**, **Exportera valda**,
+**Kopiera plan…**, **Ta bort plan…** och **Bryt lås…**. Importen och exporten flyttar planer mellan databasen och filer,
+åt båda hållen, som **GeoPackage** (hela planen som den är)
+eller som **leverans i JSON-format** (Lantmäteriets format, samma som *Leverans och export* skriver).
+
+### Importera en plan till databasen
+
+Du har en plan som en GeoPackage-fil, till exempel från innan ni började använda en databas, eller en leverans (`.json`)
+från ett annat verktyg, och vill lägga in den.
+
+1. Klicka på **Importera plan…** i databashanteraren.
+2. Välj **planfilen**: en `.gpkg` som Rita Detaljplan har skapat, eller en leverans i JSON-format.
+3. Välj **databas** och **schema**. Finns schemat redan måste det ha planens koordinatsystem. Skriv ett nytt schemanamn
+   för att skapa ett.
+4. Kontrollera **plan-id**. Det föreslås från filnamnet och måste vara unikt i schemat.
+5. För en **leverans** anger du också **kommun** och **koordinatsystem**, eftersom de inte följer med filen (kommunen
+   föreslås från filen).
+6. Klicka på **Importera**.
+
+Planen läggs in som en ny plan med alla lager och sina uppgifter. Pluginet kontrollerar efteråt att varje tabell har
+lika många rader som filen. Går något fel tas planen bort ur databasen igen, så att inget halvfärdigt blir kvar. Filen
+rörs inte. Planen visas markerad i listan, och du öppnar den som vanligt.
+
+En leverans bygger pluginet upp till en plan på samma sätt som *Importera leverans (JSON)*: planområdet, användnings- och
+egenskapsytorna med bestämmelser, beslutsinformationen och handlingarna kommer med. Bestämmelser som inte finns i den
+laddade planbestämmelsekatalogen hoppas över (ytan skapas ändå), och det som hoppades över visas efter importen.
+
+- **En plan som redan finns skrivs aldrig över.** Finns plan-id:t redan i schemat får du ett felmeddelande. Välj ett
+  annat plan-id.
+- **Äldre planfiler går bra.** Tabeller som kom i en nyare version blir tomma. En fil gjord med en *nyare* version av
+  pluginet än din kan inte importeras: uppdatera pluginet först.
+- **Spara planen först** om den är öppen i QGIS, så att alla ändringar finns i filen.
+
+### Exportera planer till filer
+
+1. Markera en eller flera planer i listan (Ctrl eller Skift för flera).
+2. Klicka på **Exportera valda** och välj **Som GeoPackage** eller **Som leverans, JSON**, och sedan en mapp.
+
+Varje plan sparas som en fil med planens id som namn (`kv_norr.gpkg` eller `kv_norr.json`). Heter två planer i olika
+scheman lika får filen schemats namn först (`dp_a_kv_norr.gpkg`). Planen låses eller checkas inte ut, och en fil som
+redan finns i mappen skrivs aldrig över: den planen hoppas över och du får veta det.
+
+Filen visar planen **som den ligger i databasen**. Ändringar som någon har utcheckade men inte checkat in följer inte med.
+Ligger databasens schema i en äldre version uppgraderas det först, som när en plan öppnas.
+
+### Kopiera planer
+
+Markera en eller flera planer och klicka på **Kopiera plan…**. Välj databas och schema (ett nytt schema skapas om det
+behövs) och, för en enda plan, ett nytt plan-id. Kopian får planens uppgifter och alla objekt, och visar planen som den
+ligger i databasen. Flera valda planer behåller sina plan-id, så de måste kopieras till ett annat schema eller en annan
+databas. En plan som redan finns skrivs aldrig över.
+
+Det går också att kopiera till en annan databas, till exempel från test till produktion. Planerna måste ha samma
+koordinatsystem som schemat de kopieras till.
+
+### Ta bort planer
+
+Markera planerna och klicka på **Ta bort plan…**. Du får bekräfta, och som standard sparas först en
+**säkerhetskopia** som GeoPackage i en mapp du väljer (`kv_norr.gpkg`). Går säkerhetskopian inte att spara tas planen inte
+bort. Det går **inte att ångra**. Planens alla rader tas bort i en enda transaktion.
+
+En plan som är utcheckad kan inte tas bort, inte heller din egen. Kasta utcheckningen, eller bryt låset (nedan), först.
+
+### Bryta lås
+
+Är en utcheckning övergiven, till exempel efter en kraschad dator, markerar du planen och klickar på **Bryt lås…**. Du får
+se vem som har planen och sedan när, och bekräfta. Den som hade planen utcheckad kan då inte längre checka in sina
+ändringar, så gör det bara när du vet att de inte behövs. Samma sak gör **Bryt låset** vid en utcheckning i verktygsfältet.
 
 ## Checka ut och checka in
 

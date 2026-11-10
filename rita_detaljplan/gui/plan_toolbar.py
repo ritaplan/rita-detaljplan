@@ -104,6 +104,7 @@ SHOW_LABELS_TIP = "Texterna är dolda. Klicka för att visa beteckningarna på k
 LABEL_TABLES = (cat.USE_LAYER, "egenskap_yta", "egenskap_linje", "egenskap_punkt")  # lagren som har texter på kartan
 NEW_TIP = "Ny detaljplan…"
 OPEN_TIP = "Öppna detaljplan (GeoPackage)…"
+DATABASE_TIP = "Databashanteraren: öppna, importera och exportera planer i en PostGIS-databas…"
 TOPOLOGY_TIP = ("Topologikontroll (beta, ännu inte full funktionalitet): föreslår att brytpunkter i användnings- och egenskapsytor flyttas till planområdets "
                 "eller varandras brytpunkter, stänger små glapp mellan gränser, och visar om hela planområdet har "
                 "en användning, om någon redan ritad yta saknar bestämmelse och om kvartersmark saknar "
@@ -136,7 +137,8 @@ class PlanToolBar(QToolBar):
                  on_info: Optional[Callable[[], None]] = None, parent=None,
                  on_settings: Optional[Callable[[], None]] = None,
                  on_archive: Optional[Callable[..., object]] = None,
-                 on_import: Optional[Callable[[], None]] = None):
+                 on_import: Optional[Callable[[], None]] = None,
+                 on_database: Optional[Callable[[], None]] = None):
         super().__init__("Rita Detaljplan", parent)
         self.setObjectName("DetaljplanToolBar")
         self.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
@@ -164,8 +166,11 @@ class PlanToolBar(QToolBar):
         self.act_new.setToolTip(NEW_TIP)
         self.act_open = QAction(icon("open.svg"), OPEN_TIP, self)
         self.act_open.setToolTip(OPEN_TIP)
+        self.act_database = QAction(icon("database.svg"), "Databashanteraren", self)
+        self.act_database.setToolTip(DATABASE_TIP)
         self.addAction(self.act_new)
         self.addAction(self.act_open)
+        self.addAction(self.act_database)
         self.act_checkout = QAction(icon("checkout.svg"), "Checka ut", self)
         self.act_checkout.setToolTip(CHECKOUT_TIP)
         self.addAction(self.act_checkout)
@@ -283,8 +288,8 @@ class PlanToolBar(QToolBar):
                                       self._after_select)
 
         self.act_checkout.triggered.connect(lambda _checked=False: self.toggle_checkout())
-        for action, callback in ((self.act_new, on_new), (self.act_open, on_open), (self.act_info, on_info),
-                                 (self.act_import, on_import)):
+        for action, callback in ((self.act_new, on_new), (self.act_open, on_open), (self.act_database, on_database),
+                                 (self.act_info, on_info), (self.act_import, on_import)):
             if callback is not None:
                 action.triggered.connect(lambda _checked=False, cb=callback: cb())
         self.act_start.triggered.connect(self.start)

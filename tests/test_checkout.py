@@ -89,7 +89,7 @@ class CheckoutCase(ExportCase):
             mock.patch.object(co, "DB_PROVIDER", "ogr"),
             mock.patch.object(co, "_is_db_layer", lambda layer: Path(layer.source().split("|")[0]) == gpkg),
             mock.patch.object(storage.PostgisStorage, "layer_uri",
-                              lambda s, d, epsg=None: f"{gpkg.as_posix()}|layername={d.name}"),
+                              lambda s, d, epsg=None, subset=None: f"{gpkg.as_posix()}|layername={d.name}"),
             mock.patch.object(storage.PostgisStorage, "_open", open_layer),
             mock.patch.object(storage, "postgis_connections", lambda: {"db": self.conn}),
             mock.patch.object(co, "checkouts_dir", lambda: self.copies),
@@ -413,7 +413,7 @@ class CheckInTests(CheckoutCase):
 
     def test_a_copy_that_cannot_be_deleted_is_reported_not_fatal(self):
         self.out()
-        with mock.patch.object(co, "_remove", return_value=False):
+        with mock.patch.object(co, "remove_copy", return_value=False):
             path, removed = co.check_in(self.project)
         self.assertFalse(removed)
         self.assertEqual(co.state(self.project), co.DATABASE)
@@ -637,7 +637,7 @@ class ActionsTests(CheckoutCase):
     def test_a_copy_that_could_not_be_removed_is_reported_with_its_path(self):
         self.actions.check_out()
         with mock.patch.object(self.actions, "_ask_check_in", return_value=CHECK_IN), \
-                mock.patch.object(co, "_remove", return_value=False):
+                mock.patch.object(co, "remove_copy", return_value=False):
             self.assertTrue(self.actions.check_in())
         self.assertIn("kunde inte tas bort", self.reports[-1][0])
         self.assertTrue(self.reports[-1][1])
