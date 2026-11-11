@@ -2,7 +2,7 @@
 
 Formatet följer [Keep a Changelog](https://keepachangelog.com/sv/1.1.0/), versionsnumren [Semantic Versioning](https://semver.org/lang/sv/).
 
-## [Kommande] – skrivskydd för planer som inte får ändras
+## [0.1.84] – skrivskydd för planer som inte får ändras
 
 - **Rättat:** en ny plan i en mapp som angetts relativt (till exempel `0183 Test1`) fick lager med relativ adress. När
   QGIS arbetsmapp byttes efter att projektet sparats gick lagren inte att öppna för redigering, och pennan gav
