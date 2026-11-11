@@ -111,10 +111,13 @@ def _schema_table_ddl(schema: str) -> list[str]:
     return [f'CREATE TABLE IF NOT EXISTS {table} ("key" text PRIMARY KEY, "value" text)']
 
 
-def ensure_schema(schema: str, epsg: int) -> list[str]:
-    """SQL som skapar det delade schemat med alla tabeller (samma som GeoPackage-planens), om de inte redan finns.
-    Körs vid varje ny plan: är schemat redan där (från en tidigare plan) blir det en no-op."""
-    statements = [f"CREATE SCHEMA IF NOT EXISTS {quote(schema)}"]
+def ensure_schema(schema: str, epsg: int, create_schema: bool = True) -> list[str]:
+    """SQL som skapar det delade schemats tabeller (samma som GeoPackage-planens), om de inte redan finns. Körs vid
+    varje ny plan: är tabellerna redan där (från en tidigare plan) blir det en no-op. Med ``create_schema`` skapas
+    också schemat. Det ska bara göras när schemat saknas: PostgreSQL kräver rätt att skapa scheman i databasen även
+    för ``CREATE SCHEMA IF NOT EXISTS`` på ett schema som finns, och många kommuner ger användarna rätt bara i ett
+    eget schema."""
+    statements = [f"CREATE SCHEMA IF NOT EXISTS {quote(schema)}"] if create_schema else []
     statements += _schema_table_ddl(schema)
     for layer_def in model.LAYERS:
         statements += _table_ddl(schema, layer_def, epsg)
@@ -352,12 +355,20 @@ def create_postgis_plan(connection_name: str, schema: str, plan_id: str, epsg: i
                 plan._sql(statement)
         if plan_exists(plan.connection, schema, plan_id):  # bara meningsfullt att fråga om schemat redan fanns
             raise PostgisError(f"Det finns redan en plan med identifieraren {plan_id} i schemat {schema}.")
-    statements = ensure_schema(schema, epsg)
+    schema_was_there = bool(existing) or schema_exists(plan.connection, schema)  # då rör vi aldrig schemat i övrigt
+    if schema_was_there and may_create(plan.connection, schema) is False:
+        raise PostgisError(f"Du har inte rätt att skapa tabeller i schemat {schema}. Välj ett schema där du har den "
+                           "rätten, eller be den som sköter databasen om den (CREATE på schemat).")
+    if not schema_was_there and may_create(plan.connection) is False:
+        raise PostgisError(f"Schemat {schema} finns inte, och du får inte skapa nya scheman i databasen. Välj ett "
+                           "schema som redan finns och som du har rätt att skapa tabeller i, eller be den som sköter "
+                           "databasen om ett.")
+    statements = ensure_schema(schema, epsg, create_schema=not schema_was_there)
     try:
         for statement in statements:
             plan._sql(statement)
     except PostgisError:
-        if not existing:  # schemat var nyskapat av oss: ett halvskapat schema är värre än inget, städa bort det
+        if not schema_was_there:  # schemat var nyskapat av oss: ett halvskapat schema är värre än inget, städa bort det
             try:
                 plan._sql(f"DROP SCHEMA IF EXISTS {quote(schema)} CASCADE")
             except PostgisError:
@@ -375,6 +386,26 @@ def create_postgis_plan(connection_name: str, schema: str, plan_id: str, epsg: i
 
 def list_schemas(connection) -> list[str]:
     return [row[0] for row in _execute(connection, "SELECT schema_name FROM information_schema.schemata")]
+
+
+def schema_exists(connection, schema: str) -> bool:
+    """Om schemat finns i databasen. Frågar systemkatalogen, som visar alla scheman: ``information_schema`` visar bara
+    dem som användaren har någon rätt i."""
+    return bool(_execute(connection, f"SELECT 1 FROM pg_catalog.pg_namespace WHERE nspname = {literal(schema)}"))
+
+
+def may_create(connection, schema: Optional[str] = None) -> Optional[bool]:
+    """Om användaren får skapa tabeller i ``schema`` (som ska finnas), eller utan schema: skapa nya scheman i
+    databasen. None när databasen inte svarar på frågan (då försöker pluginet ändå och visar databasens fel)."""
+    sql = (f"SELECT has_schema_privilege({literal(schema)}, 'CREATE')" if schema
+           else "SELECT has_database_privilege(current_database(), 'CREATE')")
+    try:
+        rows = _execute(connection, sql)
+    except PostgisError:
+        return None
+    if not rows or rows[0][0] is None:
+        return None
+    return str(rows[0][0]).lower() in ("true", "t", "1")
 
 
 def list_plugin_schemas(connection) -> list[str]:

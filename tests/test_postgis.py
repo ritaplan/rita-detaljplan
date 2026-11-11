@@ -47,6 +47,8 @@ class FakeConnection:
         self.plan_rows = {}  # schema -> rader [plan, namn, beteckning, kommun, syfte, status, typ]
         self.status_counts = {}  # schema -> {status: antal planer}, för planmosaiken
         self.decision_rows = {}  # schema -> rader [plan, diarienummer, påbörjad, antagande, laga kraft, genomförandetid]
+        self.may_create_schemas = True  # rätten CREATE på databasen
+        self.may_create_tables = True  # rätten CREATE på scheman som finns
 
     def uri(self):
         return "dbname='planer' host=localhost port=5432 user='eric' sslmode=disable"
@@ -63,6 +65,20 @@ class FakeConnection:
             return [[s] for s in self.schemas]
         if "information_schema.tables" in sql:
             return [[s] for s in self.plugin_schemas]
+        match = re.search(r"pg_namespace WHERE nspname = '([^']*)'", sql)
+        if match:  # schema_exists
+            return [[1]] if match.group(1) in self.schemas else []
+        if sql.startswith("SELECT has_database_privilege"):
+            return [[self.may_create_schemas]]
+        if sql.startswith("SELECT has_schema_privilege"):
+            return [[self.may_create_tables]]
+        match = re.match(r'CREATE SCHEMA IF NOT EXISTS "(\w+)"', sql)
+        if match:  # som PostgreSQL: kräver rätten på databasen även om schemat finns
+            if not self.may_create_schemas:
+                raise RuntimeError("permission denied for database planer")
+            if match.group(1) not in self.schemas:
+                self.schemas.append(match.group(1))
+            return []
         match = re.match(r'SELECT "key", "value" FROM "(\w+)"\."dp_schema"', sql)
         if match:
             return [[k, v] for k, v in self.schema_meta.get(match.group(1), {}).items()]
@@ -237,7 +253,8 @@ class CreateTests(unittest.TestCase):
         self.assertEqual((plan.connection_name, plan.schema, plan.plan_id), ("db", "dp_test", "dp_1"))
         self.assertIn("postgis_version", conn.sql[0])
         self.assertIn('"dp_schema"', conn.sql[1], "kollar om schemat redan finns innan det skapas")
-        self.assertEqual(conn.sql[2], 'CREATE SCHEMA IF NOT EXISTS "dp_test"')
+        create = conn.sql.index('CREATE SCHEMA IF NOT EXISTS "dp_test"')
+        self.assertLess(create, next(i for i, s in enumerate(conn.sql) if s.startswith("CREATE TABLE")))
         self.assertEqual(conn.schema_meta["dp_test"], {"schema_version": str(model.SCHEMA_VERSION), "epsg": "3006"})
         self.assertEqual(conn.plan_meta["dp_test"]["dp_1"]["kommun"], "Eskilstuna")
         self.assertEqual(conn.plan_meta["dp_test"]["dp_1"]["spec_version"], model.SPEC_VERSION)
@@ -285,6 +302,34 @@ class CreateTests(unittest.TestCase):
         with self.assertRaisesRegex(storage.PostgisError, "syntaxfel"):
             self.create(conn)
         self.assertEqual(conn.sql[-1], 'DROP SCHEMA IF EXISTS "dp_test" CASCADE')
+
+    def test_a_plan_in_an_own_schema_works_without_the_right_to_create_schemas(self):
+        conn = FakeConnection(schemas=("public", "lukas"))  # ett tomt schema som användaren fått av kommunen
+        conn.may_create_schemas = False
+        self.create(conn, schema="lukas")
+        self.assertFalse(any(s.startswith("CREATE SCHEMA") for s in conn.sql))
+        self.assertIn('CREATE TABLE IF NOT EXISTS "lukas"."detaljplan"', " ".join(conn.sql))
+        self.assertIn("dp_1", conn.plan_meta["lukas"])
+
+    def test_without_the_right_to_create_schemas_a_missing_schema_is_explained(self):
+        conn = FakeConnection()
+        conn.may_create_schemas = False
+        with self.assertRaisesRegex(storage.PostgisError, "får inte skapa nya scheman"):
+            self.create(conn)
+        self.assertFalse(any(s.startswith("CREATE") for s in conn.sql))
+
+    def test_without_the_right_to_create_tables_an_existing_schema_is_explained(self):
+        conn = FakeConnection(schemas=("public", "lukas"))
+        conn.may_create_tables = False
+        with self.assertRaisesRegex(storage.PostgisError, "rätt att skapa tabeller i schemat lukas"):
+            self.create(conn, schema="lukas")
+        self.assertFalse(any(s.startswith(("CREATE", "DROP")) for s in conn.sql))
+
+    def test_a_failure_in_an_own_empty_schema_never_drops_it(self):
+        conn = FakeConnection(schemas=("public", "lukas"), fail_on='CREATE TABLE IF NOT EXISTS "lukas"."bestammelse"')
+        with self.assertRaisesRegex(storage.PostgisError, "syntaxfel"):
+            self.create(conn, schema="lukas")
+        self.assertFalse(any(s.startswith("DROP SCHEMA") for s in conn.sql))
 
     def test_a_failure_in_an_existing_schema_does_not_drop_it(self):
         conn = FakeConnection()

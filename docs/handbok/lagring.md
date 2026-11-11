@@ -18,7 +18,8 @@ planer laddade samtidigt.
 
 1. Välj **Ny detaljplan…** och välj **PostGIS-databas** under *Lagras i*.
 2. Välj en av QGIS sparade **anslutningar**.
-3. Ange ett **schema**. Finns det redan används det, annars skapas det.
+3. Ange ett **schema**. Finns det redan används det, annars skapas det. Har du bara rätt i ett eget schema (vanligt i
+   kommuner), ange det schemat: du behöver inte få skapa nya scheman.
 4. Ange ett **plan-id**, planens identifierare i schemat. Ett förslag hämtas från plannamnet.
 
 Flera planer kan dela samma schema. De ligger då i samma tabeller och måste ha samma koordinatsystem. Behöver du flera
