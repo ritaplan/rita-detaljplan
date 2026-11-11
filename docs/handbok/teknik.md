@@ -244,6 +244,21 @@ Det gör ingenting, eftersom alla kopplingar går via `objektidentitet`.
 - **Återuppta** efter en krasch: när du checkar ut letar pluginet efter en lokal kopia vars `token` fortfarande
   matchar låset i databasen, och erbjuder dig att fortsätta med den.
 
+### Skrivskydd
+
+Ett skrivskydd är en rad `skrivskydd` i planens `dp_meta` med JSON (`user`, `host`, `since`, `reason`), se
+`core/protection.py`. Det är skilt från låset: ett lås tillhör den som redigerar och släpps vid incheckning, ett skydd
+ligger kvar tills någon bryter det.
+
+- **Utcheckningen** (`checkout.acquire_lock`) lägger bara in sitt lås om varken `checkout` eller `skrivskydd` finns, i
+  samma steg som `dp_meta` är låst. Finns skyddet kastas `ProtectedError`.
+- **Skydda** (`checkout.protect`) kontrollerar i samma `DO`-block att inget lås finns, och lägger sedan in raden. En redan
+  skyddad plan lämnas som den är.
+- **Ta bort** (`transfer.delete_sql`) vägrar planer med skydd, på samma sätt som planer med lås.
+- En skyddsrad som inte går att tolka räknas ändå som ett skydd.
+- Skyddet följer **inte** med när en plan exporteras, kopieras eller importeras: det är en ny plan.
+- Skyddet gäller i pluginet, inte som behörighet i databasen. Databasens egna rättigheter är det som stänger det helt.
+
 ## Projektfilen, inställningar och cache
 
 | Vad | Var | Innehåll |

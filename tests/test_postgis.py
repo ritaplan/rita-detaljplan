@@ -935,9 +935,9 @@ class PluginTests(GuiCase):
         load.assert_called_once()
         self.assertIn(old_plan_layer_id, QgsProject.instance().mapLayers(), "den gamla planens lager ligger kvar")
 
-    def open_from_dialog(self, checkout_requested, lock=None, checked_out=True, plan_ids=("dp_1",)):
+    def open_from_dialog(self, checkout_requested, lock=None, checked_out=True, plan_ids=("dp_1",), protection=None):
         toolbar = self.plugin.toolbar
-        with mock.patch("rita_detaljplan.plugin.DatabaseManagerDialog") as dialog_cls,                 mock.patch("rita_detaljplan.plugin.load_plan") as load,                 mock.patch("rita_detaljplan.plugin.checkout.read_lock", return_value=lock),                 mock.patch.object(toolbar.checkout, "check_out", return_value=checked_out) as check_out:
+        with mock.patch("rita_detaljplan.plugin.DatabaseManagerDialog") as dialog_cls,                 mock.patch("rita_detaljplan.plugin.load_plan") as load,                 mock.patch("rita_detaljplan.plugin.checkout.read_lock", return_value=lock),                 mock.patch("rita_detaljplan.plugin.checkout.read_protection", return_value=protection),                 mock.patch.object(toolbar.checkout, "check_out", return_value=checked_out) as check_out:
             dialog_cls.return_value.exec.return_value = True
             dialog_cls.return_value.selections.return_value = [("planer", "dp_shared", p) for p in plan_ids]
             dialog_cls.return_value.checkout_requested = checkout_requested
@@ -960,6 +960,32 @@ class PluginTests(GuiCase):
         check_out = self.open_from_dialog(True, lock=taken)
         check_out.assert_not_called()
         self.assertTrue(any("annan" in c.args[1] for c in self.iface.messageBar().pushMessage.call_args_list))
+
+    def test_a_protected_plan_is_opened_read_only_even_if_checkout_was_asked_for(self):
+        protection = co.Protection("anna", "ANNAS-DATOR", "2026-11-01T09:00:00", "Laga kraft")
+        check_out = self.open_from_dialog(True, protection=protection)
+        check_out.assert_not_called()
+        messages = [c.args[1] for c in self.iface.messageBar().pushMessage.call_args_list]
+        self.assertTrue(any("skrivskyddad" in m and "anna på ANNAS-DATOR" in m and "Laga kraft" in m
+                            and "Databashanteraren" in m for m in messages), messages)
+
+    def test_several_plans_where_one_is_protected_check_out_the_others(self):
+        protection = co.Protection("anna", "ANNAS-DATOR", "2026-11-01T09:00:00", "Laga kraft")
+        values = {"dp_1": None, "dp_2": protection}
+        toolbar = self.plugin.toolbar
+        with mock.patch("rita_detaljplan.plugin.DatabaseManagerDialog") as dialog_cls, \
+                mock.patch("rita_detaljplan.plugin.load_plan"), \
+                mock.patch("rita_detaljplan.plugin.checkout.read_lock", return_value=None), \
+                mock.patch("rita_detaljplan.plugin.checkout.read_protection",
+                           side_effect=lambda plan: values[plan.plan_id]), \
+                mock.patch.object(toolbar.checkout, "check_out", return_value=True) as check_out:
+            dialog_cls.return_value.exec.return_value = True
+            dialog_cls.return_value.selections.return_value = [("planer", "dp_shared", p) for p in ("dp_1", "dp_2")]
+            dialog_cls.return_value.checkout_requested = True
+            self.plugin.open_database_manager()
+        self.assertEqual(check_out.call_count, 1, "bara den oskyddade planen checkas ut")
+        messages = [c.args[1] for c in self.iface.messageBar().pushMessage.call_args_list]
+        self.assertTrue(any("dp_2 är skrivskyddad" in m for m in messages), messages)
 
     def test_a_declined_or_failed_checkout_leaves_the_plan_open_read_only(self):
         self.open_from_dialog(True, checked_out=False)
@@ -987,7 +1013,7 @@ class PluginTests(GuiCase):
 
     def test_a_plan_that_fails_does_not_stop_the_others(self):
         with mock.patch("rita_detaljplan.plugin.DatabaseManagerDialog") as dialog_cls,                 mock.patch("rita_detaljplan.plugin.load_plan",
-                           side_effect=[None, storage.PostgisError("ingen kontakt"), None]) as load,                 mock.patch("rita_detaljplan.plugin.checkout.read_lock", return_value=None):
+                           side_effect=[None, storage.PostgisError("ingen kontakt"), None]) as load,                 mock.patch("rita_detaljplan.plugin.checkout.read_lock", return_value=None), mock.patch("rita_detaljplan.plugin.checkout.read_protection", return_value=None):
             dialog_cls.return_value.exec.return_value = True
             dialog_cls.return_value.selections.return_value = [("planer", "dp_shared", p) for p in ("a", "b", "c")]
             dialog_cls.return_value.checkout_requested = False

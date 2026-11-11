@@ -2,6 +2,20 @@
 
 Formatet följer [Keep a Changelog](https://keepachangelog.com/sv/1.1.0/), versionsnumren [Semantic Versioning](https://semver.org/lang/sv/).
 
+## [Kommande] – skrivskydd för planer som inte får ändras
+
+- **Skrivskydda…** i databashanteraren markerar planer som inte får ändras, till exempel detaljplaner som har vunnit laga
+  kraft. Du kan skriva ett skäl. En skrivskyddad plan kan öppnas, exporteras och kopieras (kopian är en ny plan utan
+  skydd), men **inte checkas ut och inte tas bort**, varken i databashanteraren eller med *Checka ut* i verktygsfältet.
+  Kontrollen görs i databasen medan planens metadata är låst, så att ingen hinner checka ut planen mitt i.
+- **Bryt skrivskydd…** tar bort skyddet, efter en bekräftelse som visar vem som skyddade planen, när och varför.
+- Listan har en ny kolumn **Skrivskydd** (en sköld, med vem, när och varför som verktygstips) och ett nytt filter
+  (*Bara skrivskyddade* / *Bara redigerbara*). Tips: filtrera på laga kraft, markera alla och skrivskydda.
+- En utcheckad plan kan inte skrivskyddas (checka in den eller bryt låset först). Öppnar du en skyddad plan och ber om
+  utcheckning öppnas den skrivskyddad, och du får veta vem som skyddade den och varför.
+- Skyddet gäller i pluginet och är ingen behörighet i databasen. Fil för fil: `core/protection.py` (nytt),
+  `core/checkout.py`, `core/transfer.py`, `core/plan_overview.py`, `gui/database_manager_dialog.py`, `plugin.py`.
+
 ## [0.1.83] – databashanteraren: importera, exportera, kopiera och ta bort planer
 
 - **Dialogen för planer i en databas är nu en databashanterare**, med knapparna *Importera plan…* och *Exportera valda*.

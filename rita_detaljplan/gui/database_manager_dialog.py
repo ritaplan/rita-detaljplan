@@ -2,7 +2,8 @@
 Härifrån öppnar man planer (utcheckade för redigering eller skrivskyddade, se ``core.checkout``), visar dem som en
 planmosaik och flyttar planer mellan databasen och filer: importerar en GeoPackage eller en leverans (JSON) till
 databasen och exporterar valda planer som GeoPackage eller leverans, kopierar planer, tar bort dem och bryter lås på
-utcheckade planer (se ``core.transfer`` och ``json_transfer``)."""
+utcheckade planer (se ``core.transfer`` och ``json_transfer``). Planer som inte får ändras, till exempel detaljplaner med
+laga kraft, skrivskyddas här, och skyddet bryts här (se ``core.protection``)."""
 from __future__ import annotations
 
 import re
@@ -12,8 +13,8 @@ from typing import Callable, Optional
 from qgis.PyQt.QtCore import QModelIndex, QSize, QSortFilterProxyModel, Qt
 from qgis.PyQt.QtGui import QBrush, QColor, QIcon, QStandardItem, QStandardItemModel
 from qgis.PyQt.QtWidgets import (QAbstractItemView, QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox,
-                                 QFileDialog, QFrame, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMenu, QMessageBox,
-                                 QTableView, QToolButton, QVBoxLayout)
+                                 QFileDialog, QFrame, QHBoxLayout, QHeaderView, QInputDialog, QLabel, QLineEdit, QMenu,
+                                 QMessageBox, QTableView, QToolButton, QVBoxLayout)
 
 from .. import json_transfer
 from ..core import checkout, plan_overview, storage, transfer
@@ -24,6 +25,7 @@ from .import_plan_dialog import JSON, ImportPlanDialog
 ICONS = Path(__file__).resolve().parent.parent / "icons"
 ALL = ""  # filtervärde för "alla"
 LOCK_FREE, LOCK_TAKEN = "free", "taken"
+PROTECTED, EDITABLE = "protected", "editable"
 
 # (rubrik, fält i PlanRow) i den ordning kolumnerna visas
 COLUMNS = (
@@ -37,6 +39,7 @@ COLUMNS = (
     ("Antagande", "antagande"),
     ("Laga kraft", "laga_kraft"),
     ("Genomförandetid (mån)", "genomforandetid"),
+    ("Skrivskydd", "skrivskydd"),
     ("Utcheckad av", "utcheckad"),
     ("Schema", "schema"),
     ("Plan-id", "plan_id"),
@@ -86,15 +89,20 @@ def lock_text(row: PlanRow) -> str:
     return f"Du ({row.lock.since.replace('T', ' ')})" if row.locked_by_me else row.lock.describe().replace(" på ", " · ", 1)
 
 
+def protection_text(row: PlanRow) -> str:
+    return "Skrivskyddad" if row.protected else ""
+
+
 class PlanFilter(QSortFilterProxyModel):
-    """Filtrerar planraderna på fritext (alla kolumner) och på planstatus, plantyp, schema och utcheckning. Sorterar
-    med tal som tal (se ``natural_key``)."""
+    """Filtrerar planraderna på fritext (alla kolumner) och på planstatus, plantyp, schema, utcheckning och skrivskydd.
+    Sorterar med tal som tal (se ``natural_key``)."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.text = ""
         self.values = {"status": ALL, "typ": ALL, "schema": ALL}
         self.lock_mode = ALL
+        self.protect_mode = ALL
         self.setSortCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
         self.setSortRole(Qt.ItemDataRole.DisplayRole)
 
@@ -113,6 +121,10 @@ class PlanFilter(QSortFilterProxyModel):
         self.lock_mode = mode
         self.invalidateFilter()
 
+    def set_protect_mode(self, mode: str) -> None:
+        self.protect_mode = mode
+        self.invalidateFilter()
+
     def filterAcceptsRow(self, source_row: int, parent: QModelIndex) -> bool:
         model = self.sourceModel()
         row: Optional[PlanRow] = model.item(source_row, 0).data(ROW_ROLE)
@@ -124,6 +136,10 @@ class PlanFilter(QSortFilterProxyModel):
         if self.lock_mode == LOCK_FREE and row.locked:
             return False
         if self.lock_mode == LOCK_TAKEN and not row.locked:
+            return False
+        if self.protect_mode == PROTECTED and not row.protected:
+            return False
+        if self.protect_mode == EDITABLE and row.protected:
             return False
         if self.text:
             haystack = " ".join(model.item(source_row, column).text() for column in range(model.columnCount()))
@@ -157,6 +173,10 @@ class DatabaseManagerDialog(QDialog):
         self.filter_lock.addItem("Alla planer", ALL)
         self.filter_lock.addItem("Bara lediga", LOCK_FREE)
         self.filter_lock.addItem("Bara utcheckade", LOCK_TAKEN)
+        self.filter_protect = QComboBox()
+        self.filter_protect.addItem("Alla, med och utan skrivskydd", ALL)
+        self.filter_protect.addItem("Bara skrivskyddade", PROTECTED)
+        self.filter_protect.addItem("Bara redigerbara", EDITABLE)
 
         self.model = QStandardItemModel(0, len(COLUMNS), self)
         self.model.setHorizontalHeaderLabels([title for title, _field in COLUMNS])
@@ -211,9 +231,16 @@ class DatabaseManagerDialog(QDialog):
         self.copy_plans = self._tool("Kopiera plan…", "duplicate.svg",
                                      "Gör en ny plan av de valda planerna, i samma eller en annan databas eller ett annat "
                                      "schema.")
+        self.protect_plans = self._tool("Skrivskydda…", "protect.svg",
+                                        "Skrivskyddar de valda planerna, till exempel detaljplaner som har vunnit laga kraft. "
+                                        "En skrivskyddad plan kan öppnas, exporteras och kopieras, men inte checkas ut eller "
+                                        "tas bort förrän skyddet bryts.")
+        self.unprotect_plans = self._tool("Bryt skrivskydd…", "unprotect.svg",
+                                          "Tar bort skrivskyddet på de valda planerna, så att de kan checkas ut, ändras och "
+                                          "tas bort igen.")
         self.delete_plans = self._tool("Ta bort plan…", "delete.svg",
                                        "Tar bort de valda planerna ur databasen. Det går inte att ångra, men du kan spara en "
-                                       "säkerhetskopia först. Planer som är utcheckade kan inte tas bort.")
+                                       "säkerhetskopia först. Planer som är utcheckade eller skrivskyddade kan inte tas bort.")
         self.delete_plans.setStyleSheet("QToolButton:enabled { color: #b3261e; }")
         self.break_locks = self._tool("Bryt lås…", "unlock.svg",
                                       "Tar bort utcheckningen av de valda planerna. Den som hade planen utcheckad kan då inte "
@@ -223,6 +250,8 @@ class DatabaseManagerDialog(QDialog):
         self.open_mosaic.clicked.connect(self._request_mosaic)
         self.import_plan.clicked.connect(self._import_plan)
         self.copy_plans.clicked.connect(self._copy_plans)
+        self.protect_plans.clicked.connect(self._protect_plans)
+        self.unprotect_plans.clicked.connect(self._unprotect_plans)
         self.delete_plans.clicked.connect(self._delete_plans)
         self.break_locks.clicked.connect(self._break_locks)
         self.refresh.clicked.connect(lambda _checked=False: self.reload())
@@ -238,14 +267,17 @@ class DatabaseManagerDialog(QDialog):
         top.addWidget(self.filter_text, 1)
         top.addWidget(self.refresh)
         filters = QHBoxLayout()
-        for combo in (self.filter_status, self.filter_typ, self.filter_lock):
+        for combo in (self.filter_status, self.filter_typ, self.filter_lock, self.filter_protect):
             filters.addWidget(combo)
         filters.addStretch(1)
-        manage = QHBoxLayout()  # hantera planerna i databasen: till och från filer | på plats
+        manage = QHBoxLayout()  # hantera planerna i databasen: till och från filer | på plats | skydd och lås
         manage.addWidget(self.import_plan)
         manage.addWidget(self.export_plans)
         manage.addWidget(self._separator())
-        for button in (self.copy_plans, self.delete_plans, self.break_locks):
+        manage.addWidget(self.copy_plans)
+        manage.addWidget(self.delete_plans)
+        manage.addWidget(self._separator())
+        for button in (self.protect_plans, self.unprotect_plans, self.break_locks):
             manage.addWidget(button)
         manage.addStretch(1)
         manage.addWidget(self.count)
@@ -264,6 +296,8 @@ class DatabaseManagerDialog(QDialog):
         for field, combo in (("status", self.filter_status), ("typ", self.filter_typ), ("schema", self.filter_schema)):
             combo.currentIndexChanged.connect(lambda _i, f=field, c=combo: self.proxy.set_value(f, c.currentData()))
         self.filter_lock.currentIndexChanged.connect(lambda _i: self.proxy.set_lock_mode(self.filter_lock.currentData()))
+        self.filter_protect.currentIndexChanged.connect(
+            lambda _i: self.proxy.set_protect_mode(self.filter_protect.currentData()))
         self.proxy.layoutChanged.connect(self._update_state)
         self.proxy.rowsInserted.connect(self._update_state)
         self.proxy.rowsRemoved.connect(self._update_state)
@@ -331,10 +365,12 @@ class DatabaseManagerDialog(QDialog):
         self.model.removeRows(0, self.model.rowCount())
         grey = QBrush(QColor("#7a7a7a"))
         padlock = icon("lock.svg")
+        shield = icon("shield.svg")
         for row in self._rows:
             items = []
             for _title, field in COLUMNS:
-                text = lock_text(row) if field == "utcheckad" else getattr(row, field)
+                text = lock_text(row) if field == "utcheckad" else protection_text(row) if field == "skrivskydd" \
+                    else getattr(row, field)
                 item = QStandardItem(text)
                 item.setEditable(False)
                 if field == "genomforandetid":
@@ -343,12 +379,16 @@ class DatabaseManagerDialog(QDialog):
                     item.setToolTip(text)
                 if field == "utcheckad" and row.locked:
                     item.setIcon(padlock)
+                if field == "skrivskydd" and row.protected:
+                    item.setIcon(shield)
                 if row.locked_by_other:
                     item.setForeground(grey)
                 items.append(item)
             items[0].setData(row, ROW_ROLE)
             if row.lock is not None:
                 items[COLUMN_FIELDS.index("utcheckad")].setToolTip(f"Utcheckad av {row.lock.describe()}")
+            if row.protection is not None:
+                items[COLUMN_FIELDS.index("skrivskydd")].setToolTip(f"Skrivskyddad av {row.protection.describe()}")
             self.model.appendRow(items)
         self._fill_filters()
         self.table.setSortingEnabled(True)
@@ -504,7 +544,7 @@ class DatabaseManagerDialog(QDialog):
 
     def _delete_plans(self) -> None:
         rows = [row for row in self.selected_rows()]
-        if not rows or any(row.locked for row in rows):
+        if not rows or any(row.locked or row.protected for row in rows):
             return
         backup = self._confirm_delete(rows)
         if backup is None:
@@ -535,6 +575,65 @@ class DatabaseManagerDialog(QDialog):
             self.notice.setText(f"Tog bort {len(removed)} av {len(rows)} planer.{saved}")
         self.error.setText("\n".join(problems))
 
+    def _ask_protect(self, rows: list[PlanRow]) -> Optional[str]:
+        """Frågar efter ett skäl till skyddet (valfritt). None om man ångrar sig."""
+        names = ", ".join(row.beteckning or row.plan_id for row in rows[:6]) + (f" och {len(rows) - 6} till" if len(rows) > 6 else "")
+        reason, accepted = QInputDialog.getText(
+            self, "Skrivskydda", f"Skrivskydda {'planen' if len(rows) == 1 else f'{len(rows)} planer'} ({names})?\n\n"
+            "Planerna kan sedan öppnas, exporteras och kopieras, men inte checkas ut, ändras eller tas bort förrän "
+            "skyddet bryts.\n\nSkäl (valfritt, visas för den som försöker redigera planen):")
+        return reason.strip() if accepted else None
+
+    def _protect_plans(self) -> None:
+        rows = [row for row in self.selected_rows() if not row.protected]
+        if not rows:
+            return
+        reason = self._ask_protect(rows)
+        if reason is None:
+            return
+        done, problems = [], []
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        try:
+            for row in rows:
+                try:
+                    checkout.protect(self._plan_storage(row), reason)
+                except (checkout.CheckoutError, storage.PostgisError) as exc:
+                    problems.append(f"{row.beteckning or row.plan_id}: {exc}")
+                else:
+                    done.append(row)
+        finally:
+            QApplication.restoreOverrideCursor()
+        self.reload()
+        if done:
+            self.notice.setText(f"Skrivskyddade {len(done)} av {len(rows)} planer.")
+        self.error.setText("\n".join(problems))
+
+    def _confirm_unprotect(self, rows: list[PlanRow]) -> bool:
+        who = "\n".join(f"  {row.beteckning or row.plan_id}: {row.protection.describe()}" for row in rows[:12])
+        more = f"\n  … och {len(rows) - 12} till" if len(rows) > 12 else ""
+        answer = QMessageBox.question(
+            self, "Bryt skrivskydd", f"Bryta skrivskyddet på:\n\n{who}{more}\n\nPlanerna kan då checkas ut, ändras och tas "
+            "bort igen. Gör det bara om planerna verkligen ska ändras.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
+        return answer == QMessageBox.StandardButton.Yes
+
+    def _unprotect_plans(self) -> None:
+        rows = [row for row in self.selected_rows() if row.protected]
+        if not rows or not self._confirm_unprotect(rows):
+            return
+        done, problems = [], []
+        for row in rows:
+            try:
+                checkout.unprotect(self._plan_storage(row))
+            except (checkout.CheckoutError, storage.PostgisError) as exc:
+                problems.append(f"{row.beteckning or row.plan_id}: {exc}")
+            else:
+                done.append(row)
+        self.reload()
+        if done:
+            self.notice.setText(f"Bröt skrivskyddet på {len(done)} av {len(rows)} planer.")
+        self.error.setText("\n".join(problems))
+
     def _confirm_break_locks(self, rows: list[PlanRow]) -> bool:
         who = "\n".join(f"  {row.beteckning or row.plan_id}: {row.lock.describe()}" for row in rows)
         answer = QMessageBox.question(
@@ -562,7 +661,7 @@ class DatabaseManagerDialog(QDialog):
 
     def _accept_with(self, check_out: bool) -> None:
         rows = self.selected_rows()
-        if not rows or (check_out and any(row.locked_by_other for row in rows)):
+        if not rows or (check_out and any(row.locked_by_other or row.protected for row in rows)):
             return
         self.checkout_requested = check_out
         self.accept()
@@ -572,16 +671,26 @@ class DatabaseManagerDialog(QDialog):
         rows = self.selected_rows()
         self.count.setText(f"Synliga: {shown} av {total}   ·   Valda: {len(rows)}")
         taken = [row for row in rows if row.locked_by_other]
+        protected = [row for row in rows if row.protected]
         self.open_readonly.setEnabled(bool(rows))
         self.open_mosaic.setEnabled(bool(self.connection.count()))
         self.import_plan.setEnabled(bool(self.connection.count()))
         self.export_plans.setEnabled(bool(rows))
         self.copy_plans.setEnabled(bool(rows))
-        self.delete_plans.setEnabled(bool(rows) and not any(row.locked for row in rows))
+        self.delete_plans.setEnabled(bool(rows) and not any(row.locked or row.protected for row in rows))
+        self.protect_plans.setEnabled(any(not row.protected for row in rows))
+        self.unprotect_plans.setEnabled(bool(protected))
         self.break_locks.setEnabled(any(row.locked for row in rows))
-        self.open_checkout.setEnabled(bool(rows) and not taken)
+        self.open_checkout.setEnabled(bool(rows) and not taken and not protected)
         if not rows:
             self.hint.setText("Välj en eller flera planer i listan (Ctrl eller Skift för flera).")
+        elif protected:
+            names = ", ".join(row.beteckning or row.plan_id for row in protected)
+            self.hint.setText(
+                f"Planen är skrivskyddad ({protected[0].protection.describe()}). Den kan öppnas skrivskyddad men inte "
+                "checkas ut eller tas bort förrän skyddet bryts." if len(rows) == 1 else
+                f"{len(protected)} av de valda planerna är skrivskyddade ({names}). De kan öppnas skrivskyddade men inte "
+                "checkas ut eller tas bort. Bryt skyddet eller välj bort dem.")
         elif len(rows) == 1 and taken:
             self.hint.setText(f"Planen är utcheckad av {rows[0].lock.describe()}. Den kan öppnas skrivskyddad men inte "
                               "checkas ut förrän den har checkats in.")

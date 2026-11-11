@@ -41,6 +41,7 @@ class Outcome(Enum):
     CHECKED_OUT = "utcheckad"
     READ_ONLY = "skrivskyddad"
     LOCKED = "utcheckad av någon annan"
+    PROTECTED = "skyddad mot ändringar"
     ERROR = "kunde inte läsas"
 
 
@@ -49,6 +50,7 @@ class OpenResult:
     plan_id: str
     outcome: Outcome
     locked_by: str = ""  # vem som har planen utcheckad (bara när utfallet är LOCKED)
+    protected_by: str = ""  # vem som har skrivskyddat planen (bara när utfallet är PROTECTED)
 
     @property
     def loaded(self) -> bool:
@@ -488,6 +490,7 @@ class DetaljplanPlugin:
             with self.toolbar.refresh_suspended() if self.toolbar is not None else nullcontext():
                 load_plan(plan, QgsProject.instance())
             lock = checkout.read_lock(plan)
+            protection = checkout.read_protection(plan)
         except (ValueError, storage.PostgisError) as exc:
             self._error(f"{plan_id}: {exc}")
             return OpenResult(plan_id, Outcome.ERROR)
@@ -496,6 +499,8 @@ class DetaljplanPlugin:
             self.controller.attach()
         if self.toolbar is not None:
             self.toolbar.refresh()
+        if protection is not None:  # en skrivskyddad plan checkas inte ut, även om användaren bad om det
+            return OpenResult(plan_id, Outcome.PROTECTED, protected_by=protection.describe())
         if want_checkout and self.toolbar is not None and (lock is None or checkout.is_own_lock(lock)):
             # Användaren bad om utcheckning i dialogen: ingen ny fråga. Gäller planen som just laddades (den är aktiv).
             if self.toolbar.checkout.check_out(confirm=False):
@@ -513,6 +518,9 @@ class DetaljplanPlugin:
             if result.outcome is Outcome.LOCKED:
                 self._warn(f"Laddade planen {result.plan_id}, men den är utcheckad av {result.locked_by} och därför "
                            "skrivskyddad.")
+            elif result.outcome is Outcome.PROTECTED:
+                self._warn(f"Laddade planen {result.plan_id}, men den är skrivskyddad ({result.protected_by}). Bryt "
+                           "skrivskyddet i Databashanteraren för att kunna redigera den.")
             elif result.outcome is Outcome.READ_ONLY:
                 self._info(f"Laddade planen {result.plan_id} från databasen. Den är skrivskyddad: klicka på Checka ut "
                            "(eller på pennan) för att redigera en lokal kopia.")
@@ -525,6 +533,8 @@ class DetaljplanPlugin:
         for result in loaded:
             if result.outcome is Outcome.LOCKED:
                 self._warn(f"{result.plan_id} är utcheckad av {result.locked_by} och därför skrivskyddad.")
+            elif result.outcome is Outcome.PROTECTED:
+                self._warn(f"{result.plan_id} är skrivskyddad ({result.protected_by}).")
 
     def open_plan_file(self):
         path, _ = QFileDialog.getOpenFileName(self.iface.mainWindow(), "Öppna detaljplan", "", "GeoPackage (*.gpkg)")
