@@ -49,6 +49,30 @@ class ReadOnlyUriTests(unittest.TestCase):
             gpkg, _ = create_plan_project(special, "plan", "Eskilstuna", "0482", 3006)
             self.assertEqual(geopackage.read_meta(gpkg)["kommun"], "Eskilstuna")
 
+    def test_a_relative_folder_gives_absolute_paths_that_survive_a_change_of_working_directory(self):
+        """Regression: mappen "0183 Test1" angiven relativt gav lager med relativ adress; när arbetsmappen byttes
+        gick de inte att öppna för redigering ("Kan inte återöppna datakälla i uppdateringsläge")."""
+        import os
+        import tempfile
+        from qgis.core import QgsProject
+        from rita_detaljplan.core.project import create_plan_project, load_plan
+        before = os.getcwd()
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as folder:
+            try:
+                os.chdir(folder)
+                gpkg, qgz = create_plan_project("0183 Test1", "0183_Test1", "Eskilstuna", "0482", 3006)
+                self.assertTrue(gpkg.is_absolute() and qgz.is_absolute(), (gpkg, qgz))
+                project = QgsProject()  # måste behållas i en variabel, annars städas lagren bort
+                layers = load_plan(Path("0183 Test1") / "0183_Test1.gpkg", project)  # även en relativ källa
+                layer = layers["detaljplan"]
+                self.assertTrue(Path(layer.source().split("|")[0]).is_absolute(), layer.source())
+                os.chdir(before)  # arbetsmappen byts (QGIS och filväljare gör det)
+                self.assertTrue(layer.startEditing())
+                layer.rollBack()
+                project.removeAllMapLayers()  # släpp filen innan mappen tas bort
+            finally:
+                os.chdir(before)
+
 
 @unittest.skipUnless(HAVE_QGIS, "QGIS Python behövs")
 class QgisProjectTests(unittest.TestCase):

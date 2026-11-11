@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import os
 from pathlib import Path
 
 from qgis.core import (
@@ -186,8 +187,8 @@ def apply_attributes(layer: QgsVectorLayer, feature_ids, attributes: dict) -> No
 
 
 def create_plan_project(directory: str | Path, filnamn: str, kommun: str, kommunkod: str, epsg: int) -> tuple[Path, Path]:
-    """Skapar GeoPackage + QGIS-projekt (.qgz) för en ny detaljplan och returnerar sökvägarna."""
-    directory = Path(directory)
+    """Skapar GeoPackage + QGIS-projekt (.qgz) för en ny detaljplan och returnerar sökvägarna (alltid absoluta)."""
+    directory = Path(os.path.abspath(directory))  # en relativ mapp skulle följa med när arbetsmappen byts
     directory.mkdir(parents=True, exist_ok=True)
     gpkg = geopackage.create_geopackage(directory / f"{filnamn}.gpkg", epsg, {"kommun": kommun, "kommunkod": kommunkod})
     return gpkg, _write_project(directory, filnamn, gpkg)
@@ -200,7 +201,7 @@ def create_postgis_plan_project(directory: str | Path, filnamn: str, connection_
     QGIS-projekt (.qgz) som pekar på den.
 
     Projektfilen ligger i ``directory``; själva planen ligger i databasen."""
-    directory = Path(directory)
+    directory = Path(os.path.abspath(directory))
     directory.mkdir(parents=True, exist_ok=True)
     qgz = directory / f"{filnamn}.qgz"
     if qgz.exists():

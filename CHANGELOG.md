@@ -4,6 +4,10 @@ Formatet följer [Keep a Changelog](https://keepachangelog.com/sv/1.1.0/), versi
 
 ## [Kommande] – skrivskydd för planer som inte får ändras
 
+- **Rättat:** en ny plan i en mapp som angetts relativt (till exempel `0183 Test1`) fick lager med relativ adress. När
+  QGIS arbetsmapp byttes efter att projektet sparats gick lagren inte att öppna för redigering, och pennan gav
+  "Kan inte återöppna datakälla i uppdateringsläge" för alla lager. Planens och projektfilens sökvägar görs nu alltid
+  absoluta (`core/storage.py`, `core/project.py`).
 - **Skrivskydda…** i databashanteraren markerar planer som inte får ändras, till exempel detaljplaner som har vunnit laga
   kraft. Du kan skriva ett skäl. En skrivskyddad plan kan öppnas, exporteras och kopieras (kopian är en ny plan utan
   skydd), men **inte checkas ut och inte tas bort**, varken i databashanteraren eller med *Checka ut* i verktygsfältet.

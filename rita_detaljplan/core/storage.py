@@ -11,6 +11,7 @@ som redan finns lägger bara till sina rader.
 """
 from __future__ import annotations
 
+import os
 import re
 from pathlib import Path
 from typing import Optional
@@ -186,7 +187,9 @@ class GeoPackageStorage(Storage):
     kind = "geopackage"
 
     def __init__(self, path):
-        self.path = Path(path)
+        # alltid absolut: en relativ sökväg tolkas mot processens arbetsmapp, som QGIS och filväljare byter, och då
+        # går lagren inte att öppna för redigering ("Kan inte återöppna datakälla i uppdateringsläge")
+        self.path = Path(os.path.abspath(path))
 
     @property
     def name(self) -> str:
