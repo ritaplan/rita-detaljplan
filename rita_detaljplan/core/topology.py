@@ -11,7 +11,8 @@ Analysen föreslår ändringar; ingenting ändras förrän användaren valt vilk
     toleransen från en annan ytas gräns, utan att ligga på den, flyttas till den. Mellan ytor i samma lager flyttas den
     senare ytans brytpunkt till den tidigare (så att bara en av dem ändras).
 
-Rena geometriberäkningar (QgsGeometry) utan koppling till lager; kontrollen av att en ändring inte ger en ogiltig
+Ytor utan utbredning (area 0) hoppas över: de är skräp som ska bort (se ``is_degenerate``), inte något som ska
+anpassas. Rena geometriberäkningar (QgsGeometry) utan koppling till lager; kontrollen av att en ändring inte ger en ogiltig
 geometri görs när ändringen genomförs.
 """
 from __future__ import annotations
@@ -21,8 +22,11 @@ from typing import Iterable, Optional
 
 from qgis.core import Qgis, QgsGeometry, QgsPointXY
 
-DEFAULT_TOLERANCE = 0.50  # m: närmare än så räknas ett avstånd som ett glapp/en avvikelse och inte som avsiktligt
+DEFAULT_TOLERANCE = 0.10  # m: som reglerna (10 cm åt båda håll, se core.validation); närmare än så räknas ett avstånd
+#                          som ett glapp/en avvikelse och inte som avsiktligt
 EXACT = 1e-6  # m: så nära räknas brytpunkter som sammanfallande
+NOISE = 0.001  # m: en avvikelse under 1 mm ser ingen och är bara avrundning: rättas, men visas som "under 1 mm"
+EMPTY_AREA = 0.01  # m²: en yta som inte är större har ingen utbredning (samma gräns som core.rules.MIN_OVERLAP)
 
 SNAP_VERTEX, SNAP_EDGE, ADD_VERTEX = "brytpunkt", "gräns", "planbrytpunkt"
 KIND_TITLES = {SNAP_VERTEX: "Flytta brytpunkt till brytpunkt", SNAP_EDGE: "Stäng glapp mot gräns",
@@ -47,17 +51,66 @@ class Change:
         return KIND_TITLES[self.kind]
 
     @property
+    def noise(self) -> bool:
+        """Avvikelsen är under 1 mm: avrundning som ingen ser, men som ändå gör att gränserna inte sammanfaller exakt."""
+        return self.distance <= NOISE
+
+    @property
     def text(self) -> str:
         target = TARGET_TITLES.get(self.reference, self.reference)
+        length = length_text(self.distance)
         if self.kind == SNAP_VERTEX:
-            return f"Flytta brytpunkten {self.distance * 100:.0f} cm till {target}s brytpunkt"
+            return f"Flytta brytpunkten {length} till {target}s brytpunkt"
         if self.kind == SNAP_EDGE:
-            return f"Stäng glapp på {self.distance * 100:.0f} cm mot {target}s gräns"
-        return f"Lägg till en brytpunkt där {target} har en ({self.distance * 100:.0f} cm från ytans kant)"
+            return f"Stäng glapp på {length} mot {target}s gräns"
+        return f"Lägg till en brytpunkt där {target} har en ({length} från ytans kant)"
 
     @property
     def where(self) -> str:
         return TABLE_TITLES.get(self.table, self.table)
+
+
+def length_text(meters: float) -> str:
+    """Ett avstånd så att det går att läsa: "under 1 mm", "0,4 mm" … "7 cm", "1,2 m" (aldrig "0 cm")."""
+    if meters <= NOISE:
+        return "under 1 mm"
+    if meters < 0.01:
+        return f"{meters * 1000:.1f}".replace(".", ",") + " mm"
+    if meters < 1:
+        return f"{meters * 100:.0f} cm"
+    return f"{meters:.1f}".replace(".", ",") + " m"
+
+
+def summarize(changes: list[Change]) -> str:
+    """En rad för alla förslag som gäller samma yta: "Justera 18 brytpunkter (som mest under 1 mm) mot
+    planområdets gräns". Ett enda förslag får sin egen text."""
+    if len(changes) == 1:
+        return changes[0].text
+    moves = [c for c in changes if c.kind != ADD_VERTEX]
+    adds = [c for c in changes if c.kind == ADD_VERTEX]
+    parts = []
+    if moves:
+        targets = " och ".join(sorted({TARGET_TITLES.get(c.reference, c.reference) + "s" for c in moves}))
+        parts.append(f"justera {len(moves)} brytpunkter (som mest {length_text(max(c.distance for c in moves))}) "
+                     f"mot {targets} gräns")
+    if adds:
+        parts.append(f"lägg till {len(adds)} brytpunkter")
+    text = " och ".join(parts)
+    return text[:1].upper() + text[1:]
+
+
+def is_degenerate(geometry: Optional[QgsGeometry]) -> bool:
+    """En yta utan utbredning (area 0 också efter reparation, t.ex. en spets som går ut och tillbaka längs en gräns).
+    Den innehåller ingen information och räknas varken som förslag eller som något andra ytor anpassas till."""
+    if geometry is None or geometry.isNull() or geometry.isEmpty() or geometry.type() != Qgis.GeometryType.Polygon:
+        return False
+    if abs(geometry.area()) > EMPTY_AREA:
+        return False
+    if geometry.isGeosValid():
+        return True
+    # en självkorsande gräns (en fjärilsform) kan få area 0 i summan men har verklig utbredning: reparera först
+    fixed = geometry.makeValid()
+    return fixed.isNull() or fixed.isEmpty() or fixed.area() <= EMPTY_AREA
 
 
 # -- geometrihjälp ----------------------------------------------------------------------------
@@ -150,7 +203,8 @@ def analyze(plan: Optional[QgsGeometry], uses: list[tuple], properties: list[tup
     changes: list[Change] = []
     plan_ref = _references("detaljplan", plan)
 
-    ordered_uses = [(fid, g) for fid, g in uses if g is not None and not g.isNull() and not g.isEmpty()]
+    ordered_uses = [(fid, g) for fid, g in uses if g is not None and not g.isNull() and not g.isEmpty()
+                    and not is_degenerate(g)]
     for index, (fid, geometry) in enumerate(ordered_uses):
         refs = [plan_ref] if plan_ref else []
         refs += [r for r in (_references("anvandning_yta", g) for _, g in ordered_uses[:index]) if r]
@@ -160,7 +214,7 @@ def analyze(plan: Optional[QgsGeometry], uses: list[tuple], properties: list[tup
 
     use_refs = [r for r in (_references("anvandning_yta", g) for _, g in ordered_uses) if r]
     for fid, geometry in properties:
-        if geometry is None or geometry.isNull() or geometry.isEmpty():
+        if geometry is None or geometry.isNull() or geometry.isEmpty() or is_degenerate(geometry):
             continue
         refs = ([plan_ref] if plan_ref else []) + use_refs
         changes += _vertex_changes("egenskap_yta", fid, geometry, refs, tolerance)

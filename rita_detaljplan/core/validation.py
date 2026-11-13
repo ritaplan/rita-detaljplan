@@ -22,7 +22,7 @@ from . import bestammelse as bm
 from . import catalog as cat
 from . import codelists as cl
 from . import documents as documents_module
-from . import kommuner, rules, vertical
+from . import kommuner, rules, topology, vertical
 from .assignments import read_rows
 from .project import find_layer, is_digitising
 from .requirements import REQUIRED_PLAN_FIELDS
@@ -38,6 +38,7 @@ NEAR_OLD = 2.0  # m (DP-Krav-0012): planer påbörjade före 2022
 LAGA_KRAFT = "laga kraft"
 NEW_PLAN_FROM = date(2022, 1, 1)
 
+EMPTY_AREA_KIND = "tom"  # ``Issue.kind``: ytan har ingen utbredning (area 0) och kan tas bort
 TABLE_TITLES = {"detaljplan": "Planområde", "anvandning_yta": "Användningsområde", "egenskap_yta": "Egenskapsområde",
                 "egenskap_linje": "Egenskapslinje", "egenskap_punkt": "Egenskapspunkt", "bestammelse": "Bestämmelse",
                 "beslutsinformation": "Beslut",
@@ -57,6 +58,7 @@ class Issue:
     # användning): visas då i stället för att markera hela ``fid``. Räknas inte med i jämförelse/hash (två annars
     # likadana fel med skilda geometriobjekt, t.ex. från två separata anrop, ska ändå räknas som samma fel).
     geometry: Optional[QgsGeometry] = field(default=None, compare=False)
+    kind: str = ""  # EMPTY_AREA_KIND för en yta utan utbredning (kan tas bort automatiskt), annars tom
 
     @property
     def where(self) -> str:
@@ -316,7 +318,10 @@ def check_geometry(data: PlanData) -> list[Issue]:
         if geometry is None or geometry.isNull() or geometry.isEmpty():
             issues.append(Issue(ERROR, "", "Ytan saknar geometri.", area.table, area.fid))
             continue
-        if area.is_area and not geometry.isGeosValid():
+        if area.is_area and area.table != "detaljplan" and topology.is_degenerate(geometry):
+            issues.append(Issue(ERROR, "", "Ytan har ingen utbredning (area 0), till exempel en spets längs en gräns. "
+                                "Ta bort den.", area.table, area.fid, kind=EMPTY_AREA_KIND))
+        elif area.is_area and not geometry.isGeosValid():
             issues.append(Issue(ERROR, "DP-Krav-0018", f"Gränsen korsar sig själv eller är ogiltig "
                                 f"({geometry.lastError() or 'ogiltig geometri'}).", area.table, area.fid))
         elif area.table == "egenskap_linje" and not geometry.isSimple():
@@ -411,7 +416,8 @@ def unassigned_areas(data: PlanData) -> list[Issue]:
     for row in data.rows:
         rows_by_area.setdefault((row.get("tabell"), row.get("yta")), []).append(row)
     return [Issue(ERROR, "", "Saknar bestämmelse.", area.table, area.fid)
-            for area in data.areas if not rows_by_area.get((area.table, area.identity))]
+            for area in data.areas if not rows_by_area.get((area.table, area.identity))
+            and not (area.is_area and topology.is_degenerate(area.geometry))]  # en yta utan utbredning har ett eget fel
 
 
 def check_hierarchy(data: PlanData) -> list[Issue]:

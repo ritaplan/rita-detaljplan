@@ -899,9 +899,10 @@ class PlanToolBar(QToolBar):
             QTimer.singleShot(0, lambda: collapse_plan_group(self.controller.project))
 
     def check_topology(self):
-        """Öppnar dialogen för topologikontroll: brytpunkter, glapp, om hela planområdet har användning och om
-        kvartersmark saknar egenskapsområden. Kan inte användas medan redigeringen pågår. De valda ändringarna (och att
-        fylla en saknad användning) startar redigeringen och görs i redigeringsbufferten; de sparas när den avslutas."""
+        """Öppnar dialogen för topologikontroll: brytpunkter och glapp som nästan sammanfaller, och täckning och överlapp
+        (om hela planområdet har användning, användning utanför planområdet, överlapp mellan ytor, ytor utan utbredning).
+        Kan inte användas medan redigeringen pågår. De valda ändringarna (och att fylla en saknad användning eller ta
+        bort tomma ytor) startar redigeringen och görs i redigeringsbufferten; de sparas när den avslutas."""
         if self.controller.editing:
             self._report(TOPOLOGY_EDITING_TIP, True)
             return
@@ -915,8 +916,14 @@ class PlanToolBar(QToolBar):
                 self.controller.start_editing()
             return self.controller.fill_use()
 
+        def remove_empty():
+            if not self.controller.editing:
+                self.controller.start_editing()
+            return self.controller.remove_empty_areas()
+
         dialog = TopologyDialog(self.controller.topology_changes, apply, self._show_item, self.iface.mainWindow(),
-                                findings=self.controller.topology_findings, fill_use=fill, controller=self.controller)
+                                findings=self.controller.topology_findings, fill_use=fill, controller=self.controller,
+                                remove_empty=remove_empty, describe=self.controller.area_label)
         dialog.exec()
 
     def _show_item(self, item):

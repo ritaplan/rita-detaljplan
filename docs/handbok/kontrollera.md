@@ -46,7 +46,7 @@ ställen. Topologikontrollen hittar sådant och föreslår rättningar.
 Kontrollen görs på den **sparade** planen. Knappen är grå medan du redigerar: avsluta och spara först.
 
 1. Klicka på **Topologikontroll** (brytpunkter med en cirkel).
-2. Välj **tolerans**.
+2. Välj **tolerans**. Förvalet är 10 cm, som reglerna räknar med. Större avstånd ses som avsiktliga och lämnas orörda.
 3. Gå igenom förslagen. Markera ett förslag och klicka på **Visa i kartan** för att se var det gäller.
 4. Kryssa ur de förslag du inte vill genomföra.
 5. Genomför ändringarna.
@@ -56,19 +56,33 @@ Kontrollen görs på den **sparade** planen. Knappen är grå medan du redigerar
 
 ### Förslagen
 
+Förslagen står **en rad per yta**, med ytans användningsform (om den har någon), storlek och objektnummer, till exempel
+*Egenskapsområde (Kvartersmark, 3 803 m², nr 35): Justera 18 brytpunkter (som mest under 1 mm) mot planområdets gräns*.
+Håller du musen över raden ser du varje ändring. Raden gäller hela ytan: kryssar du ur den görs inga av ytans ändringar.
+
 - **Flytta brytpunkter:** en brytpunkt i en användnings- eller egenskapsyta som ligger nära en annan ytas brytpunkt
   eller gräns flyttas dit.
 - **Lägg till brytpunkter:** planområdets brytpunkter läggs till i användningen där de saknas.
 - **Stäng glapp:** glapp mellan ytor i samma lager stängs. Den yta som ritades senast anpassas till den tidigare.
 
-Planområdet ändras aldrig. Ändringarna görs i redigeringsbufferten med ett ångra-steg per lager.
+Avstånd under 1 mm är avrundning som ingen ser, men som ändå gör att två gränser inte ligger exakt på varandra. De
+visas som *under 1 mm* och rättas på samma sätt. Planområdet ändras aldrig. Ändringarna görs i redigeringsbufferten med
+ett ångra-steg per lager.
 
-### Avvikelser som också visas
+### Täckning och överlapp
 
-- **Planområdet saknar användning** (fel). Knappen fyller det som saknas, på samma sätt som *Fyll användning*.
-  *Visa i kartan* markerar exakt den del som saknar användning.
-- **En yta saknar bestämmelse** (fel).
-- **Kvartersmark saknar egenskapsområden** (varning). Det behöver inte vara fel.
+Under förslagen visas avvikelserna om täckning och överlapp. De är samma kontroller som i *Kontrollera planen*:
+
+- **Planområdet saknar användning** (fel). Knappen *Fyll återstoden med en användningsyta* fyller det som saknas, på
+  samma sätt som *Fyll användning*. *Visa i kartan* markerar exakt den del som saknar användning.
+- **Användning utanför planområdet** och **användningsområden som överlappar** varandra (fel eller varning, efter storlek).
+- **Glapp mellan användningsområden** som är smalare än regeln tillåter, och **egenskap utanför användningen**.
+- **Ogiltig gräns:** en yta som korsar sig själv.
+- **Ytor utan utbredning** (fel): en yta med area 0, till exempel en spets som går ut och tillbaka längs en gräns och som
+  en ritning har lämnat efter sig. Den innehåller ingen information. Knappen **Ta bort tomma ytor** tar bort dem (ett
+  ångra-steg per lager). Ytorna räknas inte med bland förslagen om att flytta brytpunkter.
+
+Att en yta saknar bestämmelse, eller att kvartersmark saknar egenskapsområden, visas inte här utan i *Kontrollera planen*.
 
 ## Nästa steg
 

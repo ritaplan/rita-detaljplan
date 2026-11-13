@@ -32,6 +32,13 @@ def poly(*points):
 PLAN_G = poly((0, 0), (100, 0), (100, 100), (0, 100))
 
 
+TOL = 0.5  # m: de flesta provplaner ritar ytorna några decimeter fel; förvalet i verktyget är 0,10 m (se DefaultToleranceTests)
+
+
+def analyze(plan, uses, properties, tolerance=TOL):
+    return t.analyze(plan, uses, properties, tolerance)
+
+
 def kinds(changes):
     return [(c.kind, c.table, c.fid, c.old, c.new) for c in changes]
 
@@ -44,11 +51,11 @@ class AnalysisTests(unittest.TestCase):
 
     def test_exact_geometries_need_no_changes(self):
         uses = [(1, poly((0, 0), (50, 0), (50, 100), (0, 100))), (2, poly((50, 0), (100, 0), (100, 100), (50, 100)))]
-        self.assertEqual(t.analyze(PLAN_G, uses, []), [])
+        self.assertEqual(analyze(PLAN_G, uses, []), [])
 
     def test_a_use_corner_near_a_plan_corner_is_moved_onto_it(self):
         use = poly((0.2, 0.15), (100, 0), (100, 100), (0, 100))
-        (change,) = t.analyze(PLAN_G, [(1, use)], [])
+        (change,) = analyze(PLAN_G, [(1, use)], [])
         self.assertEqual((change.kind, change.old, change.new, change.reference), (t.SNAP_VERTEX, (0.2, 0.15), (0.0, 0.0),
                                                                                     "detaljplan"))
         self.assertAlmostEqual(change.distance, 0.25)
@@ -56,36 +63,36 @@ class AnalysisTests(unittest.TestCase):
 
     def test_a_vertex_near_the_plan_boundary_but_not_a_plan_vertex_is_moved_onto_the_boundary(self):
         use = poly((0, 0), (100, 0), (100, 100), (0, 100), (0, 60), (0.3, 50))
-        found = [c for c in t.analyze(PLAN_G, [(1, use)], []) if c.old == (0.3, 50)]
+        found = [c for c in analyze(PLAN_G, [(1, use)], []) if c.old == (0.3, 50)]
         self.assertEqual([(c.kind, c.new) for c in found], [(t.SNAP_EDGE, (0.0, 50.0))])
         self.assertIn("Stäng glapp", found[0].text)
 
     def test_differences_larger_than_the_tolerance_are_left_alone(self):
         use = poly((1.5, 1.5), (100, 0), (100, 100), (0, 100))
-        self.assertEqual(t.analyze(PLAN_G, [(1, use)], []), [])
-        self.assertEqual(len(t.analyze(PLAN_G, [(1, use)], [], tolerance=2.5)), 1)
+        self.assertEqual(analyze(PLAN_G, [(1, use)], []), [])
+        self.assertEqual(len(analyze(PLAN_G, [(1, use)], [], tolerance=2.5)), 1)
 
     def test_the_plan_is_never_changed_and_never_a_target(self):
-        for change in t.analyze(PLAN_G, [(1, poly((0.2, 0.15), (100, 0), (100, 100), (0, 100)))], []):
+        for change in analyze(PLAN_G, [(1, poly((0.2, 0.15), (100, 0), (100, 100), (0, 100)))], []):
             self.assertIn(change.table, ("anvandning_yta", "egenskap_yta"))
 
     def test_a_plan_vertex_missing_from_the_use_is_added(self):
         plan = poly((0, 0), (100, 0), (100, 100), (50, 100.0), (0, 100))  # brytpunkt i mitten av överkanten
         use = poly((0, 0), (100, 0), (100, 100), (0, 100))
-        added = [c for c in t.analyze(plan, [(1, use)], []) if c.kind == t.ADD_VERTEX]
+        added = [c for c in analyze(plan, [(1, use)], []) if c.kind == t.ADD_VERTEX]
         self.assertEqual([(c.new, c.old) for c in added], [((50.0, 100.0), None)])
         self.assertIn("Lägg till", added[0].text)
 
     def test_no_vertex_is_added_where_the_use_already_has_one_nearby(self):
         plan = poly((0, 0), (100, 0), (100, 100), (50, 100), (0, 100))
         use = poly((0, 0), (100, 0), (100, 100), (50.2, 100), (0, 100))
-        kinds_found = [c.kind for c in t.analyze(plan, [(1, use)], [])]
+        kinds_found = [c.kind for c in analyze(plan, [(1, use)], [])]
         self.assertEqual(kinds_found, [t.SNAP_VERTEX], "flyttas i stället för att få en ny")
 
     def test_a_gap_between_two_uses_is_closed_by_moving_the_later_one_only(self):
         first = poly((0, 0), (50, 0), (50, 100), (0, 100))
         second = poly((50.3, 0), (100, 0), (100, 100), (50.3, 100))
-        found = t.analyze(PLAN_G, [(1, first), (2, second)], [])
+        found = analyze(PLAN_G, [(1, first), (2, second)], [])
         self.assertEqual({(c.fid, c.reference) for c in found}, {(2, "anvandning_yta")})
         self.assertEqual({c.new for c in found}, {(50.0, 0.0), (50.0, 100.0)})
         self.assertTrue(all(c.table == "anvandning_yta" for c in found))
@@ -93,27 +100,27 @@ class AnalysisTests(unittest.TestCase):
     def test_a_property_corner_near_a_use_corner_snaps_to_the_use(self):
         use = poly((0, 0), (100, 0), (100, 100), (0, 100))
         prop = poly((0.2, 10), (40, 10), (40, 40), (0.2, 40))
-        found = [c for c in t.analyze(PLAN_G, [(1, use)], [(7, prop)]) if c.table == "egenskap_yta"]
+        found = [c for c in analyze(PLAN_G, [(1, use)], [(7, prop)]) if c.table == "egenskap_yta"]
         self.assertEqual({(c.fid, c.new) for c in found}, {(7, (0.0, 10.0)), (7, (0.0, 40.0))})
         self.assertTrue(all(c.kind == t.SNAP_EDGE for c in found))
 
     def test_holes_are_checked_too(self):
         use = geom("MultiPolygon(((0 0, 100 0, 100 100, 0 100, 0 0), (20 20, 20 80, 80 80, 80 20, 20 20)))")
         plan = geom("MultiPolygon(((0 0, 100 0, 100 100, 0 100, 0 0), (20.2 20, 20.2 80, 80 80, 80 20, 20.2 20)))")
-        found = t.analyze(plan, [(1, use)], [])
+        found = analyze(plan, [(1, use)], [])
         self.assertTrue(found)
         self.assertTrue(all(c.reference == "detaljplan" for c in found))
 
     def test_everything_works_without_a_plan_or_without_uses(self):
-        self.assertEqual(t.analyze(None, [(1, PLAN_G)], []), [])
-        self.assertEqual(t.analyze(PLAN_G, [], []), [])
-        self.assertEqual(t.analyze(PLAN_G, [(1, QgsGeometry())], []), [])
+        self.assertEqual(analyze(None, [(1, PLAN_G)], []), [])
+        self.assertEqual(analyze(PLAN_G, [], []), [])
+        self.assertEqual(analyze(PLAN_G, [(1, QgsGeometry())], []), [])
 
     def test_a_tiny_plan_uses_the_given_tolerance(self):
         plan = poly((0, 0), (1, 0), (1, 1), (0, 1))
         use = poly((0.02, 0.01), (1, 0), (1, 1), (0, 1))
-        self.assertEqual(t.analyze(plan, [(1, use)], [], tolerance=0.05)[0].new, (0.0, 0.0))
-        self.assertEqual(t.analyze(plan, [(1, use)], [], tolerance=0.005), [])
+        self.assertEqual(analyze(plan, [(1, use)], [], tolerance=0.05)[0].new, (0.0, 0.0))
+        self.assertEqual(analyze(plan, [(1, use)], [], tolerance=0.005), [])
 
 
 @unittest.skipUnless(HAVE_QGIS, "QGIS Python behövs")
@@ -124,7 +131,7 @@ class ApplyTests(unittest.TestCase):
 
     def test_moves_and_insertions_are_carried_out(self):
         use = poly((0.2, 0.15), (100, 0), (100, 100), (0, 100))
-        changes = t.analyze(PLAN_G, [(1, use)], [])
+        changes = analyze(PLAN_G, [(1, use)], [])
         result, done, skipped = t.apply_to_geometry(use, changes)
         self.assertEqual((done, skipped), (1, 0))
         self.assertTrue(result.equals(PLAN_G) or abs(result.area() - 10000.0) < 1e-6)
@@ -132,7 +139,7 @@ class ApplyTests(unittest.TestCase):
     def test_a_vertex_is_added_on_the_right_segment(self):
         plan = poly((0, 0), (100, 0), (100, 100), (50, 100), (0, 100))
         use = poly((0, 0), (100, 0), (100, 100), (0, 100))
-        added = [c for c in t.analyze(plan, [(1, use)], []) if c.kind == t.ADD_VERTEX]
+        added = [c for c in analyze(plan, [(1, use)], []) if c.kind == t.ADD_VERTEX]
         result, done, _ = t.apply_to_geometry(use, added)
         self.assertEqual(done, 1)
         self.assertIn((50.0, 100.0), [(round(p.x(), 6), round(p.y(), 6)) for p in t.vertices(result)])
@@ -140,7 +147,7 @@ class ApplyTests(unittest.TestCase):
 
     def test_the_order_of_the_changes_does_not_matter(self):
         use = poly((0.2, 0.15), (100.1, 0), (100, 100.2), (0.1, 99.8))
-        changes = t.analyze(PLAN_G, [(1, use)], [])
+        changes = analyze(PLAN_G, [(1, use)], [])
         forward, _, _ = t.apply_to_geometry(use, changes)
         backward, _, _ = t.apply_to_geometry(use, list(reversed(changes)))
         self.assertTrue(forward.equals(backward))
@@ -161,7 +168,7 @@ class ApplyTests(unittest.TestCase):
     def test_the_input_geometry_is_not_changed(self):
         use = poly((0.2, 0.15), (100, 0), (100, 100), (0, 100))
         before = use.asWkt()
-        t.apply_to_geometry(use, t.analyze(PLAN_G, [(1, use)], []))
+        t.apply_to_geometry(use, analyze(PLAN_G, [(1, use)], []))
         self.assertEqual(use.asWkt(), before)
 
 
@@ -187,7 +194,7 @@ class ControllerTests(TopologyCase):
         self.assertLess(self.controller.missing_use_area(), 200.0)
 
     def test_missing_use_area_is_zero_once_the_gap_is_closed(self):
-        self.controller.apply_topology(self.controller.topology_changes())
+        self.controller.apply_topology(self.controller.topology_changes(TOL))
         pump()
         self.assertEqual(self.controller.missing_use_area(), 0.0)
 
@@ -204,43 +211,43 @@ class ControllerTests(TopologyCase):
         self.assertEqual(self.controller.missing_use_area(), 0.0)
 
     def test_the_controller_analyses_the_real_layers(self):
-        changes = self.controller.topology_changes()
+        changes = self.controller.topology_changes(TOL)
         self.assertTrue(changes)
         self.assertEqual({c.table for c in changes}, {"anvandning_yta"})
         self.assertEqual(self.controller.topology_changes(tolerance=0.01), [])
 
     def test_analysing_changes_nothing(self):
         before = [f.geometry().asWkt() for f in self.layers["anvandning_yta"].getFeatures()]
-        self.controller.topology_changes()
+        self.controller.topology_changes(TOL)
         self.assertEqual([f.geometry().asWkt() for f in self.layers["anvandning_yta"].getFeatures()], before)
 
     def test_applying_all_changes_makes_the_uses_match_the_plan_and_each_other(self):
-        changes = self.controller.topology_changes()
+        changes = self.controller.topology_changes(TOL)
         done, skipped = self.controller.apply_topology(changes)
         self.assertEqual((done, skipped), (len(changes), 0))
         pump()
-        self.assertEqual(self.controller.topology_changes(), [], "inga fler förslag efteråt")
+        self.assertEqual(self.controller.topology_changes(TOL), [], "inga fler förslag efteråt")
         self.assertAlmostEqual(self.area(), 10000.0, delta=0.5)
         left = next(f for f in self.layers["anvandning_yta"].getFeatures() if f["objektidentitet"] == self.left["objektidentitet"])
         self.assertIn((0.0, 0.0), [(p.x(), p.y()) for p in t.vertices(left.geometry())])
 
     def test_only_the_chosen_changes_are_made(self):
-        changes = self.controller.topology_changes()
+        changes = self.controller.topology_changes(TOL)
         chosen = [changes[0]]
         done, _ = self.controller.apply_topology(chosen)
         self.assertEqual(done, 1)
-        self.assertEqual(len(self.controller.topology_changes()), len(changes) - 1)
+        self.assertEqual(len(self.controller.topology_changes(TOL)), len(changes) - 1)
 
     def test_the_changes_can_be_undone_in_one_step_per_layer(self):
         wkts = [f.geometry().asWkt() for f in self.layers["anvandning_yta"].getFeatures()]
-        self.controller.apply_topology(self.controller.topology_changes())
+        self.controller.apply_topology(self.controller.topology_changes(TOL))
         self.layers["anvandning_yta"].undoStack().undo()
         self.assertEqual(sorted(f.geometry().asWkt() for f in self.layers["anvandning_yta"].getFeatures()), sorted(wkts))
 
     def test_applying_starts_editing_of_the_layer_when_needed(self):
         self.controller.stop_editing(save=True)
         self.assertFalse(self.layers["anvandning_yta"].isEditable())
-        changes = self.controller.topology_changes()
+        changes = self.controller.topology_changes(TOL)
         self.assertTrue(changes)
         done, _ = self.controller.apply_topology(changes)
         self.assertGreater(done, 0)
@@ -255,7 +262,7 @@ class ControllerTests(TopologyCase):
         entry = pick(self.catalog, "DP_KM_J2")
         self.controller.add_bestammelse("anvandning_yta", self.left.id(), entry, filled(entry))
         identity = self.layers["anvandning_yta"].getFeature(self.left.id())["objektidentitet"]
-        self.controller.apply_topology(self.controller.topology_changes())
+        self.controller.apply_topology(self.controller.topology_changes(TOL))
         kept = next(f for f in self.layers["anvandning_yta"].getFeatures() if f["objektidentitet"] == identity)
         self.assertEqual(kept["bestammelser"], 1)
 
@@ -283,35 +290,35 @@ class RealisticTests(GuiCase):
         return self.layers[table].getFeature(fid).geometry().asWkt(3)
 
     def test_the_first_drawn_area_is_the_one_the_others_adapt_to(self):
-        changes = self.controller.topology_changes()
+        changes = self.controller.topology_changes(TOL)
         self.assertEqual({c.fid for c in changes if c.table == "anvandning_yta"}, {self.second.id()},
                          "bara den senast ritade användningsytan flyttas")
         self.assertTrue(all(c.reference in ("detaljplan", "anvandning_yta") for c in changes))
 
     def test_the_gap_is_closed_towards_the_first_area(self):
         before = self.wkt(self.first.id())
-        self.controller.apply_topology([c for c in self.controller.topology_changes() if c.table == "anvandning_yta"])
+        self.controller.apply_topology([c for c in self.controller.topology_changes(TOL) if c.table == "anvandning_yta"])
         self.assertEqual(self.wkt(self.first.id()), before, "den först ritade ytan är oförändrad")
         second = self.layers["anvandning_yta"].getFeature(self.second.id()).geometry()
         points = {(round(p.x() - X0, 3), round(p.y() - Y0, 3)) for p in t.vertices(second)}
         self.assertLessEqual({(50.0, 0.0), (50.0, 100.0)}, points)
 
     def test_after_applying_everything_no_more_suggestions_remain(self):
-        changes = self.controller.topology_changes()
+        changes = self.controller.topology_changes(TOL)
         self.assertGreater(len(changes), 0)
         self.controller.apply_topology(changes)
-        self.assertEqual(self.controller.topology_changes(), [], "kontrollen är stabil: ingen fram och tillbaka")
+        self.assertEqual(self.controller.topology_changes(TOL), [], "kontrollen är stabil: ingen fram och tillbaka")
 
     def test_the_result_is_the_same_before_and_after_saving(self):
-        unsaved = [(c.kind, c.table, c.old, c.new) for c in self.controller.topology_changes()]
+        unsaved = [(c.kind, c.table, c.old, c.new) for c in self.controller.topology_changes(TOL)]
         self.assertEqual(self.controller.stop_editing(save=True), [])
-        saved = [(c.kind, c.table, c.old, c.new) for c in self.controller.topology_changes()]
+        saved = [(c.kind, c.table, c.old, c.new) for c in self.controller.topology_changes(TOL)]
         self.assertEqual(sorted(saved), sorted(unsaved))
-        self.controller.apply_topology(self.controller.topology_changes())
-        self.assertEqual(self.controller.topology_changes(), [])
+        self.controller.apply_topology(self.controller.topology_changes(TOL))
+        self.assertEqual(self.controller.topology_changes(TOL), [])
 
     def test_the_uses_share_their_edge_without_gap_or_overlap_afterwards(self):
-        self.controller.apply_topology(self.controller.topology_changes())
+        self.controller.apply_topology(self.controller.topology_changes(TOL))
         uses = [f.geometry() for f in self.layers["anvandning_yta"].getFeatures()]
         union = QgsGeometry.unaryUnion(uses)
         self.assertAlmostEqual(union.area(), 10000.0, delta=0.5)
@@ -320,11 +327,11 @@ class RealisticTests(GuiCase):
     def test_a_property_edge_meant_to_run_along_a_use_boundary_is_snapped_onto_it(self):
         """Precis den situation som gör att en gräns ser olika tjock ut i kartan: en egenskapsyta vars kant ligger
         nära, men inte exakt på, gränsen mellan två användningsytor (t.ex. kvartersmark mot en gata)."""
-        self.controller.apply_topology([c for c in self.controller.topology_changes() if c.table == "anvandning_yta"])
+        self.controller.apply_topology([c for c in self.controller.topology_changes(TOL) if c.table == "anvandning_yta"])
         pump()
         edge_x = 50.0  # den gemensamma användningsgränsen, sedan användningarna justerats mot varandra ovan
         stray = self.draw("egenskap_yta", big((30, 60), (edge_x - 0.08, 60), (edge_x - 0.05, 80), (30, 80)))
-        changes = [c for c in self.controller.topology_changes() if c.fid == stray.id()]
+        changes = [c for c in self.controller.topology_changes(TOL) if c.fid == stray.id()]
         self.assertTrue(changes, "glappet mot användningsgränsen upptäcks")
         self.assertTrue(all(c.reference == "anvandning_yta" and c.kind == t.SNAP_EDGE for c in changes))
         self.controller.apply_topology(changes)
@@ -341,18 +348,18 @@ class RealisticTests(GuiCase):
         self.draw("anvandning_yta", big((0, 0), (33, 0), (33, 100), (0, 100)))
         self.draw("anvandning_yta", big((33.1, 0.1), (66, 0), (66.2, 100), (33.05, 100)))
         self.draw("anvandning_yta", big((66.3, 0), (100, 0.2), (99.9, 100), (66.1, 99.95)))
-        self.assertTrue(self.controller.topology_changes())
-        done, skipped = self.controller.apply_topology(self.controller.topology_changes())
+        self.assertTrue(self.controller.topology_changes(TOL))
+        done, skipped = self.controller.apply_topology(self.controller.topology_changes(TOL))
         self.assertGreater(done, 0)
         self.assertEqual(skipped, 0)
-        self.assertEqual(self.controller.topology_changes(), [])
+        self.assertEqual(self.controller.topology_changes(TOL), [])
         self.assertAlmostEqual(sum(f.geometry().area() for f in self.layers["anvandning_yta"].getFeatures()), 10000.0,
                                delta=1.0)
 
 
 class DialogTests(TopologyCase):
-    def make(self, changes=None, apply=None, show=None, findings=None, fill_use=None, controller=None):
-        provided = changes if changes is not None else self.controller.topology_changes()
+    def make(self, changes=None, apply=None, show=None, findings=None, fill_use=None, controller=None, describe=None):
+        provided = changes if changes is not None else self.controller.topology_changes(TOL)
         self.analyses = []
 
         def analyze(tolerance):
@@ -360,7 +367,7 @@ class DialogTests(TopologyCase):
             return list(provided)
 
         dialog = TopologyDialog(analyze, apply or self.controller.apply_topology, show,
-                                findings=findings, fill_use=fill_use, controller=controller)
+                                findings=findings, fill_use=fill_use, controller=controller, describe=describe)
         self.addCleanup(dialog.deleteLater)
         return dialog
 
@@ -392,14 +399,24 @@ class DialogTests(TopologyCase):
         self.assertEqual(find_plan_group(QgsProject.instance()).name(), "plan")
         self.assertTrue(dialog.changes, "bytte tillbaka till planen med avvikelser och läste om listan")
 
-    def test_every_suggestion_is_listed_and_ticked_by_default(self):
+    def test_every_area_is_listed_once_and_ticked_by_default(self):
         dialog = self.make()
-        self.assertEqual(dialog.list.count(), len(dialog.changes))
-        self.assertTrue(dialog.list.count() >= 5)
+        self.assertGreaterEqual(len(dialog.changes), 5)
+        self.assertEqual(dialog.list.count(), len(dialog.groups), "en rad per yta")
+        self.assertLess(dialog.list.count(), len(dialog.changes), "flera förslag på samma yta slås ihop")
+        self.assertEqual(sum(len(group) for group in dialog.groups), len(dialog.changes))
         self.assertTrue(all(dialog.list.item(i).checkState() == Qt.CheckState.Checked for i in range(dialog.list.count())))
         self.assertIn(f"{dialog.list.count()} varningar", dialog.summary.text())
         self.assertIn("Användningsområde: ", dialog.list.item(0).text())
-        self.assertIn(f"({dialog.list.count()})", dialog.btn_apply.text())
+        self.assertIn(f"({len(dialog.changes)})", dialog.btn_apply.text(), "knappen räknar ändringarna, inte raderna")
+
+    def test_a_row_names_the_area_and_says_how_much_changes(self):
+        dialog = self.make(describe=self.controller.area_label)
+        text = dialog.list.item(0).text()
+        self.assertRegex(text, r"Användningsområde \(.*m².*nr -?\d+\): ")
+        self.assertIn("brytpunkt", text)
+        tip = dialog.list.item(0).toolTip()
+        self.assertEqual(len(tip.splitlines()), len(dialog.groups[0]), "verktygstipset räknar upp varje ändring")
 
     def test_there_is_no_explanatory_text_above_the_list(self):
         dialog = self.make()
@@ -408,13 +425,14 @@ class DialogTests(TopologyCase):
 
     def test_unticked_suggestions_are_not_made(self):
         dialog = self.make()
+        first = list(dialog.groups[0])
         dialog.list.item(0).setCheckState(Qt.CheckState.Unchecked)
-        self.assertEqual(len(dialog.checked()), dialog.list.count() - 1)
-        self.assertNotIn(dialog.changes[0], dialog.checked())
+        self.assertEqual(len(dialog.checked()), len(dialog.changes) - len(first), "hela ytans förslag avmarkeras")
+        self.assertNotIn(first[0], dialog.checked())
         applied = []
         dialog._apply = lambda changes: applied.append(changes) or (len(changes), 0)
         dialog.apply_checked()
-        self.assertEqual(len(applied[0]), len(dialog.changes) - 1)
+        self.assertEqual(len(applied[0]), len(dialog.changes) - len(first))
 
     def test_select_all_and_none(self):
         dialog = self.make()
@@ -422,13 +440,13 @@ class DialogTests(TopologyCase):
         self.assertEqual(dialog.checked(), [])
         self.assertFalse(dialog.btn_apply.isEnabled())
         dialog.btn_all.click()
-        self.assertEqual(len(dialog.checked()), dialog.list.count())
+        self.assertEqual(len(dialog.checked()), len(dialog.changes))
         self.assertTrue(dialog.btn_apply.isEnabled())
 
     def test_applying_changes_the_layer_and_re_analyses(self):
         analyses = []
         real = self.controller.topology_changes
-        dialog = TopologyDialog(lambda tol: analyses.append(tol) or real(tol), self.controller.apply_topology)
+        dialog = TopologyDialog(lambda tol: analyses.append(tol) or real(TOL), self.controller.apply_topology)
         self.addCleanup(dialog.deleteLater)
         self.assertGreater(dialog.list.count(), 0)
         done, skipped = dialog.apply_checked()
@@ -464,7 +482,7 @@ class DialogTests(TopologyCase):
         dialog.list.setCurrentRow(1)
         self.assertTrue(dialog.btn_show.isEnabled())
         dialog.btn_show.click()
-        self.assertEqual(shown, [dialog.changes[1]])
+        self.assertEqual(shown, [dialog.groups[1][0]], "alla förslag i raden gäller samma yta")
 
     def test_an_empty_result_says_the_topology_agrees(self):
         dialog = self.make(changes=[])
@@ -546,10 +564,7 @@ class DialogTests(TopologyCase):
 
 
 class FindingsTests(TopologyCase):
-    def kvartersmark(self):
-        from rita_detaljplan.core.project import apply_attributes
-        layer = self.layers["anvandning_yta"]
-        apply_attributes(layer, [f.id() for f in layer.getFeatures()], {"anvandningsform": "Kvartersmark"})
+    """Täckning och överlapp: samma kontroller som Kontrollera planen (``validation.check_geometry``)."""
 
     def test_a_covered_plan_area_gives_no_missing_use_error(self):
         self.assertTrue(self.controller.fill_use().ok)
@@ -566,38 +581,160 @@ class FindingsTests(TopologyCase):
         self.assertIn("saknar användning", found[0].text)
         self.assertTrue(found[0].locatable)
 
-    def test_a_drawn_but_unassigned_area_is_reported_as_an_error(self):
-        # en yta som ritats (och alltså täcker sin del av planen geometriskt) men inte fått någon bestämmelse
-        # visas annars bara som ett rött snedstreck i kartan tills man kör hela valideringen – topologikontrollen
-        # ska varna om det också. TopologyCase ritar self.left/self.right utan bestämmelse (se setUp), så de
-        # räcker för att testa detta utan att rita något extra.
-        from rita_detaljplan.core.validation import ERROR
-        found = [f for f in self.controller.topology_findings() if f.text == "Saknar bestämmelse."]
-        self.assertEqual({f.fid for f in found}, {self.left.id(), self.right.id()})
-        self.assertTrue(all(f.severity == ERROR and f.table == "anvandning_yta" and f.locatable for f in found))
+    def test_a_missing_provision_is_not_a_topology_finding(self):
+        # self.left/self.right ritas utan bestämmelse: det hör till Kontrollera planen, inte hit
+        self.assertEqual([f for f in self.controller.topology_findings() if f.text == "Saknar bestämmelse."], [])
+        from rita_detaljplan.core import validation
+        full = validation.validate(validation.collect(self.controller.project), None)
+        self.assertTrue([f for f in full if f.text == "Saknar bestämmelse."], "men Kontrollera planen säger det")
 
-    def test_kvartersmark_without_property_areas_is_a_warning_on_the_use(self):
-        from rita_detaljplan.core.validation import WARNING
-        self.kvartersmark()
+    def test_kvartersmark_without_property_areas_is_not_a_topology_finding(self):
+        from rita_detaljplan.core.project import apply_attributes
+        layer = self.layers["anvandning_yta"]
+        apply_attributes(layer, [f.id() for f in layer.getFeatures()], {"anvandningsform": "Kvartersmark"})
         self.layers["egenskap_yta"].selectAll()
         self.layers["egenskap_yta"].deleteSelectedFeatures()
         pump()
-        warnings = [f for f in self.controller.topology_findings() if f.severity == WARNING]
-        kvarter = [f for f in self.layers["anvandning_yta"].getFeatures() if f["anvandningsform"] == "Kvartersmark"]
-        self.assertTrue(kvarter, "testplanen har kvartersmark")
-        self.assertEqual(len(warnings), len(kvarter))
-        for finding in warnings:
-            self.assertEqual(finding.table, "anvandning_yta")
-            self.assertIn("kvartersmarken saknar egenskapsområde", finding.text)
+        self.assertEqual([f for f in self.controller.topology_findings() if "saknar egenskapsområde" in f.text], [])
 
-    def test_a_use_completely_filled_with_property_areas_gives_no_warning(self):
-        from rita_detaljplan.core.validation import WARNING
-        self.kvartersmark()
-        for use in list(self.layers["anvandning_yta"].getFeatures()):
-            if use["anvandningsform"] == "Kvartersmark":
-                self.draw("egenskap_yta", use.geometry().asWkt())
+    def raw(self, table, wkt):
+        """Lägger in en yta direkt i lagret, utan styrenhetens beskärning mot planområdet och andra ytor."""
+        from qgis.core import QgsFeature
+        layer = self.layers[table]
+        feature = QgsFeature(layer.fields())
+        feature.setGeometry(QgsGeometry.fromWkt(wkt))
+        self.controller._modify(lambda: layer.addFeature(feature))
         pump()
-        self.assertEqual([f for f in self.controller.topology_findings() if f.severity == WARNING], [])
+        return feature
+
+    def test_an_overlap_between_uses_is_a_finding(self):
+        self.raw("anvandning_yta", "MultiPolygon(((40 0, 60 0, 60 100, 40 100, 40 0)))")
+        found = [f for f in self.controller.topology_findings() if f.code == "DP-Krav-0013"]
+        self.assertTrue(found)
+        self.assertTrue(all(f.table == "anvandning_yta" and f.locatable for f in found))
+
+    def test_a_use_outside_the_plan_area_is_a_finding(self):
+        self.raw("anvandning_yta", "MultiPolygon(((90 90, 130 90, 130 130, 90 130, 90 90)))")
+        self.assertTrue([f for f in self.controller.topology_findings() if f.code == "DP-0003"])
+
+    def test_the_findings_are_the_ones_of_the_ngp_check(self):
+        from rita_detaljplan.core import validation
+        self.assertEqual(self.controller.topology_findings(),
+                         validation.check_geometry(validation.collect(self.controller.project)))
+
+
+SPIKE = "MultiPolygon(((10 10, 30 30, 30 30, 10 10)))"  # en spets: går ut och tillbaka, area 0
+
+
+class EmptyAreaTests(TopologyCase):
+    """Ytor utan utbredning (area 0) är skräp efter en ritning: de ska hittas, inte föreslås flyttade, och kunna tas bort."""
+
+    def add_spikes(self):
+        self.spike1 = self.draw("egenskap_yta", SPIKE)
+        self.spike2 = self.draw("egenskap_yta", "MultiPolygon(((60 10, 80 30, 80 30, 60 10)))")
+        pump()
+
+    def empties(self):
+        return [f for f in self.controller.topology_findings() if f.kind == "tom"]
+
+    def test_a_spike_is_reported_as_an_error_with_its_own_kind(self):
+        self.add_spikes()
+        found = self.empties()
+        self.assertEqual({f.fid for f in found}, {self.spike1.id(), self.spike2.id()})
+        self.assertTrue(all(f.severity == "fel" and f.table == "egenskap_yta" and f.locatable for f in found))
+        self.assertIn("ingen utbredning", found[0].text)
+
+    def test_a_spike_is_not_also_reported_as_missing_a_provision(self):
+        from rita_detaljplan.core import validation
+        self.add_spikes()
+        full = validation.validate(validation.collect(self.controller.project), None)
+        missing = {f.fid for f in full if f.text == "Saknar bestämmelse." and f.table == "egenskap_yta"}
+        self.assertFalse(missing & {self.spike1.id(), self.spike2.id()})
+
+    def test_a_self_crossing_area_is_not_empty_even_though_its_signed_area_is_zero(self):
+        bow = self.draw("egenskap_yta", "MultiPolygon(((10 10, 50 50, 50 10, 10 50, 10 10)))")
+        pump()
+        self.assertFalse(t.is_degenerate(bow.geometry()))
+        self.assertNotIn(bow.id(), {f.fid for f in self.empties()})
+
+    def test_empty_areas_are_neither_suggested_for_moving_nor_used_as_a_reference(self):
+        spike = poly((0.001, 0.0), (0.0, 0.0), (0.0, 0.0))  # alla brytpunkter nära planhörnet, area 0
+        self.assertTrue(t.is_degenerate(spike))
+        real = poly((0.2, 0.15), (100, 0), (100, 100), (0, 100))
+        self.assertEqual(analyze(PLAN_G, [(1, spike)], [(2, spike)]), [])
+        self.assertEqual(len(analyze(PLAN_G, [(1, real)], [(2, spike)])), 1, "bara den riktiga ytan får förslag")
+
+    def test_removing_takes_away_only_the_empty_areas_and_can_be_undone(self):
+        self.add_spikes()
+        real = self.draw("egenskap_yta", "MultiPolygon(((10 60, 30 60, 30 80, 10 80, 10 60)))")
+        pump()
+        before = self.layers["egenskap_yta"].featureCount()
+        self.assertEqual(self.controller.remove_empty_areas(), 2)
+        self.assertEqual(self.layers["egenskap_yta"].featureCount(), before - 2)
+        self.assertIsNotNone(self.layers["egenskap_yta"].getFeature(real.id()).geometry())
+        self.assertEqual(self.empties(), [])
+        self.assertEqual(self.controller.remove_empty_areas(), 0, "inget kvar att ta bort")
+        self.layers["egenskap_yta"].undoStack().undo()
+        self.assertEqual(self.layers["egenskap_yta"].featureCount(), before, "ett ångra-steg")
+
+    def test_the_dialog_removes_empty_areas_and_reanalyses(self):
+        self.add_spikes()
+        dialog = TopologyDialog(self.controller.topology_changes, self.controller.apply_topology, None,
+                                findings=self.controller.topology_findings, remove_empty=self.controller.remove_empty_areas,
+                                describe=self.controller.area_label)
+        self.addCleanup(dialog.deleteLater)
+        self.assertFalse(dialog.btn_remove.isHidden())
+        self.assertTrue(dialog.btn_remove.isEnabled())
+        self.assertIn("nr ", dialog.list.item(0).text(), "ytan pekas ut")
+        dialog.btn_remove.click()
+        self.assertIn("Tog bort 2 tomma ytor", dialog.result.text())
+        self.assertFalse(dialog.btn_remove.isEnabled())
+        self.assertEqual([f for f in dialog.findings if f.kind == "tom"], [])
+
+    def test_without_the_callback_there_is_no_remove_button(self):
+        dialog = TopologyDialog(lambda tol: [], lambda changes: (0, 0))
+        self.addCleanup(dialog.deleteLater)
+        self.assertTrue(dialog.btn_remove.isHidden())
+
+
+class DefaultToleranceTests(unittest.TestCase):
+    """Förvalet är reglernas 10 cm, och avståndet skrivs så att det går att läsa."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.app = get_app()
+
+    def test_the_default_tolerance_is_the_ten_centimetres_of_the_rules(self):
+        self.assertAlmostEqual(t.DEFAULT_TOLERANCE, 0.10)
+        use = poly((0.05, 0.04), (100, 0), (100, 100), (0, 100))
+        self.assertEqual(len(t.analyze(PLAN_G, [(1, use)], [])), 1)
+        far = poly((0.2, 0.15), (100, 0), (100, 100), (0, 100))
+        self.assertEqual(t.analyze(PLAN_G, [(1, far)], []), [], "25 cm är över förvalet och lämnas orört")
+
+    def test_distances_are_written_readably_and_never_as_0_cm(self):
+        self.assertEqual(t.length_text(0.0000004), "under 1 mm")
+        self.assertEqual(t.length_text(0.0007), "under 1 mm")
+        self.assertEqual(t.length_text(0.0034), "3,4 mm")
+        self.assertEqual(t.length_text(0.07), "7 cm")
+        self.assertEqual(t.length_text(0.25), "25 cm")
+        self.assertEqual(t.length_text(1.25), "1,2 m")
+
+    def test_a_millimetre_difference_is_marked_as_noise_and_not_called_0_cm(self):
+        use = poly((0.0003, 0.0002), (100, 0), (100, 100), (0, 100))
+        (change,) = t.analyze(PLAN_G, [(1, use)], [])
+        self.assertTrue(change.noise)
+        self.assertIn("under 1 mm", change.text)
+        self.assertNotIn("0 cm", change.text)
+
+    def test_many_changes_to_one_area_become_one_sentence(self):
+        use = poly((0.0003, 0.0002), (99.9997, 0.0004), (100.0002, 99.9996), (0.0001, 100.0003))
+        changes = t.analyze(PLAN_G, [(1, use)], [])
+        self.assertEqual(len(changes), 4)
+        text = t.summarize(changes)
+        self.assertEqual(text, "Justera 4 brytpunkter (som mest under 1 mm) mot planområdets gräns")
+        self.assertEqual(t.summarize(changes[:1]), changes[0].text, "ett enda förslag behåller sin egen text")
+        added = changes + [t.Change(t.ADD_VERTEX, "anvandning_yta", 1, None, (50.0, 0.0), 0.0, "detaljplan")]
+        self.assertTrue(t.summarize(added).endswith("och lägg till 1 brytpunkter"))
 
 
 class ToolBarTests(TopologyCase):
@@ -666,7 +803,7 @@ class ToolBarTests(TopologyCase):
         self.assertTrue(self.controller.editing)
 
     def test_showing_a_suggestion_selects_and_zooms_to_the_area(self):
-        change = self.controller.topology_changes()[0]
+        change = self.controller.topology_changes(TOL)[0]
         self.toolbar._show_item(change)
         self.assertEqual(self.layers["anvandning_yta"].selectedFeatureCount(), 1)
         self.iface.setActiveLayer.assert_called_with(self.layers["anvandning_yta"])

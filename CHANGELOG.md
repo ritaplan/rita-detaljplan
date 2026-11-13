@@ -2,6 +2,24 @@
 
 Formatet följer [Keep a Changelog](https://keepachangelog.com/sv/1.1.0/), versionsnumren [Semantic Versioning](https://semver.org/lang/sv/).
 
+## [Kommande] – topologikontrollen: tystare, tydligare och med täckning och överlapp
+
+- **Förvald tolerans är nu 10 cm** (var 50 cm), som reglerna räknar med. Större avstånd lämnas orörda; glapp mellan
+  användningsområden som är större än så ser du under *Täckning och överlapp*.
+- **Avstånd skrivs så att de går att läsa:** *under 1 mm*, *3,4 mm*, *7 cm*. Förut stod *0 cm* för allt under en halv
+  centimeter, och brus på tusendels millimeter gav en rad per brytpunkt.
+- **En rad per yta** i stället för en per brytpunkt, med ytans användningsform, storlek och objektnummer, till exempel
+  *Egenskapsområde (Kvartersmark, 3 803 m², nr 35): Justera 18 brytpunkter (som mest under 1 mm) mot planområdets gräns*.
+- **Ytor utan utbredning (area 0)**, till exempel spetsar längs en gräns som en ritning lämnat efter sig, hittas nu som
+  ett eget fel (också i *Kontrollera planen*) och kan tas bort med **Ta bort tomma ytor**. De räknas inte längre med
+  bland förslagen om att flytta brytpunkter, och inte som "saknar bestämmelse". En självkorsande yta räknas inte som tom.
+- **Täckning och överlapp** visas med samma kontroller som *Kontrollera planen* (`validation.check_geometry`): användning
+  som saknas, ligger utanför planområdet eller överlappar, glapp, egenskap utanför användningen och ogiltiga gränser.
+- **"Saknar bestämmelse" och "kvartersmark saknar egenskapsområde" visas inte längre i topologikontrollen.** De hör till
+  *Kontrollera planen*, där de redan finns.
+- Fil för fil: `core/topology.py`, `core/validation.py`, `controller.py`, `gui/topology_dialog.py`, `gui/plan_toolbar.py`.
+  Prov i `tests/test_topology.py` och `tests/test_validation.py`.
+
 ## [0.1.85] – plan i ett eget PostGIS-schema utan rätt att skapa scheman
 
 - **Rättat:** en ny plan gick inte att lägga i ett schema som redan fanns om man inte fick skapa scheman i databasen,

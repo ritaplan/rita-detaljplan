@@ -528,31 +528,52 @@ class PlanController(QObject):
             if prop_layer is not None else []
         return topology.analyze(plan, uses, properties, tolerance)
 
-    PROPERTY_GAP_MIN = 1.0  # m²: mindre än så av en kvartersmark utan egenskapsområde räknas inte
-
     def topology_findings(self) -> list[validation.Issue]:
-        """Avvikelser som topologikontrollen visar men inte rättar automatiskt: planområde utan användning (fel,
-        en post per skild del som saknar användning, så att "Visa i kartan" pekar på rätt del och rätt planområde
-        när det finns flera), redan ritade ytor som saknar bestämmelse (fel – de täcker ju sin del av planen
-        geometriskt, men syns annars bara som ett rött snedstreck i kartan tills man kör hela valideringen) och
-        kvartersmark där egenskapsområden saknas (varning, det behöver inte vara fel). Ändrar ingenting."""
-        data = validation.collect(self.project)
-        found = [issue for issue in validation.check_geometry(data) if issue.code == "DP-0002"
-                and issue.table == PLAN_LAYER]
-        found += validation.unassigned_areas(data)
-        use_layer = self.layer(cat.USE_LAYER)
-        if use_layer is None:
-            return found
-        properties = rules.use_geometry(self.layer("egenskap_yta")) if self.layer("egenskap_yta") is not None else None
-        for use in sorted(use_layer.getFeatures(), key=lambda f: _creation_order(f.id())):
-            if _clean(use["anvandningsform"]) != "Kvartersmark":
+        """Täckning och överlapp, som topologikontrollen visar men inte rättar själv: planområde utan användning
+        (en post per skild del som saknar användning, så att "Visa i kartan" pekar på rätt del), användning utanför
+        planområdet, överlapp och glapp mellan ytor, egenskap utanför användningen, ogiltiga gränser och ytor utan
+        utbredning (de kan tas bort, se ``remove_empty_areas``). Det är samma kontroller och regler som i *Kontrollera
+        planen* (``validation.check_geometry``), inte en egen kopia. Saknade bestämmelser hör dit och visas inte här.
+        Ändrar ingenting."""
+        return validation.check_geometry(validation.collect(self.project))
+
+    def area_label(self, table: str, fid: int) -> str:
+        """Hur en yta pekas ut i en lista: användningsform eller beteckning om den har någon, storlek och objektnummer,
+        till exempel "Kvartersmark, 3 803 m², nr 35". Tom om ytan inte finns."""
+        layer = self.layer(table)
+        feature = layer.getFeature(fid) if layer is not None else None
+        if feature is None or not feature.isValid():
+            return ""
+        names = {field.name() for field in feature.fields()}
+        name = next((_clean(feature[key]) for key in ("anvandningsform", "beteckning") if key in names
+                     and _clean(feature[key])), None)
+        geometry = feature.geometry()
+        parts = [str(name)] if name else []
+        if geometry.type() == Qgis.GeometryType.Polygon:
+            parts.append(f"{geometry.area():,.0f} m²".replace(",", " "))
+        parts.append(f"nr {fid}")
+        return ", ".join(parts)
+
+    def remove_empty_areas(self) -> int:
+        """Tar bort ytor utan utbredning (area 0: spetsar och rester som en ritning lämnat efter sig) i användnings- och
+        egenskapslagren, i redigeringsbufferten som ett ångra-steg per lager. Bestämmelser som hörde till dem städas bort
+        när redigeringen sparas. Returnerar antalet borttagna ytor."""
+        removed = 0
+        for table in (cat.USE_LAYER, "egenskap_yta"):
+            layer = self.layer(table)
+            if layer is None:
                 continue
-            rest = rules.remainder(use.geometry(), properties)
-            if not rest.isEmpty() and rest.area() > self.PROPERTY_GAP_MIN:
-                found.append(validation.Issue(
-                    validation.WARNING, "", f"{rest.area():,.0f} m² av kvartersmarken saknar egenskapsområde."
-                    .replace(",", " "), cat.USE_LAYER, use.id()))
-        return found
+            ids = [f.id() for f in layer.getFeatures() if topology.is_degenerate(f.geometry())]
+            if not ids:
+                continue
+            if not layer.isEditable():
+                layer.startEditing()
+            layer.beginEditCommand("Ta bort tomma ytor")
+            self._modify(lambda: layer.deleteFeatures(ids))
+            layer.endEditCommand()
+            removed += len(ids)
+        self._changed()
+        return removed
 
     def missing_use_area(self) -> float:
         """Areal (m²) av planområdet som ännu saknar användning. 0 om planområdet saknas eller redan är täckt."""

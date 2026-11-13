@@ -113,6 +113,18 @@ class GeometryRules(unittest.TestCase):
         fine = area("egenskap_linje", "MultiLineString((( 10 10, 50 50)))", "fine", 6)
         self.assertFalse([i for i in v.check_geometry(plan_data(extra_areas=[fine])) if i.code == "DP-Krav-0018"])
 
+    def test_an_area_without_extent_is_one_error_that_can_be_removed(self):
+        """En spets längs en gräns (area 0) är skräp: ett fel som kan tas bort, inte också "saknar bestämmelse"."""
+        spike = area("egenskap_yta", "MultiPolygon(((10 10, 30 30, 30 30, 10 10)))", "spike", 5)
+        data = plan_data(extra_areas=[spike])
+        issues = [i for i in v.check_geometry(data) if i.table == "egenskap_yta"]
+        self.assertEqual([(i.severity, i.code, i.kind) for i in issues], [("fel", "", v.EMPTY_AREA_KIND)])
+        self.assertIn("ingen utbredning", issues[0].text)
+        self.assertEqual([i for i in v.unassigned_areas(data) if i.fid == spike.fid], [], "har ett eget fel")
+        bow = area("egenskap_yta", "MultiPolygon(((10 10, 50 50, 50 10, 10 50, 10 10)))", "bow", 6)
+        kinds = [i.kind for i in v.check_geometry(plan_data(extra_areas=[bow])) if i.table == "egenskap_yta"]
+        self.assertNotIn(v.EMPTY_AREA_KIND, kinds, "en självkorsande yta har utbredning")
+
     def test_a_property_must_lie_within_the_uses(self):
         outside = area("egenskap_yta", sq(90, 90, 130, 130), "p", 5)
         issues = [i for i in v.check_geometry(plan_data(extra_areas=[outside])) if i.table == "egenskap_yta"]
