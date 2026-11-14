@@ -308,14 +308,24 @@ def _move_by_fields(settings: QgsPalLayerSettings) -> None:
     settings.setDataDefinedProperties(props)
 
 
-def _wrap_by_width(settings: QgsPalLayerSettings, size: float) -> None:
-    """Texten radbryts så att den ryms i ytan: efter textrutans bredd (``label_w``) om användaren omformat den, annars
-    efter ytans bredd. ``size`` = textstorleken i kartans enheter. Bara ord bryts, aldrig bokstäver."""
+def _rotate_by_field(settings: QgsPalLayerSettings) -> None:
+    """Texten är vågrät, men vinklad (grader medurs, runt textens mitt) om användaren roterat den med textverktyget:
+    ``label_rot`` är tomt när den inte roterats. Gäller ytornas texter (en linjes text följer linjen, en punkts text står
+    alltid intill punkten)."""
+    props = settings.dataDefinedProperties()
+    props.setProperty(QgsPalLayerSettings.Property.LabelRotation, QgsProperty.fromField("label_rot"))
+    settings.setDataDefinedProperties(props)
+
+
+def _wrap_by_width(settings: QgsPalLayerSettings, size: float, fit_area: bool = True) -> None:
+    """Texten radbryts efter textrutans bredd (``label_w``) om användaren omformat den. Annars radbryts den så att den
+    ryms i ytan (``fit_area``), eller inte alls. ``size`` = textstorleken i kartans enheter. Bara ord bryts, aldrig
+    bokstäver."""
     per_char = size * CHAR_WIDTH
+    otherwise = f"max(3, floor(bounds_width($geometry) * 0.9 / {per_char}))" if fit_area else "0"  # 0 = ingen radbrytning
     props = settings.dataDefinedProperties()
     props.setProperty(QgsPalLayerSettings.Property.AutoWrapLength, QgsProperty.fromExpression(
-        f'CASE WHEN "label_w" IS NOT NULL THEN max(1, floor("label_w" / {per_char})) '
-        f'ELSE max(3, floor(bounds_width($geometry) * 0.9 / {per_char})) END'))
+        f'CASE WHEN "label_w" IS NOT NULL THEN max(1, floor("label_w" / {per_char})) ELSE {otherwise} END'))
     settings.setDataDefinedProperties(props)
     settings.useMaxLineLengthForAutoWrap = True
 
@@ -377,6 +387,8 @@ def _labeling(reference_scale: float = 1000, *, bold: bool = True, is_use: bool 
     settings.setFormat(fmt)
     if not is_point:  # en egenskapspunkts text kan inte flyttas: den står alltid intill punkten
         _move_by_fields(settings)
+        if not is_line:
+            _rotate_by_field(settings)
     if is_point:
         # texten intill punkten (helst snett ovanför till höger), som höjder på en plankarta
         settings.fieldName = _POINT_LABEL_EXPRESSION
@@ -407,6 +419,7 @@ def _labeling(reference_scale: float = 1000, *, bold: bool = True, is_use: bool 
     settings.displayAll = True  # användningens text visas även när något annat ligger i vägen
     settings.priority = 10
     settings.zIndex = 10.0
+    _wrap_by_width(settings, size_mm * per_mm, fit_area=False)  # radbryts bara om textrutan omformats
     settings.setCallout(_leader_callout(LEADER_INSET_MM * per_mm))
     return QgsVectorLayerSimpleLabeling(settings)
 

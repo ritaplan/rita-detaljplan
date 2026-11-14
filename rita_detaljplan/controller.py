@@ -937,7 +937,7 @@ class PlanController(QObject):
                     continue
                 identity = _clean(feature["objektidentitet"])
                 names = [field.name() for field in layer.fields()]
-                skip = {"fid", "objektidentitet", "label_x", "label_y", "label_w"}
+                skip = {"fid", "objektidentitet", "label_x", "label_y", "label_w", "label_rot"}
                 attributes = {i: feature.attributes()[i] for i, name in enumerate(names) if name not in skip}
                 context = QgsExpressionContext()
                 context.appendScopes(QgsExpressionContextUtils.globalProjectLayerScopes(layer))
@@ -1227,7 +1227,7 @@ class PlanController(QObject):
         self._changed()
         return QgsPointXY(point)
 
-    RESIZABLE_LABELS = ("egenskap_yta",)  # textrutor som kan omformas (bara bredden styr, aldrig bokstävernas storlek)
+    RESIZABLE_LABELS = (cat.USE_LAYER, "egenskap_yta")  # textrutor som kan omformas (bara bredden styr, aldrig bokstävernas storlek)
     MIN_LABEL_WIDTH = 1.0  # m
 
     def resize_label(self, table: str, fid: int, rect: QgsRectangle) -> Optional[QgsPointXY]:
@@ -1245,12 +1245,33 @@ class PlanController(QObject):
         self._changed()
         return QgsPointXY(center)
 
+    ROTATABLE_LABELS = (cat.USE_LAYER, "egenskap_yta")  # en linjes text följer linjen och en punkts står intill punkten
+
+    def rotate_label(self, table: str, fid: int, degrees: float, center: Optional[QgsPointXY] = None) -> Optional[float]:
+        """Roterar ytans text till ``degrees`` (grader medurs, runt textens mitt; 0 = vågrät). Texten fästs vid ``center``
+        (textens mitt just nu) om den inte redan har ett eget läge, så att den roterar runt sin plats och inte hoppar
+        när den inte längre placeras automatiskt. Vinkeln lagras mellan 0 och 360; en vågrät text lagras som tom.
+        Returnerar den lagrade vinkeln (0 för vågrät), eller None om ytan saknas eller inte har en text som kan roteras."""
+        layer = self.layer(table)
+        feature = layer.getFeature(fid) if layer is not None and table in self.ROTATABLE_LABELS else None
+        if feature is None or not feature.isValid():
+            return None
+        angle = degrees % 360.0
+        if angle < 1e-6 or angle > 360.0 - 1e-6:
+            angle = 0.0
+        values: dict = {"label_rot": angle or None}
+        if center is not None and (_clean(feature["label_x"]) is None or _clean(feature["label_y"]) is None):
+            values.update({"label_x": center.x(), "label_y": center.y()})
+        self._modify(lambda: apply_attributes(layer, [fid], values))
+        self._changed()
+        return angle
+
     def reset_label(self, table: str, fid: int) -> None:
-        """Låter ytans text placeras automatiskt igen (och textrutan får sin ursprungliga form)."""
+        """Låter ytans text placeras automatiskt igen (och textrutan får sin ursprungliga form och sin vågräta vinkel)."""
         layer = self.layer(table)
         if layer is not None:
             self._modify(lambda: apply_attributes(layer, [fid], {"label_x": None, "label_y": None,
-                                                                 "label_w": None}))
+                                                                 "label_w": None, "label_rot": None}))
             self._changed()
 
     def select_in_rect(self, rect: QgsRectangle, add: bool = False) -> list[Candidate]:

@@ -200,9 +200,13 @@ Det markerade lagret blir aktivt, så att du direkt kan flytta, redigera brytpun
 1. Klicka på en text, eller dra en rektangel.
 2. Dra den markerade texten dit du vill ha den. Alla markerade texter flyttas lika långt.
 3. Flyttar du en text utanför sin yta ritas en tunn ledlinje in i ytan.
-4. Dra i ett hörn på en egenskapstext för att ändra textrutans form. Texten radbryts efter den nya bredden.
+4. Dra i ett hörn på en text (användning eller egenskap) för att ändra textrutans form. Texten radbryts efter den nya bredden.
+5. **Rotera texten** (användning och egenskapsytor): håll musen strax utanför ett hörn på en markerad text. Markören
+   blir en rotationspil. Dra för att vrida texten runt sin mitt. Håll ned **Skift** för att låsa vinkeln till steg om 15
+   grader. Själva hörnet ändrar fortfarande textrutans form, också på en roterad text. En text som roterats ligger kvar
+   där den är och går att flytta som vanligt.
 
-Tryck **Delete** för att återställa automatisk placering och **Esc** för att avmarkera. Textstorleken ändras inte här,
+Tryck **Delete** för att återställa automatisk placering, form och vågrät vinkel, och **Esc** för att avmarkera. Textstorleken ändras inte här,
 utan styrs av referensskalan (se [Planens uppgifter](planens-uppgifter.md#referensskala)).
 
 **Dölj texter** (A med ett rött streck) stänger tillfälligt av beteckningarna på kartan när de är i vägen.

@@ -91,14 +91,14 @@ Viktiga kolumner i `bestammelse`:
 
 Några kolumner finns bara för att pluginet ska kunna rita och hålla ordning, och följer aldrig med i leveransen:
 `tabell`, `yta`, `beteckning`, `beteckningsindex`, `bestammelsekod`, `anvandningsform`, `farg`, `symbol`, `avviker`,
-`bestammelser`, `label_x`, `label_y`, `label_w`, `sekundar`, `ordning`, `hojdUnderkant` och `hojdOverkant`.
+`bestammelser`, `label_x`, `label_y`, `label_w`, `label_rot`, `sekundar`, `ordning`, `hojdUnderkant` och `hojdOverkant`.
 
 - `beteckning`, `farg`, `symbol` och `anvandningsform` på ytorna räknas fram ur ytans bestämmelser varje gång de
   ändras. Symbologin och etiketterna läser dem.
 - `hojdUnderkant` och `hojdOverkant` levereras inte som fält utan som koordinater: en kropp (båda höjderna) eller en yta
   med höjdvärde (en höjd), se exporten nedan.
-- `label_x`, `label_y` och `label_w` sparar en text som du flyttat eller formats om med textverktyget. Tomt betyder
-  automatisk placering.
+- `label_x`, `label_y`, `label_w` och `label_rot` sparar en text som du flyttat, formats om eller roterat med textverktyget.
+  Tomt betyder automatisk placering och vågrät text. `label_rot` är grader medurs runt textens mitt (0 till 360).
 
 ### Obligatoriska fält
 
@@ -123,6 +123,7 @@ automatiskt. Kolumner och tabeller läggs till, men ingenting tas bort.
 | 9 | Hjälpytor och hjälppunkter. |
 | 10 | Egenskapspunkter (`egenskap_punkt`). |
 | 11 | Bestämmelsens höjd (`hojdUnderkant`, `hojdOverkant`). |
+| 12 | Textens vinkel (`label_rot`). En plan i ett delat PostGIS-schema uppgraderas av den första som öppnar den med en nyare version (kräver rätt att ändra tabellerna); äldre versioner av pluginet kan sedan inte öppna den. |
 
 ## Lagring i GeoPackage
 

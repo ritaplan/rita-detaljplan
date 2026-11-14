@@ -223,21 +223,26 @@ class SqlTests(unittest.TestCase):
         self.assertEqual(text.count('"label_w"'), 3)
         self.assertEqual(text.count('"sekundar"'), 1)
         self.assertNotIn('"label_x"', text)
-        self.assertEqual(len([s for s in sql if "hjalp" not in s and "egenskap_punkt" not in s and "hojd" not in s]), 6,
-                         "utom hjälplagren (schema 9), egenskapspunkterna (schema 10) och höjdkolumnerna (schema 11)")
+        self.assertEqual(len([s for s in sql if "hjalp" not in s and "egenskap_punkt" not in s and "hojd" not in s
+                              and "label_rot" not in s]), 6,
+                         "utom hjälplagren (schema 9), egenskapspunkterna (schema 10), höjdkolumnerna (schema 11) "
+                         "och textvinkeln (schema 12)")
+        self.assertEqual(text.count('"label_rot"'), 3, "textvinkeln på de tre äldre ytlagren (punkterna har den redan)")
 
     def test_upgrade_from_schema_6_only_adds_the_schema_7_columns(self):
         sql = storage.postgis_upgrade("dp_test", 6, 3006)
-        self.assertEqual(len([s for s in sql if "hjalp" not in s and "egenskap_punkt" not in s and "hojd" not in s]), 5,
-                         "utom hjälplagren (schema 9), egenskapspunkterna (schema 10) och höjdkolumnerna (schema 11)")
+        self.assertEqual(len([s for s in sql if "hjalp" not in s and "egenskap_punkt" not in s and "hojd" not in s
+                              and "label_rot" not in s]), 5,
+                         "utom hjälplagren (schema 9), egenskapspunkterna (schema 10), höjdkolumnerna (schema 11) "
+                         "och textvinkeln (schema 12)")
         self.assertNotIn('"ordning"', " ".join(sql))
         self.assertIn(f'"dp_schema" SET "value" = \'{model.SCHEMA_VERSION}\'', sql[-1])
 
     def test_upgrade_from_schema_9_only_creates_the_property_points_and_adds_the_height_columns(self):
         sql = storage.postgis_upgrade("dp_test", 9, 3006)
         self.assertIn('CREATE TABLE IF NOT EXISTS "dp_test"."egenskap_punkt"', sql[0])
-        self.assertEqual(len([s for s in sql if "ALTER TABLE" in s]), 2, "bara höjdkolumnerna (schema 11)")
-        self.assertTrue(all("egenskap_punkt" in s or "hojd" in s for s in sql[:-1]))
+        self.assertEqual(len([s for s in sql if "ALTER TABLE" in s]), 2 + 4, "höjdkolumnerna (schema 11) och textvinkeln (12)")
+        self.assertTrue(all("egenskap_punkt" in s or "hojd" in s or "label_rot" in s for s in sql[:-1]))
         self.assertIn(f'"dp_schema" SET "value" = \'{model.SCHEMA_VERSION}\'', sql[-1])
 
 
@@ -368,7 +373,40 @@ class CreateTests(unittest.TestCase):
 
 
 @unittest.skipUnless(HAVE_QGIS, "QGIS Python behövs")
+class PasswordConnection:
+    """En anslutning vars adress har ett sparat lösenord (som QGIS anslutningar kan ha) eller en inloggningskonfiguration."""
+
+    def __init__(self, text):
+        self.text = text
+
+    def uri(self):
+        return self.text
+
+
 class StorageTests(unittest.TestCase):
+    def test_a_layer_address_never_contains_the_password_and_the_login_goes_to_the_qgis_cache_instead(self):
+        text = "dbname='planer' host=localhost port=5432 user='eric' password='hemligt' sslmode=disable"
+        plan = storage.PostgisStorage("db", "dp_test", "kv_1", PasswordConnection(text))
+        with mock.patch.object(storage.QgsCredentials, "instance") as instance:
+            addresses = [plan.layer_uri(layer_def, 3006) for layer_def in model.LAYERS]
+        for address in addresses:
+            self.assertNotIn("hemligt", address, "lösenordet hamnar annars i klartext i projektfilen")
+            self.assertNotIn("password", address)
+            self.assertIn("user='eric'", address, "användarnamnet behövs för att ansluta")
+            self.assertIn('table="dp_test"."', address)
+        realm = "dbname='planer' host=localhost port=5432 user='eric' sslmode=disable"
+        instance.return_value.put.assert_called_with(realm, "eric", "hemligt")
+
+    def test_a_connection_with_a_login_configuration_keeps_only_the_reference(self):
+        text = "dbname='planer' host=localhost port=5432 authcfg='abc1234' sslmode=disable"
+        plan = storage.PostgisStorage("db", "dp_test", "kv_1", PasswordConnection(text))
+        with mock.patch.object(storage.QgsCredentials, "instance") as instance:
+            address = plan.layer_uri(model.LAYERS[0], 3006)
+        self.assertIn("authcfg=abc1234", address, "hänvisningen till QGIS krypterade inloggning står kvar")
+        self.assertNotIn("password", address)
+        self.assertNotIn("user=", address)
+        instance.return_value.put.assert_not_called()
+
     def test_a_layer_uri_points_at_the_schema_table_key_geometry_and_the_plan_filter(self):
         plan = storage.PostgisStorage("db", "dp_test", "dp_1", FakeConnection())
         uri = QgsDataSourceUri(plan.layer_uri(model.ANVANDNING_YTA, 3010))

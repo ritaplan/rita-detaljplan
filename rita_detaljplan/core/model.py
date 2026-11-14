@@ -20,9 +20,10 @@ from . import codelists as cl
 
 SPEC_VERSION = "4.1"
 MEDIATYP = "application/vnd.lm.detaljplan.v4+json"
-SCHEMA_VERSION = 11  # schemaversion (3: ytor + bestämmelsetabell; 4: + hjälplinjer; 5: + textens läge; 6: + ordning;
+SCHEMA_VERSION = 12  # schemaversion (3: ytor + bestämmelsetabell; 4: + hjälplinjer; 5: + textens läge; 6: + ordning;
 # 7: + textens bredd och sekundär egenskapsgräns; 8: PostGIS-schemat delas mellan flera planer, se storage.py;
-# 9: + hjälpytor och hjälppunkter; 10: + egenskapspunkter; 11: + höjd (underkant och överkant) på bestämmelserna)
+# 9: + hjälpytor och hjälppunkter; 10: + egenskapspunkter; 11: + höjd (underkant och överkant) på bestämmelserna;
+# 12: + textens vinkel)
 
 # Fälttyper
 TEXT, INT, REAL, DATE, DATETIME, BOOL = "text", "int", "real", "date", "datetime", "bool"
@@ -161,7 +162,7 @@ BESLUTSINFORMATION = LayerDef(
 
 # Kolumner som bara pluginet använder (ingår inte i leveransen till NGP).
 PLUGIN_ONLY_FIELDS = ("tabell", "yta", "beteckning", "beteckningsindex", "bestammelsekod", "anvandningsform", "farg",
-                      "symbol", "avviker", "bestammelser", "label_x", "label_y", "label_w", "sekundar", "ordning",
+                      "symbol", "avviker", "bestammelser", "label_x", "label_y", "label_w", "label_rot", "sekundar", "ordning",
                       "hojdUnderkant", "hojdOverkant")
 
 
@@ -171,6 +172,8 @@ LABEL_FIELDS = (
     FieldDef("label_y", REAL, "Textens läge (y)", comment="Sätts när texten flyttas med textverktyget."),
     FieldDef("label_w", REAL, "Textens bredd (m)",
              comment="Sätts när textrutan omformas med textverktyget: texten radbryts till den bredden."),
+    FieldDef("label_rot", REAL, "Textens vinkel (grader)",
+             comment="Sätts när texten roteras med textverktyget: grader medurs, runt textens mitt. Tomt = vågrät."),
 )
 
 # Egenskapsyta som ritas med sekundär egenskapsgräns (Boverkets allmänna råd BFS 2020:6, 3.3). Bara för pluginet.

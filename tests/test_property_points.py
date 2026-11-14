@@ -212,7 +212,8 @@ class PointUpgradeTests(unittest.TestCase):
         altered = [i for i, s in enumerate(sql) if 'ALTER TABLE "dp"."egenskap_punkt"' in s]
         self.assertTrue(all(i > create for i in altered))
         self.assertIn("geometry(MultiPoint, 3006)", sql[create])
-        self.assertFalse(any("egenskap_punkt" in s for s in storage.postgis_upgrade("dp", 10, 3006)))
+        newer = storage.postgis_upgrade("dp", 10, 3006)  # tabellen finns redan: skapas inte igen (schema 12 lägger bara till label_rot)
+        self.assertFalse(any("CREATE TABLE" in s and "egenskap_punkt" in s for s in newer))
 
 
 @unittest.skipUnless(HAVE_QGIS, "kräver QGIS")

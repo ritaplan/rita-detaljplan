@@ -71,7 +71,7 @@ class HelperModelTests(GuiCase):
 
     def test_a_new_plan_has_the_current_schema_and_the_helper_layers_have_symbology(self):
         self.assertEqual(geopackage.read_meta(self.gpkg)["schema_version"], str(model.SCHEMA_VERSION))
-        self.assertEqual(model.SCHEMA_VERSION, 11)
+        self.assertEqual(model.SCHEMA_VERSION, 12)
         self.assertEqual(self.layers["hjalpyta"].renderer().symbol().type().name, "Fill")
         self.assertEqual(self.layers["hjalppunkt"].renderer().symbol().type().name, "Marker")
         self.assertFalse(self.layers["hjalpyta"].labelsEnabled())

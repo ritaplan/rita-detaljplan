@@ -150,7 +150,7 @@ def read_meta(path: str | Path) -> dict[str, str]:
 
 
 def upgrade(path: str | Path) -> bool:
-    """Uppgraderar en äldre plan (schema 3–10) till nuvarande schema. Returnerar True om något ändrades."""
+    """Uppgraderar en äldre plan (schema 3–11) till nuvarande schema. Returnerar True om något ändrades."""
     path = Path(path)
     version = read_meta(path).get("schema_version")
     if not version or not version.isdigit() or not 3 <= int(version) < model.SCHEMA_VERSION:
@@ -163,7 +163,7 @@ def upgrade(path: str | Path) -> bool:
         for layer_def in (model.HJALPLINJE, model.HJALPYTA, model.HJALPPUNKT, model.EGENSKAP_PUNKT):
             if ds.GetLayerByName(layer_def.name) is None:
                 _create_table(ds, layer_def, srs)
-        for layer_def in model.AREA_LAYERS:  # schema 5: textens läge
+        for layer_def in model.AREA_LAYERS:  # schema 5: textens läge (och 12: textens vinkel)
             layer = ds.GetLayerByName(layer_def.name)
             for field in model.LABEL_FIELDS:
                 if layer.GetLayerDefn().GetFieldIndex(field.name) < 0:

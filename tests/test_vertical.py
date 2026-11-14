@@ -469,7 +469,7 @@ class UpgradeTests(unittest.TestCase):
         names = [field.name for field in model.BESTAMMELSE.fields]
         self.assertIn("hojdUnderkant", names)
         self.assertIn("hojdOverkant", names)
-        self.assertEqual(model.SCHEMA_VERSION, 11)
+        self.assertGreaterEqual(model.SCHEMA_VERSION, 11)
 
     def test_an_older_geopackage_gets_the_columns(self):
         import tempfile
@@ -487,7 +487,7 @@ class UpgradeTests(unittest.TestCase):
             con.close()
             self.assertIn("hojdUnderkant", columns)
             self.assertIn("hojdOverkant", columns)
-            self.assertEqual(geopackage.read_meta(gpkg)["schema_version"], "11")
+            self.assertEqual(geopackage.read_meta(gpkg)["schema_version"], str(model.SCHEMA_VERSION))
 
     def test_a_postgis_schema_from_version_10_gets_the_columns_and_nothing_else(self):
         sql = "\n".join(storage.postgis_upgrade("dp", 10, 3006))

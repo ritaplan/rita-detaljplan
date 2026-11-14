@@ -388,7 +388,7 @@ class DialogTests(TopologyCase):
         self.assertFalse(any("beta" in text.lower() or "full funktionalitet" in text for text in texts), texts)
         self.assertFalse(hasattr(dialog, "beta_note"))
 
-    def test_it_is_a_panel_with_the_list_to_the_left_and_the_buttons_in_a_column_to_the_right(self):
+    def test_it_is_a_panel_with_the_list_to_the_left_and_the_buttons_to_the_right(self):
         from qgis.PyQt.QtWidgets import QDialog
         dialog = self.make()
         self.assertTrue(isinstance(dialog, QWidget) and not isinstance(dialog, QDialog))
@@ -396,13 +396,36 @@ class DialogTests(TopologyCase):
         dialog.show()
         pump()
         self.assertLess(dialog.list.geometry().right(), dialog._column.geometry().left())
-        self.assertGreater(dialog.list.width(), 3 * dialog._column.width() / 2, "listan får det mesta av bredden")
+        self.assertGreater(dialog.list.width(), dialog._column.width(), "listan får det mesta av bredden")
         column = dialog._column.geometry()
         for button in (dialog.btn_apply, dialog.btn_all, dialog.btn_none, dialog.btn_show, dialog.btn_fill, dialog.btn_remove):
             if not button.isHidden():
                 top_left = button.mapTo(dialog, button.rect().topLeft())
                 self.assertGreaterEqual(top_left.x(), column.left(), button.text())
-        self.assertLessEqual(dialog.minimumHeight(), 150, "panelen kan vara låg så att kartan syns")
+        dialog.hide()
+
+    def test_the_panel_starts_as_low_as_possible_and_the_buttons_keep_their_natural_size(self):
+        dialog = self.make()
+        self.assertLessEqual(dialog.sizeHint().height(), 130, "förut cirka 250: knapparna i tre rader, en låg lista")
+        self.assertLessEqual(dialog.minimumSizeHint().height(), 130)
+        dialog.resize(1000, 400)  # dras panelen högre ska listan växa, inte knapparna
+        dialog.show()
+        pump()
+        for button in (dialog.btn_apply, dialog.btn_all, dialog.btn_none, dialog.btn_show, dialog.btn_fill, dialog.btn_remove):
+            if not button.isHidden():
+                self.assertEqual(button.height(), button.sizeHint().height(), button.text())
+        self.assertGreater(dialog.list.height(), 200, "listan tar den extra höjden")
+        dialog.hide()
+
+    def test_the_result_line_takes_no_room_until_there_is_something_to_say(self):
+        dialog = self.make()
+        dialog.show()
+        pump()
+        self.assertTrue(dialog.result.isHidden())
+        dialog.result.setText("1 ändringar gjordes.")
+        self.assertFalse(dialog.result.isHidden())
+        dialog.result.setText("")
+        self.assertTrue(dialog.result.isHidden())
         dialog.hide()
 
     def test_the_button_says_when_the_plan_has_changed_since_the_check(self):

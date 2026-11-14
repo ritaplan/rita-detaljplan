@@ -13,10 +13,10 @@ from __future__ import annotations
 
 from typing import Callable, Optional
 
-from qgis.PyQt.QtCore import Qt
+from qgis.PyQt.QtCore import QSize, Qt
 from qgis.PyQt.QtGui import QBrush, QColor
-from qgis.PyQt.QtWidgets import (QCheckBox, QDoubleSpinBox, QHBoxLayout, QLabel, QListWidget, QListWidgetItem,
-                                 QPushButton, QVBoxLayout, QWidget)
+from qgis.PyQt.QtWidgets import (QCheckBox, QDoubleSpinBox, QGridLayout, QHBoxLayout, QLabel, QListWidget,
+                                 QListWidgetItem, QPushButton, QSizePolicy, QVBoxLayout, QWidget)
 
 from ..controller import PlanController
 from ..core import topology, validation
@@ -29,8 +29,32 @@ CHANGE_KIND, FINDING_KIND, HEADER_KIND = "change", "finding", "header"
 SECTION_TITLES = {topology.TIER_AUTO: "Rättas automatiskt (högst 1 cm, säkert)",
                   topology.TIER_REVIEW: "Förslag att granska (större än 1 cm)",
                   "beslut": "Kräver ditt beslut (görs inte automatiskt)"}
-BUTTON_COLUMN_WIDTH = 250  # bildpunkter: knapparna ligger i en smal kolumn till höger så att listan får plats att läsas
 STALE_TEXT = "Kontrollera igen (planen har ändrats)"
+LIST_HINT = QSize(320, 54)  # listans önskade storlek: låg, så att panelen öppnas tajt (man kan dra den högre)
+
+
+class _CompactList(QListWidget):
+    """En lista som inte ber om mer plats än den behöver för några rader: QListWidget vill annars vara nästan 200
+    bildpunkter hög, vilket gör panelen onödigt hög från början. Den växer ändå när panelen dras högre."""
+
+    def sizeHint(self) -> QSize:  # noqa: N802 - Qt-namn
+        return LIST_HINT
+
+    def minimumSizeHint(self) -> QSize:  # noqa: N802
+        return QSize(120, 40)
+
+
+class _Notice(QLabel):
+    """Resultatraden: syns bara när den har text, så att den inte tar plats i en tajt panel."""
+
+    def __init__(self):
+        super().__init__()
+        self.setWordWrap(True)
+        self.setVisible(False)
+
+    def setText(self, text: str) -> None:  # noqa: N802 - Qt-namn
+        super().setText(text)
+        self.setVisible(bool(text))
 
 
 class TopologyPanel(QWidget):
@@ -52,7 +76,6 @@ class TopologyPanel(QWidget):
                  preview: Optional[Callable[[list[Change]], None]] = None):
         super().__init__(parent)
         self.setWindowTitle("Topologikontroll")
-        self.setMinimumHeight(140)
         self._analyze, self._apply, self._show = analyze, apply, show
         self._findings, self._fill_use = findings, fill_use
         self._remove_empty, self._describe, self._preview = remove_empty, describe, preview
@@ -75,9 +98,8 @@ class TopologyPanel(QWidget):
         self.tolerance.setToolTip("Största avstånd som räknas som ett glapp eller en avvikelse. Större avstånd ses "
                                   "som avsiktliga och lämnas orörda.")
         self.btn_again = QPushButton("Kontrollera igen")
-        self.result = QLabel()
-        self.result.setWordWrap(True)
-        self.list = QListWidget()
+        self.result = _Notice()
+        self.list = _CompactList()
         self.list.setWordWrap(True)
         self.btn_all = QPushButton("Markera alla")
         self.btn_none = QPushButton("Avmarkera alla")
@@ -94,6 +116,7 @@ class TopologyPanel(QWidget):
         # överst en rad: resultatet, toleransen och filtren; under den listan till vänster och knapparna i en kolumn
         # till höger, så att panelen kan vara låg och kartan ovanför den syns
         top_row = QHBoxLayout()
+        top_row.setSpacing(4)
         top_row.addWidget(self.summary, 1)
         top_row.addWidget(QLabel("Tolerans:"))
         top_row.addWidget(self.tolerance)
@@ -106,26 +129,26 @@ class TopologyPanel(QWidget):
             self.filters[severity] = box
             top_row.addWidget(box)
 
-        marks = QHBoxLayout()
-        marks.addWidget(self.btn_all)
-        marks.addWidget(self.btn_none)
-        column = QVBoxLayout()
-        column.addWidget(self.btn_apply)
-        column.addLayout(marks)
-        column.addWidget(self.btn_show)
-        column.addWidget(self.btn_fill)
-        column.addWidget(self.btn_remove)
-        column.addStretch(1)
+        # knapparna i ett rutnät om tre rader och två kolumner, med sin naturliga storlek: tre rader i stället för fem
+        # gör panelen så låg som möjligt utan att knapparna blir mindre
+        grid = QGridLayout()
+        grid.setContentsMargins(0, 0, 0, 0)
+        grid.setHorizontalSpacing(4)
+        grid.setVerticalSpacing(2)
+        for position, button in (((0, 0), self.btn_apply), ((0, 1), self.btn_all), ((1, 0), self.btn_show),
+                                 ((1, 1), self.btn_none), ((2, 0), self.btn_fill), ((2, 1), self.btn_remove)):
+            grid.addWidget(button, *position)
         self._column = QWidget()
-        self._column.setFixedWidth(BUTTON_COLUMN_WIDTH)
-        self._column.setLayout(column)
-        column.setContentsMargins(0, 0, 0, 0)
+        self._column.setLayout(grid)
+        self._column.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         body = QHBoxLayout()
+        body.setSpacing(6)
         body.addWidget(self.list, 1)
-        body.addWidget(self._column)
+        body.addWidget(self._column, 0, Qt.AlignmentFlag.AlignTop)
 
         self._layout = QVBoxLayout(self)
-        self._layout.setContentsMargins(6, 4, 6, 4)
+        self._layout.setContentsMargins(4, 2, 4, 2)
+        self._layout.setSpacing(2)
         self._layout.addLayout(top_row)
         self._layout.addLayout(body, 1)
         self._layout.addWidget(self.result)

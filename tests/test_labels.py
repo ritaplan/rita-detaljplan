@@ -293,8 +293,39 @@ class SchemaTests(unittest.TestCase):
         self.assertGreaterEqual(layers["egenskap_yta"].fields().indexOf("sekundar"), 0)
         self.assertEqual(geopackage.read_meta(gpkg)["schema_version"], str(model.SCHEMA_VERSION))
 
+    def test_a_schema_11_plan_gets_the_text_angle_on_every_area_layer(self):
+        gpkg, _ = create_plan_project(self.dir, "elva", "Eskilstuna", "0484", 3006)
+        tables = ("anvandning_yta", "egenskap_yta", "egenskap_linje", "egenskap_punkt")
+        ds = ogr.Open(str(gpkg), 1)
+        for name in tables:
+            layer = ds.GetLayerByName(name)
+            layer.DeleteField(layer.GetLayerDefn().GetFieldIndex("label_rot"))
+        ds = None
+        con = sqlite3.connect(str(gpkg))
+        con.execute("UPDATE dp_meta SET value='11' WHERE key='schema_version'")
+        con.commit()
+        con.close()
+        self.assertTrue(geopackage.upgrade(gpkg))
+        project = QgsProject()
+        layers = load_plan(gpkg, project)
+        for name in tables:
+            self.assertGreaterEqual(layers[name].fields().indexOf("label_rot"), 0, name)
+        self.assertEqual(geopackage.read_meta(gpkg)["schema_version"], str(model.SCHEMA_VERSION))
+        self.assertEqual(model.SCHEMA_VERSION, 12)
+
+    def test_the_postgis_upgrade_adds_the_text_angle_only_to_schemas_older_than_12(self):
+        from rita_detaljplan.core import storage
+        old = " ".join(storage.postgis_upgrade("dp", 11, 3010))
+        for name in ("anvandning_yta", "egenskap_yta", "egenskap_linje", "egenskap_punkt"):
+            self.assertIn(f'ALTER TABLE "dp"."{name}" ADD COLUMN IF NOT EXISTS "label_rot"', old)
+        self.assertLess(old.index('"label_rot"'), old.index("SET \"value\""), "versionen skrivs sist")
+        current = " ".join(storage.postgis_upgrade("dp", model.SCHEMA_VERSION, 3010))
+        self.assertNotIn("label_rot", current)
+        from_start = " ".join(storage.postgis_upgrade("dp", 3, 3010))
+        self.assertEqual(from_start.count('ADD COLUMN IF NOT EXISTS "label_rot"'), 4, "en gång per ytlager")
+
     def test_the_new_fields_are_hidden_plugin_only_fields(self):
-        self.assertLessEqual({"label_w", "sekundar"}, set(model.PLUGIN_ONLY_FIELDS))
+        self.assertLessEqual({"label_w", "label_rot", "sekundar"}, set(model.PLUGIN_ONLY_FIELDS))
 
     def test_an_up_to_date_plan_is_left_alone(self):
         gpkg, _ = create_plan_project(self.dir, "ny", "Eskilstuna", "0484", 3006)
@@ -427,6 +458,7 @@ class LabelToolCase(GuiCase):
         self.labels = [self.left_label, self.right_label]
         self.tool.labels_at = lambda p: [l for l in self.labels if l.rect.contains(p)]
         self.tool.labels_in = lambda r: [l for l in self.labels if r.contains(l.rect)]
+        self.canvas.setExtent(QgsRectangle(0, 0, 100, 100))  # 0,25 m per bildpunkt: handtag 2 m, rotationszon 2-5,5 m
 
     def ref(self, table, feature, rect):
         return self.LabelRef(table, feature.id(), rect)
@@ -578,12 +610,12 @@ class LabelResizeTests(LabelToolCase):
         self.drag((35, 30), (30, 34))  # texten är inte markerad: klicket träffar bara texten och flyttar den
         self.assertIsNone(self.values()[2])
 
-    def test_the_text_of_a_use_cannot_be_reshaped_only_moved(self):
+    def test_the_text_of_a_use_can_be_reshaped_too(self):
         self.drag((25, 50), (25, 50))
-        self.drag((30, 55), (20, 60))  # hörnet på användningens text
+        self.drag((30, 55), (35, 60))  # hörnet på användningens text (20-30, 45-55) dras utåt
         x, y, w = self.values("anvandning_yta", self.uses[0].id())
-        self.assertIsNone(w)
-        self.assertIsNotNone(x, "den flyttades i stället")
+        self.assertAlmostEqual(w, 15.0, msg="bredden sattes av hörndraget (inte en flytt)")
+        self.assertIsNotNone(x)
 
     def test_the_size_of_the_letters_is_never_changed_by_reshaping(self):
         from qgis.core import QgsPalLayerSettings
@@ -616,11 +648,18 @@ class LabelResizeTests(LabelToolCase):
         self.tool.reset_selected()
         self.assertEqual(self.values(), (None, None, None))
 
-    def test_the_handles_are_shown_for_a_selected_property_text_only(self):
+    def test_the_handles_are_shown_for_a_selected_use_or_property_text(self):
         self.drag((25, 25), (25, 25))
         self.assertEqual(self.tool._handles.numberOfVertices(), 4)
         self.drag((25, 50), (25, 50))
-        self.assertEqual(self.tool._handles.numberOfVertices(), 0, "användningens text har inga handtag")
+        self.assertEqual(self.tool._handles.numberOfVertices(), 4, "användningens text har också handtag")
+
+    def test_dragging_a_corner_of_a_use_text_sets_its_width_too(self):
+        self.drag((25, 50), (25, 50))  # markera användningens text (rutan 20-30, 45-55)
+        self.drag((30, 55), (35, 60))  # övre högra hörnet ut
+        feature = self.layers["anvandning_yta"].getFeature(self.left_label.fid)
+        self.assertAlmostEqual(feature["label_w"], 15.0)
+        self.assertAlmostEqual(feature["label_x"], 27.5)
 
 
 class LabelControllerTests(SplitCase):
@@ -656,11 +695,14 @@ class ResizeLabelControllerTests(SplitCase):
         stored = self.layers["egenskap_yta"].getFeature(prop.id())
         self.assertEqual((stored["label_x"], stored["label_y"], stored["label_w"]), (None, None, None))
 
-    def test_only_property_areas_have_a_reshapable_text(self):
+    def test_only_use_and_property_areas_have_a_reshapable_text(self):
         from qgis.core import QgsRectangle as R
-        self.assertEqual(self.controller.RESIZABLE_LABELS, ("egenskap_yta",))
+        self.assertEqual(self.controller.RESIZABLE_LABELS, ("anvandning_yta", "egenskap_yta"))
         use = next(iter(self.layers["anvandning_yta"].getFeatures()))
-        self.assertIsNone(self.controller.resize_label("anvandning_yta", use.id(), R(0, 0, 10, 10)))
+        point = self.controller.resize_label("anvandning_yta", use.id(), R(0, 0, 10, 10))
+        self.assertEqual((point.x(), point.y()), (5.0, 5.0))
+        self.assertEqual(self.layers["anvandning_yta"].getFeature(use.id())["label_w"], 10.0)
+        self.assertIsNone(self.controller.resize_label("detaljplan", 1, R(0, 0, 10, 10)))
         self.assertIsNone(self.controller.resize_label("egenskap_yta", 9999, R(0, 0, 10, 10)))
 
     def test_a_new_or_split_area_starts_without_a_reshaped_text(self):
@@ -670,6 +712,215 @@ class ResizeLabelControllerTests(SplitCase):
         apply_attributes(self.layers["egenskap_yta"], [prop.id()], {"label_w": 12.0})
         assignments.reset_new_area(self.controller.project, "egenskap_yta", prop.id())
         self.assertIsNone(self.layers["egenskap_yta"].getFeature(prop.id())["label_w"])
+
+
+class RotateLabelControllerTests(SplitCase):
+    def test_rotate_label_writes_the_angle_clockwise_and_pins_the_text_where_it_is(self):
+        use = self.features_of("anvandning_yta")[0]
+        angle = self.controller.rotate_label("anvandning_yta", use.id(), 30.0, QgsPointXY(40, 50))
+        self.assertEqual(angle, 30.0)
+        stored = self.layers["anvandning_yta"].getFeature(use.id())
+        self.assertEqual((stored["label_rot"], stored["label_x"], stored["label_y"]), (30.0, 40.0, 50.0))
+
+    def test_an_existing_position_is_kept_when_rotating(self):
+        use = self.features_of("anvandning_yta")[0]
+        self.controller.move_label("anvandning_yta", use.id(), QgsPointXY(30, 40))
+        self.controller.rotate_label("anvandning_yta", use.id(), 45.0, QgsPointXY(99, 99))
+        stored = self.layers["anvandning_yta"].getFeature(use.id())
+        self.assertEqual((stored["label_x"], stored["label_y"], stored["label_rot"]), (30.0, 40.0, 45.0))
+
+    def test_angles_are_stored_between_0_and_360_and_a_horizontal_text_as_empty(self):
+        use = self.features_of("anvandning_yta")[0]
+        layer = self.layers["anvandning_yta"]
+        for given, wanted in ((370.0, 10.0), (-30.0, 330.0)):
+            self.assertAlmostEqual(self.controller.rotate_label("anvandning_yta", use.id(), given), wanted)
+            self.assertAlmostEqual(layer.getFeature(use.id())["label_rot"], wanted)
+        from qgis.core import NULL
+        for given in (720.0, 0.0, 360.0, 359.9999999):
+            self.assertEqual(self.controller.rotate_label("anvandning_yta", use.id(), given), 0.0)
+            self.assertIn(layer.getFeature(use.id())["label_rot"], (None, NULL), given)
+
+    def test_only_the_texts_of_areas_can_be_rotated(self):
+        self.assertEqual(self.controller.ROTATABLE_LABELS, ("anvandning_yta", "egenskap_yta"))
+        self.assertIsNone(self.controller.rotate_label("egenskap_linje", 1, 30.0))
+        self.assertIsNone(self.controller.rotate_label("egenskap_punkt", 1, 30.0))
+        self.assertIsNone(self.controller.rotate_label("anvandning_yta", 9999, 30.0))
+
+    def test_reset_label_makes_the_text_horizontal_again(self):
+        use = self.features_of("anvandning_yta")[0]
+        self.controller.rotate_label("anvandning_yta", use.id(), 30.0, QgsPointXY(40, 50))
+        self.controller.reset_label("anvandning_yta", use.id())
+        stored = self.layers["anvandning_yta"].getFeature(use.id())
+        self.assertEqual((stored["label_x"], stored["label_y"], stored["label_rot"]), (None, None, None))
+
+    def test_a_new_or_split_area_starts_without_a_rotation(self):
+        from rita_detaljplan.core import assignments
+        from rita_detaljplan.core.project import apply_attributes
+        prop = self.draw("egenskap_yta", "MultiPolygon(((10 10, 40 10, 40 40, 10 40, 10 10)))")
+        apply_attributes(self.layers["egenskap_yta"], [prop.id()], {"label_rot": 40.0})
+        assignments.reset_new_area(self.controller.project, "egenskap_yta", prop.id())
+        self.assertIsNone(self.layers["egenskap_yta"].getFeature(prop.id())["label_rot"])
+
+    def features_of(self, table):
+        return list(self.layers[table].getFeatures())
+
+
+class LabelRotateTests(LabelToolCase):
+    """Rotera texten med samma verktyg: håll strax utanför ett hörn (rotationspil) och dra. Själva hörnet omformar
+    fortfarande rutan."""
+
+    def setUp(self):
+        super().setUp()
+        self.canvas.setExtent(QgsRectangle(0, 0, 100, 100))  # 0,25 m per bildpunkt: hörnet 2 m, rotationszonen 2-5,5 m
+        self.prop = self.draw("egenskap_yta", "MultiPolygon(((10 10, 40 10, 40 40, 10 40, 10 10)))")
+        self.prop_label = self.ref("egenskap_yta", self.prop, QgsRectangle(15, 20, 35, 30))
+        self.labels.append(self.prop_label)
+        self.layer = self.layers["egenskap_yta"]
+        self.drag((25, 25), (25, 25))  # markera egenskapens text (mitt (25, 25), 20 x 10 m)
+
+    def values(self, table="egenskap_yta", fid=None):
+        feature = self.layers[table].getFeature(self.prop.id() if fid is None else fid)
+        return feature["label_x"], feature["label_y"], feature["label_w"], feature["label_rot"]
+
+    @staticmethod
+    def around(center, degrees, radius):
+        import math
+        return (center[0] + radius * math.cos(math.radians(degrees)), center[1] + radius * math.sin(math.radians(degrees)))
+
+    def test_the_zones_are_the_corner_to_resize_and_just_outside_it_to_rotate(self):
+        P = QgsPointXY
+        self.assertEqual(self.tool.zone_at(P(35, 30)), "resize", "själva hörnet")
+        self.assertEqual(self.tool.zone_at(P(37.5, 32.5)), "rotate", "strax utanför hörnet")
+        self.assertEqual(self.tool.zone_at(P(13, 18)), "rotate", "och utanför de andra hörnen")
+        self.assertIsNone(self.tool.zone_at(P(25, 25)), "inne i rutan")
+        self.assertIsNone(self.tool.zone_at(P(37.5, 25)), "längs sidan, långt från hörnen")
+        self.assertIsNone(self.tool.zone_at(P(60, 60)), "långt bort")
+        self.assertIsNone(self.tool.zone_at(P(33, 28)), "innanför hörnet")
+        self.tool.clear()
+        self.assertIsNone(self.tool.zone_at(P(37.5, 32.5)), "bara en markerad text har en rotationszon")
+
+    def test_the_text_of_a_use_can_be_both_reshaped_and_rotated(self):
+        self.drag((25, 50), (25, 50))  # användningens text (20-30, 45-55)
+        self.assertEqual(self.tool.zone_at(QgsPointXY(30, 55)), "resize", "hörnet omformar")
+        self.assertEqual(self.tool.zone_at(QgsPointXY(32.5, 57.5)), "rotate")
+
+    def test_dragging_in_the_zone_rotates_the_text_around_its_middle(self):
+        start = (37.5, 32.5)
+        import math
+        first = math.degrees(math.atan2(start[1] - 25, start[0] - 25))
+        self.drag(start, self.around((25, 25), first + 90, 15))  # ett kvarts varv moturs
+        x, y, w, rot = self.values()
+        self.assertAlmostEqual(rot, 270.0, places=6, msg="lagras medurs: 90 grader moturs är 270 medurs")
+        self.assertAlmostEqual(x, 25.0)
+        self.assertAlmostEqual(y, 25.0, msg="texten fästs där den är och roterar runt sin mitt")
+        self.assertIsNone(w, "bredden ändras inte")
+
+    def test_a_clockwise_turn_is_stored_as_the_same_number_of_degrees(self):
+        import math
+        start = (37.5, 32.5)
+        first = math.degrees(math.atan2(start[1] - 25, start[0] - 25))
+        self.drag(start, self.around((25, 25), first - 40, 15))
+        self.assertAlmostEqual(self.values()[3], 40.0, places=6)
+
+    def test_shift_locks_the_angle_to_steps_of_15_degrees(self):
+        import math
+        start = (37.5, 32.5)
+        first = math.degrees(math.atan2(start[1] - 25, start[0] - 25))
+        self.drag(start, self.around((25, 25), first + 37, 15), shift=True)  # 37 grader moturs -> 30 grader
+        self.assertAlmostEqual(self.values()[3], 330.0, places=6)
+
+    def test_the_selection_frame_is_turned_with_the_text_and_follows_it(self):
+        import math
+        start = (37.5, 32.5)
+        first = math.degrees(math.atan2(start[1] - 25, start[0] - 25))
+        self.drag(start, self.around((25, 25), first + 90, 15))
+        (label,) = self.tool.selected
+        self.assertAlmostEqual(label.angle, 90.0, places=6)
+        box = self.tool._marks.asGeometry().boundingBox()
+        self.assertAlmostEqual(box.width(), 10.0, places=6, msg="20 x 10 vriden ett kvarts varv: 10 x 20")
+        self.assertAlmostEqual(box.height(), 20.0, places=6)
+        self.assertAlmostEqual(box.center().x(), 25.0)
+        self.assertAlmostEqual(box.center().y(), 25.0)
+
+    def test_a_click_in_the_zone_without_dragging_changes_nothing_and_keeps_the_selection(self):
+        self.drag((37.5, 32.5), (37.5, 32.5))
+        self.assertEqual(self.values(), (None, None, None, None))
+        self.assertEqual([l.key for l in self.tool.selected], [self.prop_label.key])
+
+    def test_rotating_needs_an_edit_session(self):
+        self.controller.stop_editing(save=False)
+        self.reports.clear()
+        self.assertFalse(self.tool.rotate_label(self.prop_label, 45.0))
+        self.assertTrue(self.reports and self.reports[-1][1])
+
+    def test_delete_makes_a_rotated_text_horizontal_and_automatic_again(self):
+        self.tool.rotate_label(self.prop_label, 45.0)
+        self.assertIsNotNone(self.values()[3])
+        self.tool.reset_selected()
+        self.assertEqual(self.values(), (None, None, None, None))
+
+    def test_a_rotated_text_can_still_be_moved(self):
+        self.tool.rotate_label(self.prop_label, 45.0)
+        self.drag((25, 25), (35, 35))
+        x, y, _, rot = self.values()
+        self.assertAlmostEqual(x, 35.0)
+        self.assertAlmostEqual(y, 35.0)
+        self.assertAlmostEqual(rot, 315.0, msg="vinkeln behålls när den flyttas")
+        self.assertAlmostEqual(self.tool.selected[0].angle, 45.0)
+
+    def test_a_corner_still_reshapes_the_text_box_of_a_turned_text(self):
+        turned = self.LabelRef("egenskap_yta", self.prop.id(), QgsRectangle(15, 20, 35, 30), 90.0)
+        self.labels[-1] = turned
+        self.tool.selected = [turned]
+        self.tool._show_selection()
+        # ett kvarts varv moturs om (25, 25): hörnet (35, 30) hamnar i (20, 35) och det motsatta (15, 20) i (30, 15)
+        self.drag((20, 35), (18, 40))
+        x, y, w, rot = self.values()
+        self.assertAlmostEqual(w, 25.0, msg="bredden mäts längs den vridna texten")
+        self.assertAlmostEqual(x, 24.0)
+        self.assertAlmostEqual(y, 27.5)
+        self.assertIsNone(rot, "reshapen ändrar inte vinkeln")
+        self.assertEqual(self.tool.selected[0].angle, 90.0, "och ramen är fortfarande vriden")
+
+    def test_the_cursor_is_a_rotation_arrow_in_the_zone_a_diagonal_arrow_on_the_corner_and_the_hand_elsewhere(self):
+        P = QgsPointXY
+        self.tool.update_cursor(P(37.5, 32.5))
+        self.assertEqual(self.tool.current_cursor.shape(), Qt.CursorShape.BitmapCursor, "egen rotationspil")
+        self.assertFalse(self.tool.current_cursor.pixmap().isNull())
+        self.tool.update_cursor(P(35, 30))
+        self.assertEqual(self.tool.current_cursor.shape(), Qt.CursorShape.SizeBDiagCursor, "övre högra hörnet: /")
+        self.tool.update_cursor(P(35, 20))
+        self.assertEqual(self.tool.current_cursor.shape(), Qt.CursorShape.SizeFDiagCursor, "nedre högra hörnet: \\")
+        self.tool.update_cursor(P(60, 60))
+        self.assertEqual(self.tool.current_cursor.shape(), Qt.CursorShape.PointingHandCursor)
+
+    def test_the_rotation_arrow_is_a_thin_line_and_not_a_filled_blob(self):
+        image = self.tool._rotate_cursor.pixmap().toImage()
+        size = image.width()
+        inked = sum(1 for x in range(size) for y in range(size) if image.pixelColor(x, y).alpha() > 0)
+        self.assertEqual(image.pixelColor(size // 2, size // 2).alpha(), 0, "bågens mitt är tom (inte en fylld klump)")
+        self.assertLess(inked, size * size * 0.4, "markören täcker mindre än 40 % av sin ruta")
+
+    def test_a_diagonal_cursor_turns_with_a_text_turned_a_quarter(self):
+        turned = self.LabelRef("egenskap_yta", self.prop.id(), QgsRectangle(15, 20, 35, 30), 90.0)
+        self.tool.selected = [turned]
+        self.tool.update_cursor(QgsPointXY(20, 35))  # det som var övre högra hörnet
+        self.assertEqual(self.tool.current_cursor.shape(), Qt.CursorShape.SizeFDiagCursor)
+
+    def test_a_rotated_text_from_the_map_is_read_as_its_real_box_and_angle(self):
+        self.layer.changeAttributeValue(self.prop.id(), self.layer.fields().indexOf("label_rot"), 30.0)
+        position = SimpleNamespace(layerID=self.layer.id(), featureId=self.prop.id(), isUnplaced=False,
+                                   labelRect=QgsRectangle(30.27, 36.83, 69.64, 63.03), width=42.0, height=6.0)
+        (found,) = self.tool._all([position])
+        self.assertAlmostEqual(found.rect.width(), 42.0)
+        self.assertAlmostEqual(found.rect.height(), 6.0)
+        self.assertAlmostEqual(found.rect.center().x(), 49.955, places=3)
+        self.assertAlmostEqual(found.angle, -30.0, msg="30 grader medurs är -30 moturs")
+        flat = SimpleNamespace(layerID=self.layer.id(), featureId=self.prop.id(), isUnplaced=False,
+                               labelRect=QgsRectangle(0, 0, 10, 5))
+        self.layer.changeAttributeValue(self.prop.id(), self.layer.fields().indexOf("label_rot"), None)
+        (unturned,) = self.tool._all([flat])
+        self.assertEqual((unturned.angle, unturned.rect.width()), (0.0, 10.0))
 
 
 class ToolBarLabelTests(GuiCase):

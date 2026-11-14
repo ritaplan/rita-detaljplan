@@ -2,7 +2,28 @@
 
 Formatet följer [Keep a Changelog](https://keepachangelog.com/sv/1.1.0/), versionsnumren [Semantic Versioning](https://semver.org/lang/sv/).
 
-## [Kommande] – topologikontrollen: tystare, tydligare och med täckning och överlapp
+## [0.1.86] – säkrare databaslösenord, roterbar text, och topologikontrollen: tystare, tydligare och med täckning och överlapp
+
+- **Säkerhet: databaslösenordet sparas inte längre i projektfilen.** Lagrens adress innehöll användarnamn och lösenord i
+  klartext (`uri.uri(True)`) och sparades i .qgz-filen, så alla som fick filen kunde läsa lösenordet. Nu innehåller adressen
+  inget lösenord. En hänvisning till QGIS krypterade inloggning (`authcfg`) står kvar, och ett lösenord som anslutningen
+  sparat lämnas bara till QGIS inloggningscache i minnet. Öppnas ett projekt i ett nytt QGIS kan QGIS fråga efter
+  lösenordet en gång. **Projektfiler som sparats av äldre versioner har fortfarande lösenordet i klartext:** spara om
+  dem med den här versionen och byt lösenord på databaskontot. Fil för fil: `core/storage.py` (`layer_address`).
+- **Textrutan på en användningstext går att omforma** (förut bara egenskapstexter): dra i ett hörn. Texten radbryts då efter
+  rutans bredd, och bryts inte alls så länge rutan inte omformats. Rotationsmarkören ser nu ut som en vanlig rotationsikon
+  (en cirkelbåge med en pilspets) i stället för en klump.
+- **Texten (planbestämmelserna) kan roteras med textverktyget.** Håll musen strax utanför ett hörn på en markerad text
+  (användning eller egenskapsyta): markören blir en rotationspil, och dra för att vrida texten runt sin mitt. Skift låser
+  vinkeln till steg om 15 grader. Själva hörnet omformar fortfarande textrutan, också på en roterad text. En roterad text
+  ligger kvar där den är, går att flytta, och Delete gör den vågrät igen. Vinkeln sparas i det nya fältet `label_rot`
+  (grader medurs). **Schemaversion 12:** äldre planer uppgraderas när de öppnas (GeoPackage direkt; en plan i ett delat
+  PostGIS-schema av den första som öppnar den med den här versionen, och som får ändra tabellerna). En plan som uppgraderats
+  går inte att öppna med en äldre version av pluginet. Fil för fil: `core/model.py`, `core/geopackage.py`,
+  `core/storage.py`, `core/symbology.py`, `controller.py` (`rotate_label`), `gui/label_tool.py`.
+- **Topologikontrollens panel öppnas tajt:** bara cirka 93 bildpunkter hög i stället för 250. Knapparna ligger i ett rutnät om
+  tre rader med sin naturliga storlek, listan är låg från början och växer när panelen dras högre, och resultatraden syns
+  bara när den har något att säga.
 
 - **Felen förhindras när man ritar** (orsaken till de tomma ytorna): en yta som klickats ut med två punkter och den sista
   två gånger, eller med tre punkter på en rät linje, hade area 0 men accepterades och sparades. Den avvisas nu direkt,

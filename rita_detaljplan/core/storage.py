@@ -16,7 +16,7 @@ import re
 from pathlib import Path
 from typing import Optional
 
-from qgis.core import Qgis, QgsDataSourceUri, QgsProviderRegistry, QgsVectorLayer
+from qgis.core import Qgis, QgsCredentials, QgsDataSourceUri, QgsProviderRegistry, QgsVectorLayer
 
 from . import geopackage, model
 
@@ -136,8 +136,8 @@ def postgis_upgrade(schema: str, version: int, epsg: int) -> list[str]:
     if version < 5:
         for layer_def in old_area_layers:
             for field in model.LABEL_FIELDS:
-                if field.name == "label_w":
-                    continue  # kommer med schema 7
+                if field.name in ("label_w", "label_rot"):
+                    continue  # kommer med schema 7 respektive 12
                 statements.append(f"ALTER TABLE {quote(schema)}.{quote(layer_def.name)} "
                                   f"ADD COLUMN IF NOT EXISTS {_column(field)}")
     if version < 6:
@@ -159,12 +159,31 @@ def postgis_upgrade(schema: str, version: int, epsg: int) -> list[str]:
         for field in model.HEIGHT_FIELDS:
             statements.append(f"ALTER TABLE {quote(schema)}.{quote(model.BESTAMMELSE.name)} "
                               f"ADD COLUMN IF NOT EXISTS {_column(field)}")
+    if version < 12:  # textens vinkel på alla ytlager (inklusive egenskapspunkterna)
+        rotation = next(field for field in model.LABEL_FIELDS if field.name == "label_rot")
+        for layer_def in model.AREA_LAYERS:
+            statements.append(f"ALTER TABLE {quote(schema)}.{quote(layer_def.name)} "
+                              f"ADD COLUMN IF NOT EXISTS {_column(rotation)}")
     statements.append(f"UPDATE {quote(schema)}.{quote(SCHEMA_TABLE)} SET \"value\" = "
                       f"{literal(str(model.SCHEMA_VERSION))} WHERE \"key\" = 'schema_version'")
     return statements
 
 
 # -- lagringssätt ---------------------------------------------------------------------------
+def layer_address(uri: QgsDataSourceUri) -> str:
+    """Lagrets adress, utan lösenord. Adressen sparas i projektfilen, så ett lösenord får aldrig stå i den: det skulle ligga
+    i klartext för alla som får filen. En inloggningskonfiguration (``authcfg``) står kvar som en hänvisning, men skrivs
+    inte ut som användarnamn och lösenord. Ett lösenord som anslutningen har sparat lämnas i stället till QGIS
+    inloggningscache (bara i minnet, bara medan QGIS är igång), som lagren frågar innan de ber om lösenordet, så att man
+    inte behöver skriva det igen. Öppnas projektet i ett nytt QGIS frågar QGIS en gång efter lösenordet, som vanligt."""
+    user, password = uri.username(), uri.password()
+    uri.setPassword("")
+    if password:
+        # nyckeln är adressen utan lösenord, så som QGIS letar upp den när lagret ansluter
+        QgsCredentials.instance().put(uri.connectionInfo(False), user, password)
+    return uri.uri(False)
+
+
 class Storage:
     """Där en plans tabeller finns."""
     kind = ""
@@ -289,7 +308,7 @@ class PostgisStorage(Storage):
             if epsg:
                 uri.setSrid(str(epsg))
             uri.setWkbType(_WKB[layer_def.geometry])
-        return uri.uri(True)
+        return layer_address(uri)
 
     def _open(self, uri: str, alias: str) -> QgsVectorLayer:  # särskilt för att kunna bytas ut i tester
         # Ingen standardstil ur databasen: pluginet sätter egen symbologi, och varje lager sparar då frågor över nätet.

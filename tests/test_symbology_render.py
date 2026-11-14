@@ -276,9 +276,75 @@ class BoundaryExpressionTests(RenderCase):
 
 
 @unittest.skipUnless(HAVE_QGIS, "QGIS Python behövs")
+class RotationRenderTests(RenderCase):
+    """Steg för steg från fältet ``label_rot`` till texten på kartan: grader medurs, runt textens mitt."""
+
+    def labels_with(self, rotation):
+        self.add("detaljplan", PLAN)
+        self.add("anvandning_yta", PLAN, beteckning="BCDEFGH", label_x=50.0, label_y=50.0, label_rot=rotation)
+        restyle(QgsProject.instance(), 1000)
+        settings = QgsMapSettings()
+        settings.setLayers([self.layers["anvandning_yta"]])
+        settings.setDestinationCrs(QgsCoordinateReferenceSystem("EPSG:3006"))
+        settings.setExtent(QgsRectangle(0, 0, 100, 100))
+        settings.setOutputSize(QSize(600, 600))
+        settings.setBackgroundColor(QColor(255, 255, 255))
+        job = QgsMapRendererParallelJob(settings)
+        loop = QEventLoop()
+        job.finished.connect(loop.quit)
+        QTimer.singleShot(20000, loop.quit)
+        job.start()
+        loop.exec()
+        self.assertFalse(job.isActive(), "renderingen blev inte klar")
+        results = job.takeLabelingResults()
+        self.assertIsNotNone(results)
+        return results.allLabels()
+
+    @staticmethod
+    def direction(position):
+        """Textens riktning i grader moturs (matematiskt), ur kanten mellan dess två första hörn."""
+        import math
+        a, b = position.cornerPoints[0], position.cornerPoints[1]
+        return math.degrees(math.atan2(b.y() - a.y(), b.x() - a.x()))
+
+    def test_a_text_without_an_angle_is_horizontal(self):
+        (label,) = self.labels_with(None)
+        self.assertAlmostEqual(self.direction(label), 0.0, delta=0.5)
+
+    def test_a_positive_angle_turns_the_text_clockwise_around_its_middle(self):
+        (flat,) = self.labels_with(None)
+        for table in ("detaljplan", "anvandning_yta"):
+            self.layers[table].rollBack()
+            self.layers[table].startEditing()
+        (turned,) = self.labels_with(30.0)
+        self.assertAlmostEqual(self.direction(turned), -30.0, delta=0.5, msg="medurs ser ut som minus i kartans koordinater")
+        self.assertAlmostEqual(turned.width, flat.width, delta=0.01, msg="textens verkliga storlek ändras inte")
+        self.assertAlmostEqual(turned.height, flat.height, delta=0.01)
+        self.assertGreater(turned.labelRect.height(), 3 * flat.labelRect.height(), "den omslutande rutan blir högre")
+        self.assertAlmostEqual(turned.labelRect.center().x(), flat.labelRect.center().x(), delta=0.1,
+                               msg="den vrids runt sin mitt")
+        self.assertAlmostEqual(turned.labelRect.center().y(), flat.labelRect.center().y(), delta=0.1)
+
+
+@unittest.skipUnless(HAVE_QGIS, "QGIS Python behövs")
 class LabelTests(RenderCase):
     def settings(self, table):
         return self.layers[table].labeling().settings()
+
+    def test_the_texts_of_areas_have_a_rotation_from_the_label_rot_field_but_lines_and_points_do_not(self):
+        from qgis.core import QgsPalLayerSettings
+        rotation = QgsPalLayerSettings.Property.LabelRotation
+        for table in ("anvandning_yta", "egenskap_yta"):
+            labeling = self.layers[table].labeling()  # mellanleden i variabler: temporära PyQGIS-objekt kraschar
+            settings = labeling.settings()
+            props = settings.dataDefinedProperties()
+            self.assertTrue(props.isActive(rotation), table)
+            self.assertEqual(props.property(rotation).field(), "label_rot")
+        for table in ("egenskap_linje", "egenskap_punkt"):
+            labeling = self.layers[table].labeling()
+            settings = labeling.settings()
+            props = settings.dataDefinedProperties()
+            self.assertFalse(props.isActive(rotation), table)
 
     def test_digits_in_designations_are_shown_as_subscripts(self):
         from qgis.core import QgsExpression, QgsExpressionContext, QgsExpressionContextUtils
@@ -317,8 +383,28 @@ class LabelTests(RenderCase):
         self.assertIn('"label_w"', expression, "en omformad textruta styr bredden")
         self.assertIn("bounds_width($geometry)", expression, "annars ytans bredd")
         self.assertTrue(prop.useMaxLineLengthForAutoWrap)
-        self.assertFalse(self.settings("anvandning_yta").dataDefinedProperties()
-                         .isActive(QgsPalLayerSettings.Property.AutoWrapLength), "användningens text radbryts inte")
+        use = self.settings("anvandning_yta").dataDefinedProperties().property(QgsPalLayerSettings.Property.AutoWrapLength)
+        self.assertTrue(use.isActive(), "användningens text radbryts om användaren omformat textrutan")
+        self.assertIn('"label_w"', use.expressionString())
+        self.assertNotIn("bounds_width", use.expressionString(), "men aldrig efter ytans bredd")
+
+    def test_a_use_label_wraps_only_when_the_text_box_has_been_reshaped(self):
+        plan = "MultiPolygon(((0 0, 100 0, 100 60, 0 60, 0 0)))"
+        self.add("detaljplan", plan)
+        feature = self.add("anvandning_yta", plan, bestammelser=1, farg="Gul", beteckning="ABCDE FGHIJ")
+        layers = self.in_map_order(["anvandning_yta"])
+
+        def size():
+            image = self.render(layers, extent=(-5, -5, 105, 65), size=440)
+            dark = [(x, y) for x in range(440) for y in range(440) if is_dark(image.pixelColor(x, y))]
+            return (max(x for x, _ in dark) - min(x for x, _ in dark), max(y for _, y in dark) - min(y for _, y in dark))
+
+        width, height = size()
+        layer = self.layers["anvandning_yta"]
+        layer.changeAttributeValue(feature.id(), layer.fields().indexOf("label_w"), 8.0)
+        narrow_width, narrow_height = size()
+        self.assertLess(narrow_width, width, "en smal textruta ger smalare text")
+        self.assertGreater(narrow_height, height, "och fler rader")
 
     def test_a_narrow_area_wraps_a_long_designation_onto_several_lines(self):
         from qgis.core import QgsExpression, QgsExpressionContext, QgsExpressionContextUtils, QgsPalLayerSettings
