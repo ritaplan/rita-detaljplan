@@ -944,6 +944,87 @@ class PreventionTests(TopologyCase):
         self.assertFalse(self.said("utan utbredning"))
 
 
+# en fyllning av det som saknade användning: den stora delen, en 3 cm bred gång längs ett glapp (ytan hugger runt U1)
+# och en sliver under en lutande kant. Så såg ytan ut när "Gör valda ändringar" inte gjorde något.
+FILL_WITH_SLIVERS = ("MultiPolygon(((0 0, 0 50, 0 100, 50 100, 50 80, 0.03 80, 0.03 0, 0 0)),"
+                     "((0.03 0, 40 0, 40 0.0024, 0.03 0)))")
+
+
+@unittest.skipUnless(HAVE_QGIS, "QGIS Python behövs")
+class RepairTests(unittest.TestCase):
+    """En ändring som gör en yta ogiltig för att en smal remsa kollapsar repareras i stället för att hoppas över."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.app = get_app()
+
+    def test_a_sliver_part_whose_apex_is_moved_onto_its_base_vanishes_instead_of_blocking_the_change(self):
+        shape = geom(FILL_WITH_SLIVERS)
+        change = t.Change(t.SNAP_VERTEX, "anvandning_yta", 5, (40.0, 0.0024), (40.0, 0.0), 0.0024, "anvandning_yta")
+        fixed, done, skipped = t.apply_to_geometry(shape, [change])
+        self.assertEqual((done, skipped), (1, 0))
+        self.assertTrue(fixed.isGeosValid())
+        self.assertEqual(len(fixed.asGeometryCollection()), 1, "remsan är borta, huvudytan är kvar")
+        self.assertAlmostEqual(fixed.area(), shape.area() - 0.048, delta=0.01)
+
+    def test_a_narrow_corridor_whose_edge_is_moved_onto_the_other_is_repaired(self):
+        shape = geom(FILL_WITH_SLIVERS)
+        change = t.Change(t.SNAP_VERTEX, "anvandning_yta", 5, (0.03, 80.0), (0.0, 80.0), 0.03, "anvandning_yta")
+        fixed, done, skipped = t.apply_to_geometry(shape, [change])
+        self.assertEqual((done, skipped), (1, 0), "förut: ogiltig gräns, hoppades över")
+        self.assertTrue(fixed.isGeosValid())
+        self.assertLess(abs(fixed.area() - shape.area()), 0.03 * shape.length(), "ytan ändras obetydligt")
+
+    def test_a_repair_that_changes_the_area_a_lot_is_still_refused(self):
+        bow = poly((0, 0), (100, 0), (100, 100), (0, 100))
+        wild = t.Change(t.SNAP_VERTEX, "anvandning_yta", 1, (100.0, 100.0), (0.0, 0.0), 0.001, "detaljplan")  # hörnet hamnar i andra hörnet
+        fixed, done, skipped = t.apply_to_geometry(bow, [wild])
+        self.assertEqual((done, skipped), (0, 1))
+        self.assertAlmostEqual(fixed.area(), bow.area())
+
+    def test_uncovered_leaves_out_what_the_rules_count_as_covered(self):
+        from rita_detaljplan.core import rules
+        covered = geom("MultiPolygon(((0 0, 50 0, 50 100, 0 100, 0 0)),((50.03 0, 100 0, 100 80, 50.03 80, 50.03 0)))")
+        rest = rules.uncovered(PLAN_G, covered)
+        self.assertAlmostEqual(rest.area(), 1000.0, delta=0.5, msg="bara hörnet som verkligen saknar användning")
+        self.assertEqual(len(rest.asGeometryCollection()), 1)
+        self.assertAlmostEqual(rules.remainder(PLAN_G, covered).area(), 1002.4, delta=0.1, msg="remainder tar med gången")
+        self.assertTrue(rules.uncovered(PLAN_G, geom("MultiPolygon(((0 0, 100 0, 100 99.95, 0 99.95, 0 0)))")).isEmpty(),
+                        "en remsa på 5 cm är täckt enligt reglerna")
+
+
+class FillTests(TopologyCase):
+    """Fyll återstoden tar inte med remsor som reglerna räknar som täckta, så att Topologikontroll inte får något att
+    kollapsa."""
+
+    def setUp(self):
+        super().setUp()
+        self.layers["anvandning_yta"].selectAll()
+        self.layers["anvandning_yta"].deleteSelectedFeatures()
+        pump()
+        self.raw("anvandning_yta", "MultiPolygon(((0 0, 50 0, 50 50, 50 100, 0 100, 0 0)))")
+        self.raw("anvandning_yta", "MultiPolygon(((50.03 0, 100.004 0.003, 100 80, 50.03 80, 50.03 0)))")
+
+    def test_filling_takes_only_what_really_lacks_a_use(self):
+        self.assertAlmostEqual(self.controller.missing_use_area(), 1000.0, delta=0.5)
+        result = self.controller.fill_use()
+        self.assertTrue(result.ok, result.message)
+        filled = self.layers["anvandning_yta"].getFeature(result.fid).geometry()
+        self.assertAlmostEqual(filled.area(), 1000.0, delta=0.5, msg="inte 1 002,4: gången och slivern är borta")
+        self.assertEqual(len(filled.asGeometryCollection()), 1, "en enda del")
+        self.assertEqual(self.controller.missing_use_area(), 0.0)
+
+    def test_topology_check_after_filling_can_be_applied_without_anything_skipped(self):
+        self.assertTrue(self.controller.fill_use().ok)
+        pump()
+        changes = self.controller.topology_changes()
+        done, skipped = self.controller.apply_topology(changes)
+        self.assertEqual(skipped, 0, "inget hoppas över eftersom det inte blev ogiltigt")
+        self.assertEqual(done, len(changes))
+        for feature in self.layers["anvandning_yta"].getFeatures():
+            self.assertTrue(feature.geometry().isGeosValid())
+
+
 class DefaultToleranceTests(unittest.TestCase):
     """Förvalet är reglernas 10 cm, och avståndet skrivs så att det går att läsa."""
 

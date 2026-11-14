@@ -585,7 +585,7 @@ class PlanController(QObject):
         if plan_layer is None:
             return 0.0
         uses = rules.use_geometry(use_layer) if use_layer is not None else None
-        rest = rules.remainder(rules.plan_geometry(plan_layer), uses)
+        rest = rules.uncovered(rules.plan_geometry(plan_layer), uses)
         return rest.area() if not rest.isEmpty() and rest.area() > rules.MIN_OVERLAP else 0.0
 
     def apply_topology(self, changes: list[topology.Change]) -> tuple[int, int]:
@@ -732,7 +732,7 @@ class PlanController(QObject):
         ok, reason = self.can_draw(cat.USE_LAYER)
         if not ok:
             return FillResult(False, reason)
-        rest = rules.remainder(rules.plan_geometry(self.layer(PLAN_LAYER)), rules.use_geometry(self.layer(cat.USE_LAYER)))
+        rest = rules.uncovered(rules.plan_geometry(self.layer(PLAN_LAYER)), rules.use_geometry(self.layer(cat.USE_LAYER)))
         if rest.isEmpty():
             return FillResult(False, "Hela planområdet har redan en användning: det finns inget att fylla.")
         fid = self._add_area(cat.USE_LAYER, rest)
@@ -746,7 +746,7 @@ class PlanController(QObject):
         ok, reason = self.can_draw(cat.USE_LAYER)
         if not ok:
             return FillResult(False, reason)
-        rest = rules.remainder(rules.plan_geometry(self.layer(PLAN_LAYER)), rules.use_geometry(self.layer(cat.USE_LAYER)))
+        rest = rules.uncovered(rules.plan_geometry(self.layer(PLAN_LAYER)), rules.use_geometry(self.layer(cat.USE_LAYER)))
         if rest.isEmpty():
             return FillResult(False, "Hela planområdet har redan en användning: det finns inget att fylla.")
         part = rules.part_at(rest, point)

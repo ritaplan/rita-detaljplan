@@ -355,12 +355,33 @@ def apply_to_geometry(geometry: QgsGeometry, changes: list[Change]) -> tuple[Qgs
             target = QgsPointXY(*change.new)
             _, at, _, _, distance = _closest_vertex(trial, QgsPointXY(*change.old))
             ok = at >= 0 and distance <= 1e-4 and trial.moveVertex(target.x(), target.y(), at)
+        if ok and not trial.isEmpty() and not trial.isGeosValid():
+            trial = _repaired(current, trial, max(change.distance, NOISE)) or trial
         if ok and trial.isGeosValid() and not trial.isEmpty():
             current = trial
             done += 1
         else:
             skipped += 1
     return current, done, skipped
+
+
+def _repaired(before: QgsGeometry, after: QgsGeometry, distance: float) -> Optional[QgsGeometry]:
+    """En ändring kan göra en yta ogiltig för att en smal remsa eller gång i den kollapsar (en 3 cm bred gång vars ena
+    kant flyttas till den andra, eller en spets vars topp läggs på basen). Då repareras ytan och det som blev en linje
+    försvinner, men bara om ytan ändras obetydligt: högst ``distance`` gånger omkretsen (varje brytpunkt flyttas högst så
+    långt). Annars returneras None och ändringen hoppas över som ogiltig."""
+    fixed = after.makeValid()
+    if fixed is None or fixed.isNull() or fixed.isEmpty():
+        return None
+    parts = [p for p in fixed.asGeometryCollection() if p.type() == Qgis.GeometryType.Polygon and not p.isEmpty()
+             and not is_degenerate(p)]
+    if not parts:
+        return None
+    result = QgsGeometry.collectGeometry(parts)
+    result.convertToMultiType()
+    if not result.isGeosValid() or abs(result.area() - before.area()) > distance * max(before.length(), 1.0):
+        return None
+    return result
 
 
 def _closest_vertex(geometry: QgsGeometry, point: QgsPointXY):

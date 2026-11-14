@@ -9,6 +9,12 @@ Formatet följer [Keep a Changelog](https://keepachangelog.com/sv/1.1.0/), versi
   med ett meddelande (användning, egenskap och planområde). Brus upp till 1 cm (samma gräns som *Rättas automatiskt*)
   i en yta man ritar eller ändrar rättas tyst mot planområdets, användningarnas och egenskapernas brytpunkter och gränser
   (`topology.tidy`; bara den egna ytan ändras). Vid spara tas ytor utan utbredning bort, med ett meddelande.
+- **Rättat: "Gör valda ändringar" gjorde ingenting efter "Fyll återstoden".** Fyllningen tog med remsor som reglerna räknar
+  som täckta (en 3 cm bred gång längs ett glapp, en sliver under en kant). Topologikontrollen föreslog sedan att flytta
+  fyllningens brytpunkter, vilket kollapsade remsorna och gav en ogiltig gräns, så ändringen hoppades över. Nu fyller
+  *Fyll återstoden* (och fyllverktyget och måttet på saknad användning) bara det som verkligen saknar täckning enligt
+  reglerna (`rules.uncovered`), och en ändring som gör en yta ogiltig för att en smal remsa kollapsar repareras i stället
+  för att hoppas över, så länge ytan bara ändras obetydligt (högst avståndet gånger omkretsen).
 - **Smalare skräp hittas också:** en yta räknas som utan utbredning även om den är en remsa smalare än 1 mm i snitt
   (area över gränsen men ändå en linje), och en saknad del av planområdet som ryms inom reglernas 10 cm tolerans
   (en remsa under 10 cm) får ingen egen rad "0,0 m² saknar användning" bredvid det som verkligen saknas.

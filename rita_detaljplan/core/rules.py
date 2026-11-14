@@ -271,6 +271,27 @@ def remainder(area: QgsGeometry | None, covered: QgsGeometry | None) -> QgsGeome
     return _only(rest, Qgis.GeometryType.Polygon)
 
 
+def uncovered(area: QgsGeometry | None, covered: QgsGeometry | None, tolerance: float = TOLERANCE) -> QgsGeometry:
+    """Som ``remainder``, men bara det som verkligen saknar täckning enligt reglerna (som valideringen av DP-0002):
+    delar som ryms inom ``tolerance`` från det täckta (en remsa under 10 cm) räknas som täckta, och smala gångar som
+    hänger ihop med en större del tas bort. Det som är kvar behåller sina riktiga gränser och hörn. Används när något ska
+    fyllas: en fyllning ska inte få en 3 cm bred gång längs ett glapp eller en sliver som ändå räknas som täckt."""
+    rest = remainder(area, covered)
+    if rest.isEmpty():
+        return rest
+    padded = covered.buffer(tolerance, 4) if covered is not None and not covered.isEmpty() else None
+    sharp = dict(segments=4, endCapStyle=Qgis.EndCapStyle.Flat, joinStyle=Qgis.JoinStyle.Miter, miterLimit=5.0)
+    kept = []
+    for part in rest.asGeometryCollection():
+        if padded is not None and part.difference(padded).area() <= MIN_OVERLAP:
+            continue  # ryms helt inom toleransen: täckt
+        opened = part.buffer(-tolerance / 2, **sharp).buffer(tolerance / 2, **sharp)  # tar bort gångar smalare än toleransen
+        if opened.isNull() or opened.isEmpty():
+            continue
+        kept.append(part.intersection(opened))
+    return _only(QgsGeometry.collectGeometry(kept), Qgis.GeometryType.Polygon) if kept else QgsGeometry()
+
+
 def part_at(geometry: QgsGeometry | None, point: QgsPointXY) -> QgsGeometry:
     """Den sammanhängande delen av en (eventuellt multi-) yta som innehåller punkten. Tom geometri om ingen del gör
     det. Används av "fyll resten"-verktygen så att bara den yta man klickar i fylls, inte hela resten på en gång."""
