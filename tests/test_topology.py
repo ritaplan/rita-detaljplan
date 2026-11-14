@@ -186,6 +186,16 @@ class TopologyCase(GuiCase):
     def area(self, table="anvandning_yta"):
         return sum(f.geometry().area() for f in self.layers[table].getFeatures())
 
+    def raw(self, table, wkt):
+        """Lägger in en yta direkt i lagret, utan styrenhetens kontroller (beskärning, avvisning, rättning)."""
+        from qgis.core import QgsFeature
+        layer = self.layers[table]
+        feature = QgsFeature(layer.fields())
+        feature.setGeometry(QgsGeometry.fromWkt(wkt))
+        self.controller._modify(lambda: layer.addFeature(feature))
+        pump()
+        return feature
+
 
 class ControllerTests(TopologyCase):
     def test_missing_use_area_reports_the_gap_between_the_uses(self):
@@ -652,16 +662,6 @@ class FindingsTests(TopologyCase):
         pump()
         self.assertEqual([f for f in self.controller.topology_findings() if "saknar egenskapsområde" in f.text], [])
 
-    def raw(self, table, wkt):
-        """Lägger in en yta direkt i lagret, utan styrenhetens beskärning mot planområdet och andra ytor."""
-        from qgis.core import QgsFeature
-        layer = self.layers[table]
-        feature = QgsFeature(layer.fields())
-        feature.setGeometry(QgsGeometry.fromWkt(wkt))
-        self.controller._modify(lambda: layer.addFeature(feature))
-        pump()
-        return feature
-
     def test_an_overlap_between_uses_is_a_finding(self):
         self.raw("anvandning_yta", "MultiPolygon(((40 0, 60 0, 60 100, 40 100, 40 0)))")
         found = [f for f in self.controller.topology_findings() if f.code == "DP-Krav-0013"]
@@ -685,9 +685,9 @@ class EmptyAreaTests(TopologyCase):
     """Ytor utan utbredning (area 0) är skräp efter en ritning: de ska hittas, inte föreslås flyttade, och kunna tas bort."""
 
     def add_spikes(self):
-        self.spike1 = self.draw("egenskap_yta", SPIKE)
-        self.spike2 = self.draw("egenskap_yta", "MultiPolygon(((60 10, 80 30, 80 30, 60 10)))")
-        pump()
+        # kan inte längre ritas (se PreventionTests), men kan finnas i planer som ritats med äldre versioner
+        self.spike1 = self.raw("egenskap_yta", SPIKE)
+        self.spike2 = self.raw("egenskap_yta", "MultiPolygon(((60 10, 80 30, 80 30, 60 10)))")
 
     def empties(self):
         return [f for f in self.controller.topology_findings() if f.kind == "tom"]
@@ -857,6 +857,84 @@ class PreviewTests(GuiCase):
         self.assertEqual(self.count(preview._old), 1)
         preview.show([])
         self.assertTrue(preview.is_empty())
+
+
+class PreventionTests(TopologyCase):
+    """Steg 4: felen förhindras när man ritar. Orsaken till spetsarna var att en yta som klickats ut med två punkter (den
+    sista två gånger) accepterades utan att dess utbredning kontrollerades."""
+
+    def said(self, text):
+        return any(text in message for message in [*self.errors, *self.warnings])
+
+    def test_a_polygon_clicked_out_with_two_points_and_the_last_twice_is_rejected(self):
+        before = self.layers["egenskap_yta"].featureCount()
+        self.assertIsNone(self.draw("egenskap_yta", "MultiPolygon(((10 10, 30 30, 30 30, 10 10)))"))
+        self.assertEqual(self.layers["egenskap_yta"].featureCount(), before, "ingenting blev kvar")
+        self.assertTrue(self.said("ingen utbredning"), self.errors)
+
+    def test_the_same_with_the_last_two_clicks_a_millimetre_apart_as_when_snapping_picks_two_candidates(self):
+        before = self.layers["egenskap_yta"].featureCount()
+        self.assertIsNone(self.draw("egenskap_yta", "MultiPolygon(((10 10, 30 30, 30.001 30, 10 10)))"))
+        self.assertEqual(self.layers["egenskap_yta"].featureCount(), before)
+
+    def test_three_points_on_a_straight_line_are_rejected_too(self):
+        self.assertIsNone(self.draw("egenskap_yta", "MultiPolygon(((10 10, 20 20, 30 30, 10 10)))"))
+
+    def test_uses_and_the_plan_area_are_checked_the_same_way(self):
+        uses, plans = self.layers["anvandning_yta"].featureCount(), self.layers["detaljplan"].featureCount()
+        self.assertIsNone(self.draw("anvandning_yta", "MultiPolygon(((10 10, 30 30, 30 30, 10 10)))"))
+        self.assertIsNone(self.draw("detaljplan", "MultiPolygon(((200 200, 230 230, 230 230, 200 200)))"))
+        self.assertEqual((self.layers["anvandning_yta"].featureCount(), self.layers["detaljplan"].featureCount()),
+                         (uses, plans))
+
+    def test_a_real_area_is_still_accepted_and_a_self_crossing_one_is_left_to_the_validation(self):
+        self.assertIsNotNone(self.draw("egenskap_yta", "MultiPolygon(((10 60, 30 60, 30 80, 10 80, 10 60)))"))
+        self.assertIsNotNone(self.draw("egenskap_yta", "MultiPolygon(((10 10, 40 40, 40 10, 10 40, 10 10)))"))
+
+    def test_a_corner_a_few_millimetres_from_another_corner_is_snapped_onto_it_when_drawn(self):
+        left = self.layers["anvandning_yta"].getFeature(self.left.id()).geometry().asWkt()
+        drawn = self.draw("egenskap_yta", "MultiPolygon(((10 10, 49.996 0.004, 40 40, 10 10)))")
+        points = [(p.x(), p.y()) for p in t.vertices(self.layers["egenskap_yta"].getFeature(drawn.id()).geometry())]
+        self.assertIn((50.0, 0.0), points, "4 mm från användningens hörn: flyttat dit")
+        self.assertNotIn((49.996, 0.004), points)
+        self.assertEqual(self.layers["anvandning_yta"].getFeature(self.left.id()).geometry().asWkt(), left,
+                         "det som redan finns ändras aldrig")
+
+    def test_a_corner_five_centimetres_away_is_left_alone(self):
+        drawn = self.draw("egenskap_yta", "MultiPolygon(((10 10, 49.95 0.05, 40 40, 10 10)))")
+        points = [(p.x(), p.y()) for p in t.vertices(self.layers["egenskap_yta"].getFeature(drawn.id()).geometry())]
+        self.assertIn((49.95, 0.05), points, "över en centimeter är en sak för Topologikontroll")
+
+    def test_a_new_use_is_snapped_to_the_plan_area_when_drawn(self):
+        self.layers["anvandning_yta"].selectAll()
+        self.layers["anvandning_yta"].deleteSelectedFeatures()
+        pump()
+        drawn = self.draw("anvandning_yta", "MultiPolygon(((0.003 0.002, 100 0, 100 100, 0 100, 0.003 0.002)))")
+        points = [(p.x(), p.y()) for p in t.vertices(self.layers["anvandning_yta"].getFeature(drawn.id()).geometry())]
+        self.assertIn((0.0, 0.0), points)
+        self.assertEqual(self.controller.topology_changes(), [], "inget brus kvar att rätta")
+
+    def test_moving_a_corner_to_a_few_millimetres_from_another_snaps_it_too(self):
+        drawn = self.draw("egenskap_yta", "MultiPolygon(((10 10, 49 5, 40 40, 10 10)))")
+        layer = self.layers["egenskap_yta"]
+        layer.changeGeometry(drawn.id(), QgsGeometry.fromWkt("MultiPolygon(((10 10, 49.997 0.003, 40 40, 10 10)))"))
+        pump()
+        points = [(p.x(), p.y()) for p in t.vertices(layer.getFeature(drawn.id()).geometry())]
+        self.assertIn((50.0, 0.0), points)
+
+    def test_saving_removes_areas_without_extent_and_says_so(self):
+        self.raw("egenskap_yta", SPIKE)
+        keep = self.draw("egenskap_yta", "MultiPolygon(((10 60, 30 60, 30 80, 10 80, 10 60)))")
+        self.assertEqual(self.controller.stop_editing(save=True), [])
+        pump()
+        remaining = [f.id() for f in self.layers["egenskap_yta"].getFeatures()]
+        self.assertEqual(len(remaining), 1, "bara den riktiga ytan sparades")
+        self.assertTrue(self.said("1 yta utan utbredning innan planen sparades"), self.warnings)
+        self.assertTrue(all(not t.is_degenerate(f.geometry()) for f in self.layers["egenskap_yta"].getFeatures()))
+
+    def test_saving_a_clean_plan_says_nothing_about_empty_areas(self):
+        self.assertEqual(self.controller.stop_editing(save=True), [])
+        self.assertFalse(self.said("utan utbredning"))
 
 
 class DefaultToleranceTests(unittest.TestCase):

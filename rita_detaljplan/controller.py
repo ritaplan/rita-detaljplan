@@ -267,6 +267,9 @@ class PlanController(QObject):
         """Avslutar redigeringen och sparar eller kastar ändringarna. Returnerar felmeddelanden (tom = klart)."""
         errors: list[str] = []
         if save:
+            swept = self.remove_empty_areas(start=False)  # skräp (area 0) ska aldrig sparas i planen
+            if swept:
+                self._warn(f"Tog bort {swept} {'yta' if swept == 1 else 'ytor'} utan utbredning innan planen sparades.")
             self._modify(lambda: assignments.remove_orphans(self.project))
             self._modify(lambda: assignments.fix_duplicate_labels(self.project))
         for table in reversed(EDIT_TABLES):
@@ -554,14 +557,15 @@ class PlanController(QObject):
         parts.append(f"nr {fid}")
         return ", ".join(parts)
 
-    def remove_empty_areas(self) -> int:
+    def remove_empty_areas(self, start: bool = True) -> int:
         """Tar bort ytor utan utbredning (area 0: spetsar och rester som en ritning lämnat efter sig) i användnings- och
         egenskapslagren, i redigeringsbufferten som ett ångra-steg per lager. Bestämmelser som hörde till dem städas bort
-        när redigeringen sparas. Returnerar antalet borttagna ytor."""
+        när redigeringen sparas. Lager som inte redigeras startas bara om ``start`` är sant (annars hoppas de över).
+        Returnerar antalet borttagna ytor."""
         removed = 0
         for table in (cat.USE_LAYER, "egenskap_yta"):
             layer = self.layer(table)
-            if layer is None:
+            if layer is None or (not layer.isEditable() and not start):
                 continue
             ids = [f.id() for f in layer.getFeatures() if topology.is_degenerate(f.geometry())]
             if not ids:
@@ -960,7 +964,13 @@ class PlanController(QObject):
         self._modify(lambda: layer.deleteFeature(fid))
         self._error(message)
 
+    EMPTY_MESSAGE = ("Ytan togs bort: den har ingen utbredning (alla brytpunkter ligger på en rät linje eller på samma "
+                     "ställe). Klicka ut minst tre brytpunkter som spänner upp en yta.")
+
     def _handle_plan(self, layer: QgsVectorLayer, feature):
+        if topology.is_degenerate(feature.geometry()):
+            self._reject(layer, feature.id(), self.EMPTY_MESSAGE)
+            return
         others = [f for f in layer.getFeatures() if f.id() != feature.id()]
         if not others:  # första planområdet: fråga efter planens uppgifter (namn, syfte, status …)
             if self._open_form is not None:
@@ -995,6 +1005,9 @@ class PlanController(QObject):
         return rules.use_geometry_in_conflict(layer, rows_, extent, exclude_fid=fid)
 
     def _handle_use(self, layer: QgsVectorLayer, feature):
+        if topology.is_degenerate(feature.geometry()):
+            self._reject(layer, feature.id(), self.EMPTY_MESSAGE)
+            return
         plan = rules.plan_geometry(self.layer(PLAN_LAYER))
         result = rules.constrain_use(feature.geometry(), plan, self._conflicting_uses(layer, feature.id()))
         if result.problems:
@@ -1004,6 +1017,25 @@ class PlanController(QObject):
             self._modify(lambda: layer.changeGeometry(feature.id(), result.geometry))
         for note in result.notes:
             self._warn(note)
+        self._tidy(layer, feature.id())
+
+    def _tidy(self, layer: QgsVectorLayer, fid: int) -> None:
+        """Rättar brus upp till en centimeter i en nyritad eller ändrad yta (se ``topology.tidy``): brytpunkter som ligger
+        så nära en annan brytpunkt eller gräns att ingen ser skillnaden flyttas dit, så att gränserna sammanfaller exakt.
+        Bara den här ytan ändras, och tyst: det är samma ändringar som topologikontrollen gör under "Rättas automatiskt"."""
+        table = table_of(layer)
+        feature = layer.getFeature(fid)
+        if table not in (cat.USE_LAYER, "egenskap_yta") or not feature.isValid():
+            return
+        others = [rules.plan_geometry(self.layer(PLAN_LAYER))] if self.layer(PLAN_LAYER) is not None else []
+        for name in (cat.USE_LAYER, "egenskap_yta"):
+            other_layer = self.layer(name)
+            if other_layer is None or (name == "egenskap_yta" and table == cat.USE_LAYER):
+                continue  # en användning anpassas till planområdet och andra användningar, inte till egenskaper
+            others += [f.geometry() for f in other_layer.getFeatures() if not (name == table and f.id() == fid)]
+        fixed, changes = topology.tidy(feature.geometry(), others)
+        if changes:
+            self._modify(lambda: layer.changeGeometry(fid, fixed))
 
     def _constrain_property(self, layer: QgsVectorLayer, fid: int, geometry: QgsGeometry) -> rules.Constrained:
         """Beskär en egenskap mot användningarna. Har den redan en användningsform (en bestämmelse) räknas bara
@@ -1029,6 +1061,9 @@ class PlanController(QObject):
         return result
 
     def _handle_property(self, layer: QgsVectorLayer, feature):
+        if topology.is_degenerate(feature.geometry()):  # en yta som klickats ut med två punkter (den sista två gånger)
+            self._reject(layer, feature.id(), self.EMPTY_MESSAGE)
+            return
         result = self._constrain_property(layer, feature.id(), feature.geometry())
         if result.problems:
             self._reject(layer, feature.id(), f"Egenskapen togs bort: {result.problems[0]}")
@@ -1037,6 +1072,7 @@ class PlanController(QObject):
             self._modify(lambda: layer.changeGeometry(feature.id(), result.geometry))
         for note in result.notes:
             self._warn(note)
+        self._tidy(layer, feature.id())
 
     # -- ändrad geometri --------------------------------------------------------------
     def _on_geometry_changed(self, layer: QgsVectorLayer, fid: int, geometry: QgsGeometry):
@@ -1117,6 +1153,7 @@ class PlanController(QObject):
             self._modify(lambda: layer.changeGeometry(fid, result.geometry))
             for note in result.notes:
                 self._warn(note)
+        self._tidy(layer, fid)
         if self.whole_use_mismatches(fid):
             self._warn("Användningsområdet har en egenskap som gäller hela området, men egenskapsytan har inte längre "
                        "samma form som användningen. Ta bort egenskapsytan och lägg bestämmelsen på användningsområdet "
@@ -1132,6 +1169,7 @@ class PlanController(QObject):
             self._modify(lambda: layer.changeGeometry(fid, result.geometry))
             for note in result.notes:
                 self._warn(note)
+        self._tidy(layer, fid)
 
     # -- tilldela bestämmelser --------------------------------------------------------
     SELECTABLE = SELECTABLE

@@ -4,6 +4,11 @@ Formatet följer [Keep a Changelog](https://keepachangelog.com/sv/1.1.0/), versi
 
 ## [Kommande] – topologikontrollen: tystare, tydligare och med täckning och överlapp
 
+- **Felen förhindras när man ritar** (orsaken till de tomma ytorna): en yta som klickats ut med två punkter och den sista
+  två gånger, eller med tre punkter på en rät linje, hade area 0 men accepterades och sparades. Den avvisas nu direkt,
+  med ett meddelande (användning, egenskap och planområde). Brus upp till 1 cm (samma gräns som *Rättas automatiskt*)
+  i en yta man ritar eller ändrar rättas tyst mot planområdets, användningarnas och egenskapernas brytpunkter och gränser
+  (`topology.tidy`; bara den egna ytan ändras). Vid spara tas ytor utan utbredning bort, med ett meddelande.
 - **Listan har tre avsnitt:** *Rättas automatiskt* (högst 1 cm, ikryssat), *Förslag att granska* (större, inte ikryssat) och
   *Kräver ditt beslut* (täckning och överlapp, görs inte automatiskt).
 - **Förhandsvisning i kartan:** markerar du en rad ritas dess ändringar direkt: en röd ring där brytpunkten ligger nu, en
@@ -24,7 +29,7 @@ Formatet följer [Keep a Changelog](https://keepachangelog.com/sv/1.1.0/), versi
   som saknas, ligger utanför planområdet eller överlappar, glapp, egenskap utanför användningen och ogiltiga gränser.
 - **"Saknar bestämmelse" och "kvartersmark saknar egenskapsområde" visas inte längre i topologikontrollen.** De hör till
   *Kontrollera planen*, där de redan finns.
-- Fil för fil: `core/topology.py`, `core/validation.py`, `controller.py`, `gui/topology_dialog.py`, `gui/topology_preview.py`
+- Fil för fil: `core/topology.py` (nya `tidy`), `core/validation.py`, `controller.py` (`_tidy`, avvisning, städning vid spara), `gui/topology_dialog.py`, `gui/topology_preview.py`
   (ny), `gui/plan_toolbar.py`.
   Prov i `tests/test_topology.py` och `tests/test_validation.py`.
 

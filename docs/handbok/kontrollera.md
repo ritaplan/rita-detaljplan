@@ -98,6 +98,20 @@ Under rubriken *Kräver ditt beslut* visas avvikelserna om täckning och överla
 
 Att en yta saknar bestämmelse, eller att kvartersmark saknar egenskapsområden, visas inte här utan i *Kontrollera planen*.
 
+### Det som förhindras redan när du ritar
+
+Topologikontrollen hittar fel i efterhand. Tre saker förhindras dessutom medan du ritar:
+
+- **En yta utan utbredning avvisas.** Klickar du ut en yta med två punkter och den sista två gånger (eller med tre punkter
+  på en rät linje) tas ytan bort direkt med ett meddelande. Förut sparades den som en yta med area 0, vilket var vad som
+  gav *Ytor utan utbredning* ovan.
+- **Brus upp till 1 cm rättas tyst.** Ligger en brytpunkt i en yta du ritar eller ändrar inom en centimeter från en
+  annan brytpunkt eller gräns (planområdets, en användningsyta eller en egenskapsyta) flyttas den dit, så att gränserna
+  sammanfaller exakt. Bara den yta du ritar ändras, aldrig det som redan finns, och ångra fungerar. Större avstånd lämnas
+  åt Topologikontroll.
+- **Tomma ytor tas bort när du sparar.** Har det ändå blivit kvar en yta utan utbredning, till exempel i en plan som
+  ritats med en äldre version, tas den bort när du avslutar redigeringen, med ett meddelande.
+
 ## Nästa steg
 
 Fortsätt med [Leverera planen](leverera.md).

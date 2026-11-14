@@ -274,10 +274,14 @@ def _added_vertices(table: str, fid: int, geometry: QgsGeometry, refs: list[Refe
     if boundary is None:
         return []
     own = vertices(geometry)
+    box = geometry.boundingBox()
+    box.grow(tolerance)
     moved_to = {c.new for c in existing if c.fid == fid and c.table == table and c.new is not None}
     found, seen = [], set()
     for ref in refs:
         for point in ref.points:
+            if not box.contains(point):
+                continue  # för långt bort för att kunna ligga vid ytans gräns
             key = _key(point)
             if key in moved_to or key in seen or any(point.distance(v) <= tolerance for v in own):
                 continue  # ytan har redan (eller får) en brytpunkt där
@@ -289,6 +293,24 @@ def _added_vertices(table: str, fid: int, geometry: QgsGeometry, refs: list[Refe
                 found.append(Change(ADD_VERTEX, table, fid, None, key, d, ref.name))
                 seen.add(key)
     return found
+
+
+def tidy(geometry: QgsGeometry, others: list[QgsGeometry], tolerance: float = SAFE) -> tuple[QgsGeometry, int]:
+    """Rättar en nyritad eller ändrad ytas brus: brytpunkter inom ``tolerance`` (förval en centimeter, det osynliga)
+    från en annan ytas brytpunkt eller gräns flyttas dit, gemensamma brytpunkter läggs till och dubbletter tas bort.
+    Bara ``geometry`` ändras, aldrig ``others`` (planområdet och de ytor som redan finns). Returnerar (ny geometri,
+    antal ändringar); utan ändringar samma geometri."""
+    if not _usable(geometry) or geometry.type() != Qgis.GeometryType.Polygon:
+        return geometry, 0
+    box = geometry.boundingBox()
+    box.grow(tolerance * 2)
+    refs = [r for r in (_references("granne", g) for g in others
+                        if g is not None and not g.isNull() and not g.isEmpty() and g.boundingBox().intersects(box)) if r]
+    changes = _area_changes("", 0, geometry, refs, tolerance)
+    if not changes:
+        return geometry, 0
+    fixed, done, _skipped = apply_to_geometry(geometry, changes)
+    return (fixed, done) if done else (geometry, 0)
 
 
 def _duplicate_vertices(table: str, fid: int, geometry: QgsGeometry) -> list[Change]:
