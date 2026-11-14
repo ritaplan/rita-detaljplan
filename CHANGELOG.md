@@ -9,6 +9,12 @@ Formatet följer [Keep a Changelog](https://keepachangelog.com/sv/1.1.0/), versi
   med ett meddelande (användning, egenskap och planområde). Brus upp till 1 cm (samma gräns som *Rättas automatiskt*)
   i en yta man ritar eller ändrar rättas tyst mot planområdets, användningarnas och egenskapernas brytpunkter och gränser
   (`topology.tidy`; bara den egna ytan ändras). Vid spara tas ytor utan utbredning bort, med ett meddelande.
+- **Topologikontrollen är en panel i nederkant i stället för en dialog.** Kartan syns ovanför den, och den kan vara öppen
+  medan du ritar och redigerar. Listan ligger till vänster och knapparna i en kolumn till höger. Knappen i verktygsfältet är
+  **alltid tillgänglig** när planområdet är ritat (förut grå medan man redigerade), och kontrollen läser också det som
+  ännu inte är sparat. Ändrar du planen efter kontrollen står det på *Kontrollera igen*. Texten om beta-version är borttagen.
+  Fil för fil: `gui/topology_panel.py` (förut `topology_dialog.py`), `gui/plan_toolbar.py` (`check_topology`,
+  `close_topology_panel`), `plugin.py`.
 - **Rättat: "Gör valda ändringar" gjorde ingenting efter "Fyll återstoden".** Fyllningen tog med remsor som reglerna räknar
   som täckta (en 3 cm bred gång längs ett glapp, en sliver under en kant). Topologikontrollen föreslog sedan att flytta
   fyllningens brytpunkter, vilket kollapsade remsorna och gav en ogiltig gräns, så ändringen hoppades över. Nu fyller

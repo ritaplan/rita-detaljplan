@@ -125,6 +125,7 @@ class DetaljplanPlugin:
             self.controller = None
         if self.toolbar is not None:
             self.toolbar.close_planbeskrivning()
+            self.toolbar.close_topology_panel()
             self.toolbar.unregister_shortcuts()
             # det andra verktygsfältet (bottom_toolbar) städas automatiskt: se PlanToolBar.__init__, som kopplar
             # det till att verktygsfältet självt förstörs.

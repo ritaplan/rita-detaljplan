@@ -15,7 +15,7 @@ def build_plan_switcher(controller: PlanController, on_switch: Callable[[], None
     """Bygger raden ("Aktiv plan: [lista]"), eller returnerar None om det bara finns en (eller ingen) laddad plan.
     Väljer man en annan plan görs den aktiv (``activate_plan_group`` + ``controller.attach()``) och ``on_switch``
     anropas – det är upp till den som bygger dialogen att läsa om innehållet (eller stänga och öppna den igen) för
-    den nya planen, se t.ex. ``TopologyDialog.reload``/``ValidationDialog.reload`` eller ``PlanInfoDialog``."""
+    den nya planen, se t.ex. ``TopologyPanel.reload``/``ValidationDialog.reload`` eller ``PlanInfoDialog``."""
     groups = plan_groups(controller.project)
     if len(groups) <= 1:
         return None

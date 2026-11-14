@@ -19,7 +19,8 @@ from qgis.PyQt import sip
 from qgis.PyQt.QtCore import Qt, QTimer
 from qgis.PyQt.QtGui import QColor, QIcon
 from qgis.PyQt.QtGui import QCursor
-from qgis.PyQt.QtWidgets import QAction, QActionGroup, QFileDialog, QMenu, QMessageBox, QToolBar, QToolButton, QWidget
+from qgis.PyQt.QtWidgets import (QAction, QActionGroup, QDockWidget, QFileDialog, QMenu, QMessageBox, QToolBar, QToolButton,
+                                 QWidget)
 
 from ..controller import (HELPER_AREA, HELPER_LAYER, HELPER_POINT, HELPER_TABLES, PLAN_LAYER, Candidate,
                           PlanController)
@@ -39,7 +40,7 @@ from .ngp_dialog import ARCHIVE, FILE, NgpDialog, NgpRequest
 from .label_tool import LabelTool
 from .messages import push
 from .select_tool import SelectTool
-from .topology_dialog import TopologyDialog
+from .topology_panel import TopologyPanel
 from .topology_preview import TopologyPreview
 from .validation_dialog import ValidationDialog
 
@@ -106,11 +107,10 @@ LABEL_TABLES = (cat.USE_LAYER, "egenskap_yta", "egenskap_linje", "egenskap_punkt
 NEW_TIP = "Ny detaljplan…"
 OPEN_TIP = "Öppna detaljplan (GeoPackage)…"
 DATABASE_TIP = "Databashanteraren: öppna, importera och exportera planer i en PostGIS-databas…"
-TOPOLOGY_TIP = ("Topologikontroll (beta, ännu inte full funktionalitet): föreslår att brytpunkter i användnings- och egenskapsytor flyttas till planområdets "
+TOPOLOGY_TIP = ("Topologikontroll: föreslår att brytpunkter i användnings- och egenskapsytor flyttas till planområdets "
                 "eller varandras brytpunkter, stänger små glapp mellan gränser, och visar om hela planområdet har "
-                "en användning, om någon redan ritad yta saknar bestämmelse och om kvartersmark saknar "
-                "egenskapsområden. Görs på den sparade planen.")
-TOPOLOGY_EDITING_TIP = "Topologikontrollen kan inte användas medan redigeringen pågår: avsluta och spara först."
+                "en användning och om ytor överlappar eller ligger utanför planområdet. Ligger som en panel i nederkant "
+                "och kan vara öppen medan du redigerar.")
 CHECKOUT_TIP = ("Checka ut: lås planen i databasen och redigera en lokal kopia (snabbare). En plan som öppnats från "
                 "databasen är skrivskyddad tills den checkats ut.")
 CHECKOUT_FILE_TIP = ("Checka ut och in gäller planer i en databas. Den här planen ligger i en lokal fil och kan "
@@ -162,6 +162,7 @@ class PlanToolBar(QToolBar):
         self._issue_band.setStrokeColor(QColor(179, 38, 30))
         self._issue_band.setWidth(2)
         self._topology_preview = TopologyPreview(iface.mapCanvas())  # förslagen i topologikontrollen, före och efter
+        self._topology_panel = self._topology_dock = None  # panelen i nederkant, skapas första gången den öppnas
 
         # ny plan och öppna finns alltid tillgängliga; resten hör till en öppen plan
         self.act_new = QAction(icon("new.svg"), NEW_TIP, self)
@@ -519,10 +520,8 @@ class PlanToolBar(QToolBar):
         draw_first = "Rita planområdet först."
         self.act_info.setEnabled(plan_ready)
         self.act_info.setToolTip(INFO_TIP if plan_ready else _unless_plan(has_plan, draw_first))
-        topology_ok = plan_ready and not editing
-        self.act_topology.setEnabled(topology_ok)
-        self.act_topology.setToolTip(TOPOLOGY_TIP if topology_ok else
-                                     _unless_plan(has_plan, TOPOLOGY_EDITING_TIP if plan_ready else draw_first))
+        self.act_topology.setEnabled(plan_ready)  # alltid tillgänglig när planområdet är ritat, också medan man redigerar
+        self.act_topology.setToolTip(TOPOLOGY_TIP if plan_ready else _unless_plan(has_plan, draw_first))
         self.act_hide_labels.setEnabled(has_plan)
         self._apply_label_visibility()
         for action, tip in ((self.act_deliver, DELIVER_TIP), (self.act_planbeskrivning, PLANBESKRIVNING_TIP)):
@@ -901,14 +900,21 @@ class PlanToolBar(QToolBar):
             QTimer.singleShot(0, lambda: collapse_plan_group(self.controller.project))
 
     def check_topology(self):
-        """Öppnar dialogen för topologikontroll: brytpunkter och glapp som nästan sammanfaller, och täckning och överlapp
-        (om hela planområdet har användning, användning utanför planområdet, överlapp mellan ytor, ytor utan utbredning).
-        Markerar man ett förslag visas det i kartan innan det görs (se ``TopologyPreview``).
-        Kan inte användas medan redigeringen pågår. De valda ändringarna (och att fylla en saknad användning eller ta
-        bort tomma ytor) startar redigeringen och görs i redigeringsbufferten; de sparas när den avslutas."""
-        if self.controller.editing:
-            self._report(TOPOLOGY_EDITING_TIP, True)
-            return
+        """Öppnar panelen för topologikontroll i nederkant: brytpunkter och glapp som nästan sammanfaller, och täckning och
+        överlapp (om hela planområdet har användning, användning utanför planområdet, överlapp mellan ytor, ytor utan
+        utbredning). Panelen kan vara öppen medan man redigerar och läser då också det som ännu inte är sparat; de valda
+        ändringarna (och att fylla en saknad användning eller ta bort tomma ytor) startar redigeringen om den inte pågår och
+        görs i redigeringsbufferten, och sparas när den avslutas. Markerar man ett förslag visas det i kartan innan det görs
+        (se ``TopologyPreview``). Är panelen redan öppen läses den om och hamnar överst."""
+        if self._topology_panel is None:
+            self._build_topology_panel()
+        else:
+            self._topology_panel.rebuild_switcher()
+            self._topology_panel.reload()
+        self._topology_dock.show()
+        self._topology_dock.raise_()
+
+    def _build_topology_panel(self) -> None:
         def apply(changes):
             if not self.controller.editing:
                 self.controller.start_editing()
@@ -924,12 +930,24 @@ class PlanToolBar(QToolBar):
                 self.controller.start_editing()
             return self.controller.remove_empty_areas()
 
-        dialog = TopologyDialog(self.controller.topology_changes, apply, self._show_item, self.iface.mainWindow(),
-                                findings=self.controller.topology_findings, fill_use=fill, controller=self.controller,
-                                remove_empty=remove_empty, describe=self.controller.area_label,
-                                preview=self._topology_preview.show)
-        dialog.exec()
+        panel = TopologyPanel(self.controller.topology_changes, apply, self._show_item,
+                              findings=self.controller.topology_findings, fill_use=fill, controller=self.controller,
+                              remove_empty=remove_empty, describe=self.controller.area_label,
+                              preview=self._topology_preview.show)
+        dock = QDockWidget("Topologikontroll")
+        dock.setObjectName("RitaDetaljplanTopologikontroll")
+        dock.setWidget(panel)
+        dock.visibilityChanged.connect(lambda visible: None if visible else self._topology_preview.clear())
+        self._topology_panel, self._topology_dock = panel, dock
+        self.iface.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, dock)
+
+    def close_topology_panel(self) -> None:
+        """Tar bort panelen när pluginet stängs av (den hör till huvudfönstret, inte till verktygsfältet)."""
         self._topology_preview.clear()
+        if self._topology_dock is not None:
+            self.iface.removeDockWidget(self._topology_dock)
+            self._topology_dock.deleteLater()
+        self._topology_panel = self._topology_dock = None
 
     def _show_item(self, item):
         """Markerar och zoomar till ytan ett förslag (``Change``) eller en avvikelse (``Issue``) gäller."""

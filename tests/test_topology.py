@@ -13,9 +13,9 @@ from plan_case import HAVE_QGIS, PLAN, pump  # noqa: E402
 if HAVE_QGIS:
     from qgis.core import QgsGeometry, QgsProject
     from qgis.PyQt.QtCore import Qt
-    from qgis.PyQt.QtWidgets import QLabel
+    from qgis.PyQt.QtWidgets import QLabel, QWidget
     from rita_detaljplan.core import topology as t
-    from rita_detaljplan.gui.topology_dialog import TopologyDialog
+    from rita_detaljplan.gui.topology_panel import TopologyPanel
     from qgis_app import get_app
     from test_toolbar import GuiCase
 
@@ -377,21 +377,81 @@ class DialogTests(TopologyCase):
             self.analyses.append(tolerance)
             return list(provided)
 
-        dialog = TopologyDialog(analyze, apply or self.controller.apply_topology, show,
+        dialog = TopologyPanel(analyze, apply or self.controller.apply_topology, show,
                                 findings=findings, fill_use=fill_use, controller=controller, describe=describe, preview=preview)
         self.addCleanup(dialog.deleteLater)
         return dialog
 
-    def test_the_dialog_says_it_is_a_beta_without_full_functionality(self):
+    def test_there_is_no_beta_text(self):
         dialog = self.make()
-        self.assertFalse(dialog.beta_note.isHidden())
-        self.assertIn("Beta", dialog.beta_note.text())
-        self.assertIn("ännu inte full funktionalitet", dialog.beta_note.text())
-        self.assertTrue(dialog.beta_note.wordWrap())
+        texts = [label.text() for label in dialog.findChildren(QLabel)]
+        self.assertFalse(any("beta" in text.lower() or "full funktionalitet" in text for text in texts), texts)
+        self.assertFalse(hasattr(dialog, "beta_note"))
+
+    def test_it_is_a_panel_with_the_list_to_the_left_and_the_buttons_in_a_column_to_the_right(self):
+        from qgis.PyQt.QtWidgets import QDialog
+        dialog = self.make()
+        self.assertTrue(isinstance(dialog, QWidget) and not isinstance(dialog, QDialog))
+        dialog.resize(1000, 230)
+        dialog.show()
+        pump()
+        self.assertLess(dialog.list.geometry().right(), dialog._column.geometry().left())
+        self.assertGreater(dialog.list.width(), 3 * dialog._column.width() / 2, "listan får det mesta av bredden")
+        column = dialog._column.geometry()
+        for button in (dialog.btn_apply, dialog.btn_all, dialog.btn_none, dialog.btn_show, dialog.btn_fill, dialog.btn_remove):
+            if not button.isHidden():
+                top_left = button.mapTo(dialog, button.rect().topLeft())
+                self.assertGreaterEqual(top_left.x(), column.left(), button.text())
+        self.assertLessEqual(dialog.minimumHeight(), 150, "panelen kan vara låg så att kartan syns")
+        dialog.hide()
+
+    def test_the_button_says_when_the_plan_has_changed_since_the_check(self):
+        from rita_detaljplan.gui.topology_panel import STALE_TEXT
+        dialog = TopologyPanel(lambda tol: [], lambda changes: (0, 0), controller=self.controller)
+        self.addCleanup(dialog.deleteLater)
+        dialog.resize(900, 230)
+        dialog.show()
+        pump()
+        dialog.reload()  # signaler från uppställningen kan redan ha markerat planen som ändrad
+        self.assertEqual(dialog.btn_again.text(), "Kontrollera igen")
+        self.controller.changed.emit()
+        self.assertEqual(dialog.btn_again.text(), STALE_TEXT)
+        dialog.btn_again.click()
+        self.assertEqual(dialog.btn_again.text(), "Kontrollera igen")
+        dialog.hide()
+
+    def test_a_hidden_panel_does_not_nag_about_changes(self):
+        dialog = TopologyPanel(lambda tol: [], lambda changes: (0, 0), controller=self.controller)
+        self.addCleanup(dialog.deleteLater)
+        self.controller.changed.emit()
+        self.assertEqual(dialog.btn_again.text(), "Kontrollera igen")
+
+    def test_changes_the_panel_makes_itself_are_not_counted_as_the_plan_having_changed(self):
+        dialog = TopologyPanel(lambda tol: self.controller.topology_changes(TOL), self.controller.apply_topology,
+                               controller=self.controller)
+        self.addCleanup(dialog.deleteLater)
+        dialog.show()
+        pump()
+        dialog.btn_all.click()
+        done, _ = dialog.apply_checked()
+        self.assertGreater(done, 0)
+        self.assertEqual(dialog.btn_again.text(), "Kontrollera igen", "kontrollerades om efter egna ändringar")
+        dialog.hide()
 
     def test_no_plan_switcher_with_only_one_plan_loaded(self):
         dialog = self.make(controller=self.controller)
-        self.assertEqual(dialog.layout().itemAt(0).widget(), dialog.summary, "ingen växlarrad när det bara finns en")
+        self.assertIsNone(dialog._switcher, "ingen växlarrad när det bara finns en")
+
+    def test_the_plan_switcher_is_built_again_when_another_plan_has_been_loaded_since(self):
+        from rita_detaljplan.core.project import create_plan_project, load_plan
+        dialog = self.make(controller=self.controller)
+        self.assertIsNone(dialog._switcher)
+        other_gpkg, _ = create_plan_project(self.dir, "andra_planen", "Eskilstuna", "0482", 3006)
+        load_plan(other_gpkg, QgsProject.instance())
+        dialog.rebuild_switcher()
+        self.assertIsNotNone(dialog._switcher)
+        dialog.rebuild_switcher()
+        self.assertIsNotNone(dialog._switcher, "kan byggas om flera gånger")
 
     def test_switching_the_active_plan_reloads_the_findings_for_the_new_one(self):
         # self.make() fryser listan med förslag vid konstruktion (se dess analyze-closure): använder här
@@ -401,11 +461,11 @@ class DialogTests(TopologyCase):
         from rita_detaljplan.core.project import create_plan_project, find_plan_group, load_plan
         other_gpkg, _ = create_plan_project(self.dir, "annan_plan", "Eskilstuna", "0482", 3006)
         load_plan(other_gpkg, QgsProject.instance())  # blir aktiv: inget ritat, så inga avvikelser
-        dialog = TopologyDialog(self.controller.topology_changes, self.controller.apply_topology, None,
+        dialog = TopologyPanel(self.controller.topology_changes, self.controller.apply_topology, None,
                                 controller=self.controller)
         self.addCleanup(dialog.deleteLater)
         self.assertEqual(dialog.changes, [], "annan_plan är tom")
-        combo = dialog.layout().itemAt(0).widget().findChild(QComboBox)
+        combo = dialog._switcher.findChild(QComboBox)
         combo.setCurrentIndex(combo.findText("plan"))
         self.assertEqual(find_plan_group(QgsProject.instance()).name(), "plan")
         self.assertTrue(dialog.changes, "bytte tillbaka till planen med avvikelser och läste om listan")
@@ -490,7 +550,7 @@ class DialogTests(TopologyCase):
     def test_applying_changes_the_layer_and_re_analyses(self):
         analyses = []
         real = self.controller.topology_changes
-        dialog = TopologyDialog(lambda tol: analyses.append(tol) or real(TOL), self.controller.apply_topology)
+        dialog = TopologyPanel(lambda tol: analyses.append(tol) or real(TOL), self.controller.apply_topology)
         self.addCleanup(dialog.deleteLater)
         self.assertGreater(len(dialog.rows()), 0)
         dialog.btn_all.click()
@@ -545,9 +605,10 @@ class DialogTests(TopologyCase):
         dialog.list.setCurrentItem(dialog.rows()[0])
         dialog.reload()
         self.assertEqual(drawn[-1], [], "förhandsvisningen rensas när listan läses om")
+        dialog.show()
         dialog.list.setCurrentItem(dialog.rows()[0])
-        dialog.reject()
-        self.assertEqual(drawn[-1], [], "och när dialogen stängs")
+        dialog.hide()
+        self.assertEqual(drawn[-1], [], "och när panelen stängs eller döljs")
 
     def test_an_empty_result_says_the_topology_agrees(self):
         dialog = self.make(changes=[])
@@ -741,7 +802,7 @@ class EmptyAreaTests(TopologyCase):
 
     def test_the_dialog_removes_empty_areas_and_reanalyses(self):
         self.add_spikes()
-        dialog = TopologyDialog(self.controller.topology_changes, self.controller.apply_topology, None,
+        dialog = TopologyPanel(self.controller.topology_changes, self.controller.apply_topology, None,
                                 findings=self.controller.topology_findings, remove_empty=self.controller.remove_empty_areas,
                                 describe=self.controller.area_label)
         self.addCleanup(dialog.deleteLater)
@@ -754,7 +815,7 @@ class EmptyAreaTests(TopologyCase):
         self.assertEqual([f for f in dialog.findings if f.kind == "tom"], [])
 
     def test_without_the_callback_there_is_no_remove_button(self):
-        dialog = TopologyDialog(lambda tol: [], lambda changes: (0, 0))
+        dialog = TopologyPanel(lambda tol: [], lambda changes: (0, 0))
         self.addCleanup(dialog.deleteLater)
         self.assertTrue(dialog.btn_remove.isHidden())
 
@@ -1071,6 +1132,7 @@ class ToolBarTests(TopologyCase):
         from rita_detaljplan.gui.plan_toolbar import PlanToolBar
         self.toolbar = PlanToolBar(self.iface, self.controller, lambda: self.catalog)
         self.addCleanup(self.toolbar.deleteLater)
+        self.addCleanup(self.toolbar.close_topology_panel)  # panelen hör till huvudfönstret: städas som när pluginet stängs av
 
     def save(self):
         self.assertEqual(self.controller.stop_editing(save=True), [])
@@ -1088,56 +1150,84 @@ class ToolBarTests(TopologyCase):
         self.toolbar.refresh()
         self.assertFalse(self.toolbar.act_topology.isEnabled())
 
-    def test_the_button_is_grey_while_an_edit_session_is_running(self):
+    def test_the_button_is_available_while_an_edit_session_is_running(self):
         self.assertTrue(self.controller.editing)
         self.toolbar.refresh()
-        self.assertFalse(self.toolbar.act_topology.isEnabled())
-        self.assertIn("redigeringen pågår", self.toolbar.act_topology.toolTip())
+        self.assertTrue(self.toolbar.act_topology.isEnabled(), "förut grå medan man redigerade")
+        tip = self.toolbar.act_topology.toolTip()
+        self.assertNotIn("beta", tip.lower())
+        self.assertIn("medan du redigerar", tip)
         self.save()
         self.toolbar.refresh()
         self.assertTrue(self.toolbar.act_topology.isEnabled())
         self.controller.start_editing()
         self.toolbar.refresh()
-        self.assertFalse(self.toolbar.act_topology.isEnabled())
+        self.assertTrue(self.toolbar.act_topology.isEnabled())
 
-    def test_the_check_refuses_to_open_during_an_edit_session(self):
-        with mock.patch("rita_detaljplan.gui.plan_toolbar.TopologyDialog") as dialog_cls:
+    def test_the_check_opens_a_panel_at_the_bottom_during_an_edit_session_and_sees_unsaved_work(self):
+        from qgis.PyQt.QtWidgets import QDockWidget
+        self.assertTrue(self.controller.editing)
+        self.toolbar.check_topology()
+        panel, dock = self.toolbar._topology_panel, self.toolbar._topology_dock
+        self.assertIsInstance(dock, QDockWidget)
+        self.assertIs(dock.widget(), panel)
+        area, added = self.iface.addDockWidget.call_args.args
+        self.assertEqual(area, Qt.DockWidgetArea.BottomDockWidgetArea)
+        self.assertIs(added, dock)
+        panel.tolerance.setValue(TOL)
+        panel.reload()
+        self.assertTrue(panel.changes, "ytorna ritades men är inte sparade: kontrollen läser ändå dem")
+        self.assertTrue(self.controller.editing, "kontrollen avslutar inte redigeringen")
+
+    def test_the_panel_is_created_once_and_read_again_each_time_it_is_opened(self):
+        self.toolbar.check_topology()
+        panel = self.toolbar._topology_panel
+        with mock.patch.object(panel, "reload") as reload_, mock.patch.object(panel, "rebuild_switcher") as switcher:
             self.toolbar.check_topology()
-        dialog_cls.assert_not_called()
+        reload_.assert_called_once()
+        switcher.assert_called_once()
+        self.assertIs(self.toolbar._topology_panel, panel)
+        self.assertEqual(self.iface.addDockWidget.call_count, 1)
 
-    def test_the_button_opens_the_dialog_with_the_controllers_analysis_apply_and_findings(self):
+    def test_the_panels_buttons_start_editing_when_needed(self):
         self.save()
-        with mock.patch("rita_detaljplan.gui.plan_toolbar.TopologyDialog") as dialog_cls:
-            self.toolbar.check_topology()
-        analyze, apply, show = dialog_cls.call_args.args[:3]
-        findings, _ = dialog_cls.call_args.kwargs["findings"], dialog_cls.call_args.kwargs["fill_use"]
-        self.assertTrue(analyze(0.5))
-        dialog_cls.return_value.exec.assert_called_once()
-        self.assertEqual(findings(), self.controller.topology_findings())
-        done, _ = apply(analyze(0.5))
+        self.assertFalse(self.controller.editing)
+        self.toolbar.check_topology()
+        panel = self.toolbar._topology_panel
+        done, _ = panel._apply(self.controller.topology_changes(TOL))
         self.assertGreater(done, 0)
         self.assertTrue(self.controller.editing, "redigeringen startades av ändringen")
-
-    def test_the_fill_button_also_starts_editing_when_needed(self):
         self.layers["anvandning_yta"].selectAll()
         self.layers["anvandning_yta"].deleteSelectedFeatures()
         pump()
         self.save()
-        with mock.patch("rita_detaljplan.gui.plan_toolbar.TopologyDialog") as dialog_cls:
-            self.toolbar.check_topology()
-        fill = dialog_cls.call_args.kwargs["fill_use"]
-        result = fill()
+        self.assertFalse(self.controller.editing)
+        result = panel._fill_use()
         self.assertTrue(result.ok)
-        self.assertTrue(self.controller.editing)
+        self.assertTrue(self.controller.editing, "också fyllningen startar redigeringen")
 
-    def test_the_dialog_gets_the_map_preview_and_it_is_cleared_when_the_dialog_closes(self):
+    def test_the_panel_gets_the_controllers_analysis_findings_and_tools(self):
         self.save()
-        preview = self.toolbar._topology_preview
-        with mock.patch("rita_detaljplan.gui.plan_toolbar.TopologyDialog") as dialog_cls:
-            dialog_cls.return_value.exec.side_effect = lambda: preview.show(self.controller.topology_changes(TOL)[:2])
-            self.toolbar.check_topology()
-        self.assertEqual(dialog_cls.call_args.kwargs["preview"], preview.show)
-        self.assertTrue(preview.is_empty(), "förhandsvisningen försvinner när dialogen stängs")
+        self.toolbar.check_topology()
+        panel = self.toolbar._topology_panel
+        self.assertEqual(panel._findings(), self.controller.topology_findings())
+        self.assertEqual(panel._describe, self.controller.area_label)
+        self.assertIsNotNone(panel._remove_empty)
+        self.assertEqual(panel._preview, self.toolbar._topology_preview.show)
+
+    def test_the_preview_is_cleared_when_the_panel_is_hidden_and_the_panel_is_removed_on_unload(self):
+        self.toolbar.check_topology()
+        preview, dock = self.toolbar._topology_preview, self.toolbar._topology_dock
+        preview.show(self.controller.topology_changes(TOL)[:2])
+        self.assertFalse(preview.is_empty())
+        dock.hide()
+        pump()
+        self.assertTrue(preview.is_empty(), "förhandsvisningen försvinner när panelen stängs")
+        self.toolbar.close_topology_panel()
+        self.iface.removeDockWidget.assert_called_once_with(dock)
+        self.assertIsNone(self.toolbar._topology_panel)
+        self.toolbar.close_topology_panel()  # går att anropa igen
+        self.assertEqual(self.iface.removeDockWidget.call_count, 1)
 
     def test_showing_a_suggestion_selects_and_zooms_to_the_area(self):
         change = self.controller.topology_changes(TOL)[0]

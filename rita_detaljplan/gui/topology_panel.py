@@ -1,4 +1,6 @@
-"""Dialogen "Topologikontroll": resultatet som en lista i tre avsnitt, på samma sätt som Kontrollera planen.
+"""Panelen "Topologikontroll": resultatet som en lista i tre avsnitt, på samma sätt som Kontrollera planen. Den ligger som
+en panel i nederkant av QGIS (se ``PlanToolBar.check_topology``) och kan vara öppen medan man redigerar, så att ytorna syns
+i kartan ovanför den.
 
   * **Rättas automatiskt:** ändringar på högst en centimeter, en rad per yta, ikryssade (se ``Change.tier``).
   * **Förslag att granska:** större ändringar, upp till toleransen, en rad per yta, inte ikryssade. Markerar man en rad visas
@@ -13,8 +15,8 @@ from typing import Callable, Optional
 
 from qgis.PyQt.QtCore import Qt
 from qgis.PyQt.QtGui import QBrush, QColor
-from qgis.PyQt.QtWidgets import (QCheckBox, QDialog, QDialogButtonBox, QDoubleSpinBox, QHBoxLayout, QLabel,
-                                 QListWidget, QListWidgetItem, QPushButton, QVBoxLayout)
+from qgis.PyQt.QtWidgets import (QCheckBox, QDoubleSpinBox, QHBoxLayout, QLabel, QListWidget, QListWidgetItem,
+                                 QPushButton, QVBoxLayout, QWidget)
 
 from ..controller import PlanController
 from ..core import topology, validation
@@ -27,18 +29,20 @@ CHANGE_KIND, FINDING_KIND, HEADER_KIND = "change", "finding", "header"
 SECTION_TITLES = {topology.TIER_AUTO: "Rättas automatiskt (högst 1 cm, säkert)",
                   topology.TIER_REVIEW: "Förslag att granska (större än 1 cm)",
                   "beslut": "Kräver ditt beslut (görs inte automatiskt)"}
-BETA_TEXT = ("<b>Beta:</b> Topologikontrollen är en utvecklingsversion och har ännu inte full funktionalitet. Den kan missa "
-             "avvikelser, och alla föreslagna ändringar går inte alltid att genomföra. Granska förslagen och spara en "
-             "kopia av planen innan du gör ändringar.")
+BUTTON_COLUMN_WIDTH = 250  # bildpunkter: knapparna ligger i en smal kolumn till höger så att listan får plats att läsas
+STALE_TEXT = "Kontrollera igen (planen har ändrats)"
 
 
-class TopologyDialog(QDialog):
+class TopologyPanel(QWidget):
     """``analyze(tolerance)`` ger förslagen, ``apply(changes)`` genomför de valda och returnerar (gjorda, hoppade över),
     ``show(item)`` visar en yta i kartan (item är en ``Change`` eller en ``Issue``). ``findings()`` (avvikelser som
     inte kan åtgärdas automatiskt, som ``Issue``), ``fill_use()`` (fyller det som saknar användning med en ny
     användningsyta, se ``controller.fill_use``), ``remove_empty()`` (tar bort ytor utan utbredning och returnerar
     antalet), ``describe(tabell, fid)`` (hur en yta pekas ut i listan) och ``preview(ändringar)`` (ritar förhandsvisningen av
-    en rads ändringar i kartan, och rensar den med en tom lista) är valfria."""
+    en rads ändringar i kartan, och rensar den med en tom lista) är valfria.
+
+    Med ``controller`` får panelen en rad för att byta aktiv plan, och märker när planen ändrats efter kontrollen (knappen
+    "Kontrollera igen" säger det): den läser inte om själv medan man ritar, så att raden man markerat inte försvinner."""
 
     def __init__(self, analyze: Callable[[float], list[Change]], apply: Callable[[list[Change]], tuple[int, int]],
                  show: Optional[Callable[[object], None]] = None, parent=None, *,
@@ -48,30 +52,20 @@ class TopologyDialog(QDialog):
                  preview: Optional[Callable[[list[Change]], None]] = None):
         super().__init__(parent)
         self.setWindowTitle("Topologikontroll")
-        self.setMinimumSize(620, 460)
+        self.setMinimumHeight(140)
         self._analyze, self._apply, self._show = analyze, apply, show
         self._findings, self._fill_use = findings, fill_use
         self._remove_empty, self._describe, self._preview = remove_empty, describe, preview
+        self._controller = controller
+        self._busy = False  # något vi gör själva pågår: ändringarna det ger räknas inte som att planen ändrats
         self.changes: list[Change] = []
         self.groups: list[list[Change]] = []  # förslagen, en grupp per yta och nivå: en rad i listan
         self.findings: list[Issue] = []
-        self._switcher = build_plan_switcher(controller, self.reload, self) if controller is not None else None
+        self._switcher: Optional[QWidget] = None
 
         self.summary = QLabel()
         self.summary.setStyleSheet("font-weight: bold;")
-        self.beta_note = QLabel(BETA_TEXT)  # inforuta: funktionen är under utveckling
-        self.beta_note.setWordWrap(True)
-        self.beta_note.setStyleSheet("background: #fff4d6; color: #5a4300; border: 1px solid #e0c36a; "
-                                     "border-radius: 4px; padding: 6px;")
         self.filters = {}
-        filter_row = QHBoxLayout()
-        for severity, label in ((ERROR, "Fel"), (WARNING, "Varningar")):
-            box = QCheckBox(label)
-            box.setChecked(True)
-            box.toggled.connect(self._fill)
-            self.filters[severity] = box
-            filter_row.addWidget(box)
-        filter_row.addStretch(1)
         self.tolerance = QDoubleSpinBox()
         self.tolerance.setDecimals(2)
         self.tolerance.setRange(0.01, 5.0)
@@ -96,31 +90,46 @@ class TopologyDialog(QDialog):
         self.btn_remove.setVisible(remove_empty is not None)
         self.btn_apply = QPushButton("Gör valda ändringar")
         self.btn_apply.setDefault(True)
-        close = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
-        close.button(QDialogButtonBox.StandardButton.Close).setText("Stäng")
-        close.rejected.connect(self.reject)
 
+        # överst en rad: resultatet, toleransen och filtren; under den listan till vänster och knapparna i en kolumn
+        # till höger, så att panelen kan vara låg och kartan ovanför den syns
         top_row = QHBoxLayout()
+        top_row.addWidget(self.summary, 1)
         top_row.addWidget(QLabel("Tolerans:"))
         top_row.addWidget(self.tolerance)
         top_row.addWidget(self.btn_again)
-        top_row.addSpacing(16)
-        top_row.addLayout(filter_row)
-        select_row = QHBoxLayout()
-        for button in (self.btn_all, self.btn_none, self.btn_show, self.btn_fill, self.btn_remove):
-            select_row.addWidget(button)
-        select_row.addStretch(1)
-        select_row.addWidget(self.btn_apply)
-        select_row.addWidget(close)
-        layout = QVBoxLayout(self)
-        if self._switcher is not None:
-            layout.addWidget(self._switcher)
-        layout.addWidget(self.summary)
-        layout.addWidget(self.beta_note)
-        layout.addLayout(top_row)
-        layout.addWidget(self.list, 1)
-        layout.addWidget(self.result)
-        layout.addLayout(select_row)
+        top_row.addSpacing(12)
+        for severity, label in ((ERROR, "Fel"), (WARNING, "Varningar")):
+            box = QCheckBox(label)
+            box.setChecked(True)
+            box.toggled.connect(self._fill)
+            self.filters[severity] = box
+            top_row.addWidget(box)
+
+        marks = QHBoxLayout()
+        marks.addWidget(self.btn_all)
+        marks.addWidget(self.btn_none)
+        column = QVBoxLayout()
+        column.addWidget(self.btn_apply)
+        column.addLayout(marks)
+        column.addWidget(self.btn_show)
+        column.addWidget(self.btn_fill)
+        column.addWidget(self.btn_remove)
+        column.addStretch(1)
+        self._column = QWidget()
+        self._column.setFixedWidth(BUTTON_COLUMN_WIDTH)
+        self._column.setLayout(column)
+        column.setContentsMargins(0, 0, 0, 0)
+        body = QHBoxLayout()
+        body.addWidget(self.list, 1)
+        body.addWidget(self._column)
+
+        self._layout = QVBoxLayout(self)
+        self._layout.setContentsMargins(6, 4, 6, 4)
+        self._layout.addLayout(top_row)
+        self._layout.addLayout(body, 1)
+        self._layout.addWidget(self.result)
+        self.rebuild_switcher()
 
         self.btn_again.clicked.connect(self.reload)
         self.tolerance.editingFinished.connect(self.reload)
@@ -134,11 +143,37 @@ class TopologyDialog(QDialog):
         self.list.itemSelectionChanged.connect(self._update_buttons)
         self.list.itemDoubleClicked.connect(lambda *_: self.show_selected())
         self.list.currentItemChanged.connect(lambda *_: self._preview_selected())
-        self.finished.connect(lambda *_: self._clear_preview())
+        if controller is not None:
+            controller.changed.connect(self._mark_stale)
         self.reload()
+
+    def rebuild_switcher(self) -> None:
+        """Raden för att byta aktiv plan (bara när fler än en plan är laddad). Byggs om varje gång panelen öppnas, eftersom
+        planer kan ha lagts till eller tagits bort sedan sist."""
+        if self._switcher is not None:
+            self._layout.removeWidget(self._switcher)
+            self._switcher.deleteLater()
+            self._switcher = None
+        if self._controller is not None:
+            self._switcher = build_plan_switcher(self._controller, self.reload, self)
+            if self._switcher is not None:
+                self._layout.insertWidget(0, self._switcher)
+
+    def hideEvent(self, event) -> None:  # noqa: N802 - Qt-namn
+        """En förhandsvisning hör till en öppen panel: den rensas när panelen stängs eller döljs."""
+        self._clear_preview()
+        super().hideEvent(event)
+
+    def _mark_stale(self) -> None:
+        """Planen har ändrats efter kontrollen (man ritar eller redigerar medan panelen är öppen)."""
+        if not self._busy and self.isVisible():
+            self.btn_again.setText(STALE_TEXT)
+            self.btn_again.setStyleSheet("font-weight: bold; color: #8a5a00;")
 
     # -- listan ---------------------------------------------------------------------------
     def reload(self) -> None:
+        self.btn_again.setText("Kontrollera igen")
+        self.btn_again.setStyleSheet("")
         self.changes = self._analyze(self.tolerance.value())
         self.findings = self._findings() if self._findings is not None else []
         by_area: dict[tuple, list[Change]] = {}
@@ -285,14 +320,22 @@ class TopologyDialog(QDialog):
     def _fill_clicked(self) -> None:
         if self._fill_use is None:
             return
-        result = self._fill_use()
+        self._busy = True
+        try:
+            result = self._fill_use()
+        finally:
+            self._busy = False
         self.result.setText(result.message)
         self.reload()
 
     def _remove_clicked(self) -> None:
         if self._remove_empty is None:
             return
-        removed = self._remove_empty()
+        self._busy = True
+        try:
+            removed = self._remove_empty()
+        finally:
+            self._busy = False
         self.reload()
         self.result.setText(f"Tog bort {removed} {'tom yta' if removed == 1 else 'tomma ytor'}. "
                             "Spara genom att avsluta redigeringen.")
@@ -302,7 +345,11 @@ class TopologyDialog(QDialog):
         chosen = self.checked()
         if not chosen:
             return 0, 0
-        done, skipped = self._apply(chosen)
+        self._busy = True
+        try:
+            done, skipped = self._apply(chosen)
+        finally:
+            self._busy = False
         self.reload()
         text = f"{done} ändringar gjordes."
         if skipped:

@@ -38,14 +38,15 @@ Alla regler finns i [Regler från Lantmäteriets vägledning](../ngp-regler.md).
 
 ## Topologikontroll
 
-> Topologikontrollen är i **beta** och har ännu inte full funktionalitet.
-
 Två gränser som nästan, men inte exakt, ligger på varandra ritas båda. Då kan en gräns se olika tjock ut på olika
 ställen. Topologikontrollen hittar sådant och föreslår rättningar.
 
-Kontrollen görs på den **sparade** planen. Knappen är grå medan du redigerar: avsluta och spara först.
+Topologikontrollen ligger som en **panel i nederkant** av QGIS, så att kartan syns ovanför den. Den kan vara öppen **medan du
+redigerar** och läser då också det du ritat men ännu inte sparat. Ändrar du planen efter kontrollen står det på knappen
+*Kontrollera igen*, och klickar du på den läses listan om. Panelen stängs med korset i hörnet och kan flyttas som andra
+paneler i QGIS (till exempel till sidan).
 
-1. Klicka på **Topologikontroll** (brytpunkter med en cirkel).
+1. Klicka på **Topologikontroll** (brytpunkter med en cirkel). Knappen är tillgänglig så snart planområdet är ritat.
 2. Välj **tolerans**. Förvalet är 10 cm, som reglerna räknar med. Större avstånd ses som avsiktliga och lämnas orörda.
 3. Gå igenom listan. Den har tre avsnitt (se nedan). **Markerar du en rad** ritas dess ändringar direkt i kartan: en
    röd ring där brytpunkten ligger nu, en grön där den hamnar och en linje mellan dem. Ringarna har fast storlek, så att
@@ -53,9 +54,10 @@ Kontrollen görs på den **sparade** planen. Knappen är grå medan du redigerar
    dessutom till ytan.
 4. Kryssa i eller ur raderna. Det säkra är ikryssat, det som ska granskas är det inte.
 5. Klicka på **Gör valda ändringar**.
-6. Spara genom att avsluta redigeringen.
+6. Spara genom att avsluta redigeringen. Ändringarna görs i redigeringsbufferten (och redigeringen startas om den inte
+   pågår), så de går att ångra tills du sparar.
 
-<!-- BILD: topologikontroll.png | Dialogen Topologikontroll med förslag och Visa i kartan -->
+<!-- BILD: topologikontroll.png | Panelen Topologikontroll med förslag och Visa i kartan -->
 
 ### De tre avsnitten
 
