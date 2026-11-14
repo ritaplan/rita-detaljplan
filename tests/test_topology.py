@@ -1015,7 +1015,7 @@ class PreventionTests(TopologyCase):
 
     def test_saving_removes_areas_without_extent_and_says_so(self):
         self.raw("egenskap_yta", SPIKE)
-        keep = self.draw("egenskap_yta", "MultiPolygon(((10 60, 30 60, 30 80, 10 80, 10 60)))")
+        self.draw("egenskap_yta", "MultiPolygon(((10 60, 30 60, 30 80, 10 80, 10 60)))")
         self.assertEqual(self.controller.stop_editing(save=True), [])
         pump()
         remaining = [f.id() for f in self.layers["egenskap_yta"].getFeatures()]
