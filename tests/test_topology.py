@@ -358,7 +358,8 @@ class RealisticTests(GuiCase):
 
 
 class DialogTests(TopologyCase):
-    def make(self, changes=None, apply=None, show=None, findings=None, fill_use=None, controller=None, describe=None):
+    def make(self, changes=None, apply=None, show=None, findings=None, fill_use=None, controller=None, describe=None,
+             preview=None):
         provided = changes if changes is not None else self.controller.topology_changes(TOL)
         self.analyses = []
 
@@ -367,7 +368,7 @@ class DialogTests(TopologyCase):
             return list(provided)
 
         dialog = TopologyDialog(analyze, apply or self.controller.apply_topology, show,
-                                findings=findings, fill_use=fill_use, controller=controller, describe=describe)
+                                findings=findings, fill_use=fill_use, controller=controller, describe=describe, preview=preview)
         self.addCleanup(dialog.deleteLater)
         return dialog
 
@@ -399,23 +400,54 @@ class DialogTests(TopologyCase):
         self.assertEqual(find_plan_group(QgsProject.instance()).name(), "plan")
         self.assertTrue(dialog.changes, "bytte tillbaka till planen med avvikelser och läste om listan")
 
-    def test_every_area_is_listed_once_and_ticked_by_default(self):
-        dialog = self.make()
+    def synthetic(self, distance, fid=1, table="anvandning_yta", kind=None):
+        """Ett förslag med ett visst avstånd, för prov av avsnitten (verkliga förslag har sina egna avstånd)."""
+        return t.Change(kind or t.SNAP_VERTEX, table, fid, (10.0, 10.0), (10.0, 10.0 + distance), distance, "detaljplan")
+
+    def test_the_list_has_one_row_per_area_under_a_section(self):
+        dialog = self.make()  # provplanens ytor ligger 15-30 cm fel: allt är att granska
+        rows = dialog.rows()
         self.assertGreaterEqual(len(dialog.changes), 5)
-        self.assertEqual(dialog.list.count(), len(dialog.groups), "en rad per yta")
-        self.assertLess(dialog.list.count(), len(dialog.changes), "flera förslag på samma yta slås ihop")
+        self.assertEqual(len(rows), len(dialog.groups), "en rad per yta")
+        self.assertLess(len(rows), len(dialog.changes), "flera förslag på samma yta slås ihop")
         self.assertEqual(sum(len(group) for group in dialog.groups), len(dialog.changes))
-        self.assertTrue(all(dialog.list.item(i).checkState() == Qt.CheckState.Checked for i in range(dialog.list.count())))
-        self.assertIn(f"{dialog.list.count()} varningar", dialog.summary.text())
-        self.assertIn("Användningsområde: ", dialog.list.item(0).text())
-        self.assertIn(f"({len(dialog.changes)})", dialog.btn_apply.text(), "knappen räknar ändringarna, inte raderna")
+        header = dialog.list.item(0)
+        self.assertTrue(header.text().startswith("Förslag att granska"), header.text())
+        self.assertEqual(header.flags(), Qt.ItemFlag.NoItemFlags, "en rubrik går inte att välja eller kryssa")
+        self.assertIn(f"{len(rows)} varningar", dialog.summary.text())
+        self.assertIn("Användningsområde: ", rows[0].text())
+
+    def test_safe_changes_are_ticked_and_larger_ones_are_left_to_review(self):
+        safe, big, other = self.synthetic(0.002, fid=1), self.synthetic(0.06, fid=2), self.synthetic(0.01, fid=3)
+        self.assertEqual((safe.tier, big.tier, other.tier), (t.TIER_AUTO, t.TIER_REVIEW, t.TIER_AUTO), "högst 1 cm är säkert")
+        self.assertEqual(self.synthetic(0.0101).tier, t.TIER_REVIEW)
+        dialog = self.make(changes=[big, safe, other])
+        texts = [dialog.list.item(i).text() for i in range(dialog.list.count())]
+        self.assertTrue(texts[0].startswith("Rättas automatiskt") and texts[0].endswith(": 2"), texts)
+        self.assertTrue(texts[3].startswith("Förslag att granska") and texts[3].endswith(": 1"), texts)
+        states = {item.data(Qt.ItemDataRole.UserRole)[1]: item.checkState() for item in dialog.rows()}
+        self.assertEqual([states[i] for i in range(3)].count(Qt.CheckState.Checked), 2)
+        self.assertEqual(dialog.checked(), [safe, other], "bara det säkra är ikryssat från början")
+        self.assertIn("(2)", dialog.btn_apply.text())
+        dialog.btn_all.click()
+        self.assertEqual(len(dialog.checked()), 3, "Markera alla tar med det som ska granskas")
+
+    def test_the_findings_that_need_a_decision_have_their_own_section(self):
+        from rita_detaljplan.core.validation import ERROR, Issue
+        issue = Issue(ERROR, "DP-0003", "12 m² av användningen ligger utanför planområdet.", "anvandning_yta", 1)
+        dialog = self.make(changes=[self.synthetic(0.002)], findings=lambda: [issue])
+        headers = [dialog.list.item(i).text() for i in range(dialog.list.count())
+                   if dialog.list.item(i).data(Qt.ItemDataRole.UserRole)[0] == "header"]
+        self.assertEqual(len(headers), 2)
+        self.assertTrue(headers[1].startswith("Kräver ditt beslut"), headers)
+        self.assertEqual(dialog.list.item(dialog.list.count() - 1).data(Qt.ItemDataRole.UserRole)[1], issue)
 
     def test_a_row_names_the_area_and_says_how_much_changes(self):
         dialog = self.make(describe=self.controller.area_label)
-        text = dialog.list.item(0).text()
+        text = dialog.rows()[0].text()
         self.assertRegex(text, r"Användningsområde \(.*m².*nr -?\d+\): ")
         self.assertIn("brytpunkt", text)
-        tip = dialog.list.item(0).toolTip()
+        tip = dialog.rows()[0].toolTip()
         self.assertEqual(len(tip.splitlines()), len(dialog.groups[0]), "verktygstipset räknar upp varje ändring")
 
     def test_there_is_no_explanatory_text_above_the_list(self):
@@ -425,8 +457,9 @@ class DialogTests(TopologyCase):
 
     def test_unticked_suggestions_are_not_made(self):
         dialog = self.make()
+        dialog.btn_all.click()
         first = list(dialog.groups[0])
-        dialog.list.item(0).setCheckState(Qt.CheckState.Unchecked)
+        dialog.rows()[0].setCheckState(Qt.CheckState.Unchecked)
         self.assertEqual(len(dialog.checked()), len(dialog.changes) - len(first), "hela ytans förslag avmarkeras")
         self.assertNotIn(first[0], dialog.checked())
         applied = []
@@ -436,19 +469,21 @@ class DialogTests(TopologyCase):
 
     def test_select_all_and_none(self):
         dialog = self.make()
-        dialog.btn_none.click()
-        self.assertEqual(dialog.checked(), [])
+        self.assertEqual(dialog.checked(), [], "det som ska granskas är inte ikryssat från början")
         self.assertFalse(dialog.btn_apply.isEnabled())
         dialog.btn_all.click()
         self.assertEqual(len(dialog.checked()), len(dialog.changes))
         self.assertTrue(dialog.btn_apply.isEnabled())
+        dialog.btn_none.click()
+        self.assertEqual(dialog.checked(), [])
 
     def test_applying_changes_the_layer_and_re_analyses(self):
         analyses = []
         real = self.controller.topology_changes
         dialog = TopologyDialog(lambda tol: analyses.append(tol) or real(TOL), self.controller.apply_topology)
         self.addCleanup(dialog.deleteLater)
-        self.assertGreater(dialog.list.count(), 0)
+        self.assertGreater(len(dialog.rows()), 0)
+        dialog.btn_all.click()
         done, skipped = dialog.apply_checked()
         self.assertGreater(done, 0)
         self.assertEqual(skipped, 0)
@@ -460,6 +495,7 @@ class DialogTests(TopologyCase):
 
     def test_skipped_changes_are_explained(self):
         dialog = self.make(apply=lambda changes: (2, 3))
+        dialog.btn_all.click()
         dialog.apply_checked()
         self.assertIn("3 hoppades över", dialog.result.text())
 
@@ -479,10 +515,29 @@ class DialogTests(TopologyCase):
         shown = []
         dialog = self.make(show=shown.append)
         self.assertFalse(dialog.btn_show.isEnabled())
-        dialog.list.setCurrentRow(1)
+        dialog.list.setCurrentItem(dialog.list.item(0))
+        self.assertFalse(dialog.btn_show.isEnabled(), "en rubrik går inte att visa")
+        dialog.list.setCurrentItem(dialog.rows()[1])
         self.assertTrue(dialog.btn_show.isEnabled())
         dialog.btn_show.click()
         self.assertEqual(shown, [dialog.groups[1][0]], "alla förslag i raden gäller samma yta")
+
+    def test_selecting_a_row_previews_its_changes_in_the_map_and_other_rows_clear_it(self):
+        drawn = []
+        dialog = self.make(preview=lambda changes: drawn.append(list(changes)))
+        self.assertEqual(drawn[-1], [], "listan börjar utan förhandsvisning")
+        dialog.list.setCurrentItem(dialog.rows()[0])
+        self.assertEqual(drawn[-1], dialog.groups[0])
+        dialog.list.setCurrentItem(dialog.rows()[1])
+        self.assertEqual(drawn[-1], dialog.groups[1])
+        dialog.list.setCurrentItem(dialog.list.item(0))  # rubriken
+        self.assertEqual(drawn[-1], [])
+        dialog.list.setCurrentItem(dialog.rows()[0])
+        dialog.reload()
+        self.assertEqual(drawn[-1], [], "förhandsvisningen rensas när listan läses om")
+        dialog.list.setCurrentItem(dialog.rows()[0])
+        dialog.reject()
+        self.assertEqual(drawn[-1], [], "och när dialogen stängs")
 
     def test_an_empty_result_says_the_topology_agrees(self):
         dialog = self.make(changes=[])
@@ -499,8 +554,8 @@ class DialogTests(TopologyCase):
         uses = Issue(ERROR, "DP-0002", "250 m² av planområdet saknar användning.", "detaljplan", 1)
         gap = Issue(WARNING, "", "40 m² av kvartersmarken saknar egenskapsområde.", "anvandning_yta", 2)
         dialog = self.make(changes=[], findings=lambda: [gap, uses])
-        self.assertEqual(dialog.list.count(), 2)
-        first, second = dialog.list.item(0), dialog.list.item(1)
+        first, second = dialog.rows()
+        self.assertEqual(dialog.list.count(), 3, "två avvikelser under en rubrik")
         self.assertIn("saknar användning", first.text())
         self.assertIn("[DP-0002]", first.text())
         self.assertIn("saknar egenskapsområde", second.text())
@@ -515,21 +570,21 @@ class DialogTests(TopologyCase):
         uses = Issue(ERROR, "DP-0002", "250 m² av planområdet saknar användning.", "detaljplan", 1)
         gap = Issue(WARNING, "", "40 m² av kvartersmarken saknar egenskapsområde.", "anvandning_yta", 2)
         dialog = self.make(findings=lambda: [uses, gap])
-        total = dialog.list.count()
+        total = len(dialog.rows())
         dialog.filters[WARNING].setChecked(False)
-        self.assertEqual(dialog.list.count(), 1)
+        self.assertEqual(len(dialog.rows()), 1)
         dialog.filters[WARNING].setChecked(True)
         dialog.filters[ERROR].setChecked(False)
-        self.assertEqual(dialog.list.count(), total - 1)
+        self.assertEqual(len(dialog.rows()), total - 1)
 
     def test_a_finding_can_be_shown_in_the_map_when_it_belongs_to_an_area(self):
         from rita_detaljplan.core.validation import WARNING, Issue
         shown = []
         gap = Issue(WARNING, "", "40 m² av kvartersmarken saknar egenskapsområde.", "anvandning_yta", 2)
         dialog = self.make(changes=[], findings=lambda: [gap], show=shown.append)
-        dialog.list.setCurrentRow(0)
+        dialog.list.setCurrentItem(dialog.rows()[0])
         self.assertTrue(dialog.btn_show.isEnabled())
-        dialog.list.itemDoubleClicked.emit(dialog.list.item(0))
+        dialog.list.itemDoubleClicked.emit(dialog.rows()[0])
         self.assertEqual(shown, [gap])
 
     def test_the_fill_button_is_enabled_only_while_the_plan_area_lacks_a_use(self):
@@ -685,7 +740,7 @@ class EmptyAreaTests(TopologyCase):
         self.addCleanup(dialog.deleteLater)
         self.assertFalse(dialog.btn_remove.isHidden())
         self.assertTrue(dialog.btn_remove.isEnabled())
-        self.assertIn("nr ", dialog.list.item(0).text(), "ytan pekas ut")
+        self.assertIn("nr ", dialog.rows()[0].text(), "ytan pekas ut")
         dialog.btn_remove.click()
         self.assertIn("Tog bort 2 tomma ytor", dialog.result.text())
         self.assertFalse(dialog.btn_remove.isEnabled())
@@ -695,6 +750,113 @@ class EmptyAreaTests(TopologyCase):
         dialog = TopologyDialog(lambda tol: [], lambda changes: (0, 0))
         self.addCleanup(dialog.deleteLater)
         self.assertTrue(dialog.btn_remove.isHidden())
+
+
+@unittest.skipUnless(HAVE_QGIS, "QGIS Python behövs")
+class SharedVertexTests(unittest.TestCase):
+    """Steg 2: gemensamma brytpunkter (T-skarvar), dubbletter och egenskapsytor mot varandra."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.app = get_app()
+
+    def settle(self, plan, uses, props=()):
+        """Genomför alla förslag på varje yta och returnerar de nya geometrierna: (användning, egenskap)."""
+        changes = t.analyze(plan, uses, list(props))
+        out = []
+        for items in (uses, props):
+            fresh = []
+            for fid, geometry in items:
+                mine = [c for c in changes if c.fid == fid and c.table == ("anvandning_yta" if items is uses else "egenskap_yta")]
+                fresh.append((fid, t.apply_to_geometry(geometry, mine)[0]) if mine else (fid, geometry))
+            out.append(fresh)
+        return out
+
+    def test_a_vertex_of_an_earlier_area_that_lies_on_the_edge_of_a_later_one_is_added_there(self):
+        first = poly((0, 0), (50, 0), (50, 50), (50, 100), (0, 100))  # har en brytpunkt mitt på kanten
+        second = poly((50, 0), (100, 0), (100, 100), (50, 100))  # saknar den: en T-skarv
+        changes = t.analyze(PLAN_G, [(1, first), (2, second)], [])
+        self.assertEqual([(c.kind, c.fid, c.new, c.reference) for c in changes],
+                         [(t.ADD_VERTEX, 2, (50.0, 50.0), "anvandning_yta")])
+        self.assertEqual(changes[0].tier, t.TIER_AUTO, "den ligger på kanten: inget flyttas")
+        (new_second,) = [g for fid, g in self.settle(PLAN_G, [(1, first), (2, second)])[0] if fid == 2]
+        self.assertIn((50.0, 50.0), [(p.x(), p.y()) for p in t.vertices(new_second)])
+        self.assertEqual(t.analyze(PLAN_G, [(1, first), (2, new_second)], []), [], "inga fler förslag efteråt")
+
+    def test_the_earlier_area_is_never_changed_for_a_t_junction(self):
+        later = poly((0, 0), (50, 0), (50, 100), (0, 100))
+        earlier = poly((50, 0), (100, 0), (100, 100), (50, 100), (50, 50))  # brytpunkten ligger på den senares kant
+        changes = t.analyze(PLAN_G, [(1, earlier), (2, later)], [])
+        self.assertEqual({c.fid for c in changes}, {2}, "bara den senare ytan får förslag")
+
+    def test_property_areas_adapt_to_each_other_the_later_to_the_earlier(self):
+        first = poly((10, 10), (40, 10), (40, 40), (10, 40))
+        second = poly((40.04, 10), (70, 10), (70, 40), (40.04, 40))
+        changes = t.analyze(PLAN_G, [], [(1, first), (2, second)])
+        self.assertEqual({(c.table, c.fid, c.reference) for c in changes}, {("egenskap_yta", 2, "egenskap_yta")})
+        self.assertEqual({c.old for c in changes}, {(40.04, 10.0), (40.04, 40.0)})
+        self.assertTrue(all(c.tier == t.TIER_REVIEW for c in changes), "4 cm ska granskas")
+
+    def test_two_vertices_in_a_row_within_a_centimetre_are_a_duplicate_and_the_second_is_removed(self):
+        use = poly((0, 0), (0.004, 0), (100, 0), (100, 100), (0, 100))
+        changes = t.analyze(PLAN_G, [(1, use)], [])
+        self.assertEqual([(c.kind, c.old, c.new) for c in changes], [(t.REMOVE_VERTEX, (0.004, 0.0), None)],
+                         "dubbletten tas bort i stället för att flyttas")
+        self.assertEqual(changes[0].tier, t.TIER_AUTO)
+        self.assertIn("Ta bort en brytpunkt", changes[0].text)
+        cleaned, done, skipped = t.apply_to_geometry(use, changes)
+        self.assertEqual((done, skipped), (1, 0))
+        self.assertEqual(len(t.vertices(cleaned)), 4)
+        self.assertAlmostEqual(cleaned.area(), use.area(), delta=0.01)
+        self.assertEqual(t.analyze(PLAN_G, [(1, cleaned)], []), [])
+
+    def test_a_triangle_never_loses_a_vertex_to_a_duplicate_check(self):
+        triangle = poly((0, 0), (0.003, 0), (50, 80))
+        self.assertEqual([c for c in t.analyze(None, [(1, triangle)], []) if c.kind == t.REMOVE_VERTEX], [])
+
+    def test_a_duplicate_across_the_seam_of_the_ring_is_found(self):
+        use = poly((0.003, 0.0), (100, 0), (100, 100), (0, 100), (0, 0))  # första och sista ligger 3 mm från varandra
+        found = [c for c in t.analyze(None, [(1, use)], []) if c.kind == t.REMOVE_VERTEX]
+        self.assertEqual(len(found), 1)
+
+    def test_a_row_summarises_adds_and_removes_too(self):
+        changes = [t.Change(t.ADD_VERTEX, "anvandning_yta", 1, None, (1.0, 1.0), 0.0, "detaljplan"),
+                   t.Change(t.ADD_VERTEX, "anvandning_yta", 1, None, (2.0, 2.0), 0.0, "detaljplan"),
+                   t.Change(t.REMOVE_VERTEX, "anvandning_yta", 1, (3.0, 3.0), None, 0.002, "")]
+        self.assertEqual(t.summarize(changes), "Lägg till 2 brytpunkter och ta bort 1 dubblerade brytpunkter")
+
+
+class PreviewTests(GuiCase):
+    """Förhandsvisningen i kartan: röd där brytpunkten ligger nu, grön där den hamnar."""
+
+    def count(self, band):
+        geometry = band.asGeometry()
+        return 0 if geometry is None or geometry.isEmpty() else len(list(geometry.vertices()))
+
+    def test_a_move_shows_the_old_and_the_new_position_and_a_line_between_them(self):
+        from rita_detaljplan.gui.topology_preview import TopologyPreview
+        preview = TopologyPreview(self.canvas)
+        self.assertTrue(preview.is_empty())
+        preview.show([t.Change(t.SNAP_VERTEX, "anvandning_yta", 1, (10.0, 10.0), (10.0, 10.2), 0.2, "detaljplan")])
+        self.assertFalse(preview.is_empty())
+        self.assertEqual((self.count(preview._old), self.count(preview._new), self.count(preview._lines)), (1, 1, 2))
+
+    def test_an_added_vertex_is_only_green_and_a_removed_one_only_red(self):
+        from rita_detaljplan.gui.topology_preview import TopologyPreview
+        preview = TopologyPreview(self.canvas)
+        preview.show([t.Change(t.ADD_VERTEX, "anvandning_yta", 1, None, (5.0, 5.0), 0.0, "detaljplan"),
+                      t.Change(t.REMOVE_VERTEX, "anvandning_yta", 1, (7.0, 7.0), None, 0.002, "")])
+        self.assertEqual((self.count(preview._old), self.count(preview._new), self.count(preview._lines)), (1, 1, 0))
+
+    def test_showing_again_replaces_the_picture_and_an_empty_list_clears_it(self):
+        from rita_detaljplan.gui.topology_preview import TopologyPreview
+        preview = TopologyPreview(self.canvas)
+        move = t.Change(t.SNAP_VERTEX, "anvandning_yta", 1, (10.0, 10.0), (10.0, 10.2), 0.2, "detaljplan")
+        preview.show([move, move])
+        preview.show([move])
+        self.assertEqual(self.count(preview._old), 1)
+        preview.show([])
+        self.assertTrue(preview.is_empty())
 
 
 class DefaultToleranceTests(unittest.TestCase):
@@ -801,6 +963,15 @@ class ToolBarTests(TopologyCase):
         result = fill()
         self.assertTrue(result.ok)
         self.assertTrue(self.controller.editing)
+
+    def test_the_dialog_gets_the_map_preview_and_it_is_cleared_when_the_dialog_closes(self):
+        self.save()
+        preview = self.toolbar._topology_preview
+        with mock.patch("rita_detaljplan.gui.plan_toolbar.TopologyDialog") as dialog_cls:
+            dialog_cls.return_value.exec.side_effect = lambda: preview.show(self.controller.topology_changes(TOL)[:2])
+            self.toolbar.check_topology()
+        self.assertEqual(dialog_cls.call_args.kwargs["preview"], preview.show)
+        self.assertTrue(preview.is_empty(), "förhandsvisningen försvinner när dialogen stängs")
 
     def test_showing_a_suggestion_selects_and_zooms_to_the_area(self):
         change = self.controller.topology_changes(TOL)[0]

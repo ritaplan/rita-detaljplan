@@ -4,6 +4,13 @@ Formatet följer [Keep a Changelog](https://keepachangelog.com/sv/1.1.0/), versi
 
 ## [Kommande] – topologikontrollen: tystare, tydligare och med täckning och överlapp
 
+- **Listan har tre avsnitt:** *Rättas automatiskt* (högst 1 cm, ikryssat), *Förslag att granska* (större, inte ikryssat) och
+  *Kräver ditt beslut* (täckning och överlapp, görs inte automatiskt).
+- **Förhandsvisning i kartan:** markerar du en rad ritas dess ändringar direkt: en röd ring där brytpunkten ligger nu, en
+  grön där den hamnar och en linje mellan dem. Ringarna har fast storlek i bildpunkter, så att millimeter syns (`gui/topology_preview.py`).
+- **Ny analys:** brytpunkter hos planområdet eller en yta som ritades tidigare som ligger vid en annan ytas gräns men
+  saknas där (T-skarvar) läggs till (förut bara planområdets i användningsytor), egenskapsytor anpassas också till
+  tidigare egenskapsytor, och dubblerade brytpunkter (inom 1 cm från varandra) tas bort.
 - **Förvald tolerans är nu 10 cm** (var 50 cm), som reglerna räknar med. Större avstånd lämnas orörda; glapp mellan
   användningsområden som är större än så ser du under *Täckning och överlapp*.
 - **Avstånd skrivs så att de går att läsa:** *under 1 mm*, *3,4 mm*, *7 cm*. Förut stod *0 cm* för allt under en halv
@@ -17,7 +24,8 @@ Formatet följer [Keep a Changelog](https://keepachangelog.com/sv/1.1.0/), versi
   som saknas, ligger utanför planområdet eller överlappar, glapp, egenskap utanför användningen och ogiltiga gränser.
 - **"Saknar bestämmelse" och "kvartersmark saknar egenskapsområde" visas inte längre i topologikontrollen.** De hör till
   *Kontrollera planen*, där de redan finns.
-- Fil för fil: `core/topology.py`, `core/validation.py`, `controller.py`, `gui/topology_dialog.py`, `gui/plan_toolbar.py`.
+- Fil för fil: `core/topology.py`, `core/validation.py`, `controller.py`, `gui/topology_dialog.py`, `gui/topology_preview.py`
+  (ny), `gui/plan_toolbar.py`.
   Prov i `tests/test_topology.py` och `tests/test_validation.py`.
 
 ## [0.1.85] – plan i ett eget PostGIS-schema utan rätt att skapa scheman

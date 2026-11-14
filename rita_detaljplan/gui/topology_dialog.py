@@ -1,13 +1,18 @@
-"""Dialogen "Topologikontroll": resultatet som en lista på samma sätt som Kontrollera planen. Föreslagna ändringar av
-brytpunkter och små glapp (ikryssade, görs automatiskt) står en rad per yta, bland avvikelserna om täckning och överlapp
-(planområde utan användning, användning utanför planområdet, överlapp, glapp, ogiltiga gränser) och ytor utan utbredning
-som kan tas bort. Allt som gäller bestämmelser hör till Kontrollera planen."""
+"""Dialogen "Topologikontroll": resultatet som en lista i tre avsnitt, på samma sätt som Kontrollera planen.
+
+  * **Rättas automatiskt:** ändringar på högst en centimeter, en rad per yta, ikryssade (se ``Change.tier``).
+  * **Förslag att granska:** större ändringar, upp till toleransen, en rad per yta, inte ikryssade. Markerar man en rad visas
+    ändringarna som en förhandsvisning i kartan (röd ring där brytpunkten ligger nu, grön där den hamnar).
+  * **Kräver ditt beslut:** täckning och överlapp (planområde utan användning, användning utanför planområdet, överlapp,
+    glapp, ogiltiga gränser) och ytor utan utbredning som kan tas bort. Inget av det rättas automatiskt.
+
+Allt som gäller bestämmelser hör till Kontrollera planen."""
 from __future__ import annotations
 
 from typing import Callable, Optional
 
 from qgis.PyQt.QtCore import Qt
-from qgis.PyQt.QtGui import QBrush
+from qgis.PyQt.QtGui import QBrush, QColor
 from qgis.PyQt.QtWidgets import (QCheckBox, QDialog, QDialogButtonBox, QDoubleSpinBox, QHBoxLayout, QLabel,
                                  QListWidget, QListWidgetItem, QPushButton, QVBoxLayout)
 
@@ -18,7 +23,10 @@ from ..core.validation import EMPTY_AREA_KIND, ERROR, WARNING, Issue
 from .plan_switcher import build_plan_switcher
 from .validation_dialog import COLORS, MARKS
 
-CHANGE_KIND, FINDING_KIND = "change", "finding"
+CHANGE_KIND, FINDING_KIND, HEADER_KIND = "change", "finding", "header"
+SECTION_TITLES = {topology.TIER_AUTO: "Rättas automatiskt (högst 1 cm, säkert)",
+                  topology.TIER_REVIEW: "Förslag att granska (större än 1 cm)",
+                  "beslut": "Kräver ditt beslut (görs inte automatiskt)"}
 BETA_TEXT = ("<b>Beta:</b> Topologikontrollen är en utvecklingsversion och har ännu inte full funktionalitet. Den kan missa "
              "avvikelser, och alla föreslagna ändringar går inte alltid att genomföra. Granska förslagen och spara en "
              "kopia av planen innan du gör ändringar.")
@@ -29,21 +37,23 @@ class TopologyDialog(QDialog):
     ``show(item)`` visar en yta i kartan (item är en ``Change`` eller en ``Issue``). ``findings()`` (avvikelser som
     inte kan åtgärdas automatiskt, som ``Issue``), ``fill_use()`` (fyller det som saknar användning med en ny
     användningsyta, se ``controller.fill_use``), ``remove_empty()`` (tar bort ytor utan utbredning och returnerar
-    antalet) och ``describe(tabell, fid)`` (hur en yta pekas ut i listan) är valfria."""
+    antalet), ``describe(tabell, fid)`` (hur en yta pekas ut i listan) och ``preview(ändringar)`` (ritar förhandsvisningen av
+    en rads ändringar i kartan, och rensar den med en tom lista) är valfria."""
 
     def __init__(self, analyze: Callable[[float], list[Change]], apply: Callable[[list[Change]], tuple[int, int]],
                  show: Optional[Callable[[object], None]] = None, parent=None, *,
                  findings: Optional[Callable[[], list[Issue]]] = None, fill_use: Optional[Callable[[], object]] = None,
                  controller: Optional[PlanController] = None, remove_empty: Optional[Callable[[], int]] = None,
-                 describe: Optional[Callable[[str, int], str]] = None):
+                 describe: Optional[Callable[[str, int], str]] = None,
+                 preview: Optional[Callable[[list[Change]], None]] = None):
         super().__init__(parent)
         self.setWindowTitle("Topologikontroll")
         self.setMinimumSize(620, 460)
         self._analyze, self._apply, self._show = analyze, apply, show
         self._findings, self._fill_use = findings, fill_use
-        self._remove_empty, self._describe = remove_empty, describe
+        self._remove_empty, self._describe, self._preview = remove_empty, describe, preview
         self.changes: list[Change] = []
-        self.groups: list[list[Change]] = []  # förslagen, en grupp per yta: en rad i listan
+        self.groups: list[list[Change]] = []  # förslagen, en grupp per yta och nivå: en rad i listan
         self.findings: list[Issue] = []
         self._switcher = build_plan_switcher(controller, self.reload, self) if controller is not None else None
 
@@ -123,6 +133,8 @@ class TopologyDialog(QDialog):
         self.list.itemChanged.connect(self._update_buttons)
         self.list.itemSelectionChanged.connect(self._update_buttons)
         self.list.itemDoubleClicked.connect(lambda *_: self.show_selected())
+        self.list.currentItemChanged.connect(lambda *_: self._preview_selected())
+        self.finished.connect(lambda *_: self._clear_preview())
         self.reload()
 
     # -- listan ---------------------------------------------------------------------------
@@ -131,8 +143,9 @@ class TopologyDialog(QDialog):
         self.findings = self._findings() if self._findings is not None else []
         by_area: dict[tuple, list[Change]] = {}
         for change in self.changes:
-            by_area.setdefault((change.table, change.fid), []).append(change)
+            by_area.setdefault((change.tier, change.table, change.fid), []).append(change)
         self.groups = list(by_area.values())
+        self._clear_preview()
         self._fill()
 
     def _issues(self) -> list[Issue]:
@@ -147,31 +160,57 @@ class TopologyDialog(QDialog):
     def _fill(self, *_) -> None:
         self.list.blockSignals(True)
         self.list.clear()
-        for issue in self.findings:
-            if issue.severity == ERROR and self.filters[ERROR].isChecked():
-                self._add_finding(issue)
         if self.filters[WARNING].isChecked():
-            for index, group in enumerate(self.groups):
-                first = group[0]
-                name = self._name(first.table, first.fid)
-                item = QListWidgetItem(f"{MARKS[WARNING]}  {first.where}{f' ({name})' if name else ''}: "
-                                       f"{topology.summarize(group)}")
-                item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
-                item.setCheckState(Qt.CheckState.Checked)
-                item.setForeground(QBrush(COLORS[WARNING]))
-                item.setData(Qt.ItemDataRole.UserRole, (CHANGE_KIND, index))
-                item.setToolTip("\n".join(
-                    f"{c.title}: från {c.old} till {c.new} ({topology.length_text(c.distance)})" if c.old
-                    else f"{c.title}: ny brytpunkt vid {c.new}" for c in group))
-                self.list.addItem(item)
-            for issue in self.findings:
-                if issue.severity == WARNING:
-                    self._add_finding(issue)
+            for tier in (topology.TIER_AUTO, topology.TIER_REVIEW):
+                indexes = [i for i, group in enumerate(self.groups) if group[0].tier == tier]
+                if indexes:
+                    self._add_header(tier, SECTION_TITLES[tier], len(indexes))
+                for index in indexes:
+                    self._add_change(index, tier)
+        deciding = [issue for severity in (ERROR, WARNING) for issue in self.findings
+                    if issue.severity == severity and self.filters[severity].isChecked()]
+        if deciding:
+            self._add_header("beslut", SECTION_TITLES["beslut"], len(deciding))
+            for issue in deciding:
+                self._add_finding(issue)
         self.list.blockSignals(False)
         issues = self._issues()
         self.summary.setText(validation.summary(issues).replace("Inga avvikelser: planen klarar kontrollen.",
                                                                 "Inga avvikelser: topologin stämmer."))
         self._update_buttons()
+
+    def _add_header(self, key: str, title: str, count: int) -> None:
+        item = QListWidgetItem(f"{title}: {count}")
+        item.setFlags(Qt.ItemFlag.NoItemFlags)  # en rubrik går inte att välja eller kryssa
+        font = item.font()
+        font.setBold(True)
+        item.setFont(font)
+        item.setBackground(QBrush(QColor(0, 0, 0, 18)))
+        item.setData(Qt.ItemDataRole.UserRole, (HEADER_KIND, key))
+        self.list.addItem(item)
+
+    def _add_change(self, index: int, tier: str) -> None:
+        group = self.groups[index]
+        first = group[0]
+        name = self._name(first.table, first.fid)
+        item = QListWidgetItem(f"{MARKS[WARNING]}  {first.where}{f' ({name})' if name else ''}: "
+                               f"{topology.summarize(group)}")
+        item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+        # det säkra rättas utan vidare; det större ska granskas först och är därför inte ikryssat från början
+        item.setCheckState(Qt.CheckState.Checked if tier == topology.TIER_AUTO else Qt.CheckState.Unchecked)
+        item.setForeground(QBrush(COLORS[WARNING]))
+        item.setData(Qt.ItemDataRole.UserRole, (CHANGE_KIND, index))
+        item.setToolTip("\n".join(self._detail(c) for c in group))
+        self.list.addItem(item)
+
+    @staticmethod
+    def _detail(change: Change) -> str:
+        length = topology.length_text(change.distance)
+        if change.new is None:
+            return f"{change.title}: vid {change.old} ({length})"
+        if change.old is None:
+            return f"{change.title}: ny brytpunkt vid {change.new} ({length})"
+        return f"{change.title}: från {change.old} till {change.new} ({length})"
 
     def _add_finding(self, issue: Issue) -> None:
         code = f"[{issue.code}] " if issue.code else ""
@@ -181,19 +220,21 @@ class TopologyDialog(QDialog):
         item.setData(Qt.ItemDataRole.UserRole, (FINDING_KIND, issue))
         self.list.addItem(item)
 
+    def rows(self) -> list[QListWidgetItem]:
+        """Raderna i listan utan rubrikerna."""
+        return [self.list.item(i) for i in range(self.list.count())
+                if self.list.item(i).data(Qt.ItemDataRole.UserRole)[0] != HEADER_KIND]
+
     def checked(self) -> list[Change]:
         """De valda (ikryssade) förslagen."""
         chosen = []
-        for i in range(self.list.count()):
-            item = self.list.item(i)
-            kind, value = item.data(Qt.ItemDataRole.UserRole)
-            if kind == CHANGE_KIND and item.checkState() == Qt.CheckState.Checked:
-                chosen.extend(self.groups[value])
+        for item in self._change_items():
+            if item.checkState() == Qt.CheckState.Checked:
+                chosen.extend(self.groups[item.data(Qt.ItemDataRole.UserRole)[1]])
         return chosen
 
     def _change_items(self) -> list[QListWidgetItem]:
-        return [self.list.item(i) for i in range(self.list.count())
-                if self.list.item(i).data(Qt.ItemDataRole.UserRole)[0] == CHANGE_KIND]
+        return [item for item in self.rows() if item.data(Qt.ItemDataRole.UserRole)[0] == CHANGE_KIND]
 
     def _set_all(self, state) -> None:
         self.list.blockSignals(True)
@@ -204,7 +245,8 @@ class TopologyDialog(QDialog):
 
     def _selected(self):
         item = self.list.currentItem()
-        return item.data(Qt.ItemDataRole.UserRole) if item is not None else None
+        data = item.data(Qt.ItemDataRole.UserRole) if item is not None else None
+        return None if data is None or data[0] == HEADER_KIND else data
 
     def _update_buttons(self, *_) -> None:
         chosen = len(self.checked())
@@ -220,6 +262,16 @@ class TopologyDialog(QDialog):
         self.btn_remove.setEnabled(any(issue.kind == EMPTY_AREA_KIND for issue in self.findings))
 
     # -- åtgärder ---------------------------------------------------------------------------
+    def _preview_selected(self) -> None:
+        """Ritar den markerade radens ändringar i kartan (och rensar när raden inte är ett förslag)."""
+        selected = self._selected()
+        if self._preview is not None:
+            self._preview(list(self.groups[selected[1]]) if selected is not None and selected[0] == CHANGE_KIND else [])
+
+    def _clear_preview(self) -> None:
+        if self._preview is not None:
+            self._preview([])
+
     def show_selected(self) -> None:
         selected = self._selected()
         if selected is None or self._show is None:

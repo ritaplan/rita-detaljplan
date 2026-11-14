@@ -47,23 +47,37 @@ Kontrollen görs på den **sparade** planen. Knappen är grå medan du redigerar
 
 1. Klicka på **Topologikontroll** (brytpunkter med en cirkel).
 2. Välj **tolerans**. Förvalet är 10 cm, som reglerna räknar med. Större avstånd ses som avsiktliga och lämnas orörda.
-3. Gå igenom förslagen. Markera ett förslag och klicka på **Visa i kartan** för att se var det gäller.
-4. Kryssa ur de förslag du inte vill genomföra.
-5. Genomför ändringarna.
+3. Gå igenom listan. Den har tre avsnitt (se nedan). **Markerar du en rad** ritas dess ändringar direkt i kartan: en
+   röd ring där brytpunkten ligger nu, en grön där den hamnar och en linje mellan dem. Ringarna har fast storlek, så att
+   en ändring på någon millimeter syns lika tydligt som en på en decimeter. **Visa i kartan** (eller dubbelklick) zoomar
+   dessutom till ytan.
+4. Kryssa i eller ur raderna. Det säkra är ikryssat, det som ska granskas är det inte.
+5. Klicka på **Gör valda ändringar**.
 6. Spara genom att avsluta redigeringen.
 
 <!-- BILD: topologikontroll.png | Dialogen Topologikontroll med förslag och Visa i kartan -->
 
+### De tre avsnitten
+
+- **Rättas automatiskt** (högst 1 cm, säkert): ikryssat från början. Det mesta är avrundning som ingen ser.
+- **Förslag att granska** (större än 1 cm, upp till toleransen): inte ikryssat. Markera raden, titta i kartan och kryssa i
+  det du vill göra. *Markera alla* tar med allt.
+- **Kräver ditt beslut:** täckning och överlapp (nedan). Inget av det rättas automatiskt.
+
 ### Förslagen
 
-Förslagen står **en rad per yta**, med ytans användningsform (om den har någon), storlek och objektnummer, till exempel
+Förslagen står **en rad per yta och avsnitt**, med ytans användningsform (om den har någon), storlek och objektnummer, till exempel
 *Egenskapsområde (Kvartersmark, 3 803 m², nr 35): Justera 18 brytpunkter (som mest under 1 mm) mot planområdets gräns*.
 Håller du musen över raden ser du varje ändring. Raden gäller hela ytan: kryssar du ur den görs inga av ytans ändringar.
 
 - **Flytta brytpunkter:** en brytpunkt i en användnings- eller egenskapsyta som ligger nära en annan ytas brytpunkt
   eller gräns flyttas dit.
-- **Lägg till brytpunkter:** planområdets brytpunkter läggs till i användningen där de saknas.
-- **Stäng glapp:** glapp mellan ytor i samma lager stängs. Den yta som ritades senast anpassas till den tidigare.
+- **Lägg till gemensamma brytpunkter:** ligger en brytpunkt hos planområdet eller en yta som ritades tidigare vid en annan
+  ytas gräns, utan att den ytan har en brytpunkt där (en T-skarv), får ytan en brytpunkt där, så att de delar den.
+- **Stäng glapp:** glapp mellan ytor stängs. Den yta som ritades senast anpassas till den tidigare. Egenskapsytor
+  anpassas på samma sätt till planområdet, användningsytorna och tidigare egenskapsytor.
+- **Ta bort dubbletter:** två brytpunkter i rad som ligger inom en centimeter från varandra är en dubblett, och den
+  andra tas bort. En yta behåller alltid minst tre brytpunkter.
 
 Avstånd under 1 mm är avrundning som ingen ser, men som ändå gör att två gränser inte ligger exakt på varandra. De
 visas som *under 1 mm* och rättas på samma sätt. Planområdet ändras aldrig. Ändringarna görs i redigeringsbufferten med
@@ -71,7 +85,7 @@ ett ångra-steg per lager.
 
 ### Täckning och överlapp
 
-Under förslagen visas avvikelserna om täckning och överlapp. De är samma kontroller som i *Kontrollera planen*:
+Under rubriken *Kräver ditt beslut* visas avvikelserna om täckning och överlapp. De är samma kontroller som i *Kontrollera planen*:
 
 - **Planområdet saknar användning** (fel). Knappen *Fyll återstoden med en användningsyta* fyller det som saknas, på
   samma sätt som *Fyll användning*. *Visa i kartan* markerar exakt den del som saknar användning.

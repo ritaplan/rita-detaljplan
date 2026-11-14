@@ -5,11 +5,16 @@ Analysen föreslår ändringar; ingenting ändras förrän användaren valt vilk
   * **Brytpunkter ska sammanfalla.** En brytpunkt i en användningsyta som ligger nära (men inte exakt på) en brytpunkt i
     planområdet flyttas dit, och ligger den nära planområdets gräns flyttas den ända fram till gränsen. Planområdet har
     alltid företräde (planområde > användning > egenskap), i linje med hierarkin på kartan.
-  * **Planområdets brytpunkter ska finnas i användningen.** Ligger en av planområdets brytpunkter mot en användningsyta
-    som saknar brytpunkt där läggs en till.
+  * **Gemensamma brytpunkter ska finnas i båda ytorna.** Ligger en brytpunkt hos planområdet eller en yta med högre
+    företräde vid en annan ytas gräns, utan att ytan har en brytpunkt där (en T-skarv), läggs en till.
   * **Små glapp** mellan användningsytor (och mellan egenskap och användning) stängs: en brytpunkt som ligger inom
     toleransen från en annan ytas gräns, utan att ligga på den, flyttas till den. Mellan ytor i samma lager flyttas den
-    senare ytans brytpunkt till den tidigare (så att bara en av dem ändras).
+    senare ytans brytpunkt till den tidigare (så att bara en av dem ändras). Egenskapsytor anpassas på samma sätt till
+    planområdet, användningsytorna och tidigare egenskapsytor.
+  * **Dubblerade brytpunkter** (två i rad som ligger inom en centimeter från varandra) tas bort.
+
+Varje förslag är antingen *säkert* (en centimeter eller mindre: rättas automatiskt) eller *att granska* (större än så, upp
+till toleransen). Det styr hur dialogen visar det (se ``Change.tier``).
 
 Ytor utan utbredning (area 0) hoppas över: de är skräp som ska bort (se ``is_degenerate``), inte något som ska
 anpassas. Rena geometriberäkningar (QgsGeometry) utan koppling till lager; kontrollen av att en ändring inte ger en ogiltig
@@ -28,27 +33,37 @@ EXACT = 1e-6  # m: så nära räknas brytpunkter som sammanfallande
 NOISE = 0.001  # m: en avvikelse under 1 mm ser ingen och är bara avrundning: rättas, men visas som "under 1 mm"
 EMPTY_AREA = 0.01  # m²: en yta som inte är större har ingen utbredning (samma gräns som core.rules.MIN_OVERLAP)
 
-SNAP_VERTEX, SNAP_EDGE, ADD_VERTEX = "brytpunkt", "gräns", "planbrytpunkt"
+SAFE = 0.01  # m: en ändring på högst en centimeter är säker och kan göras utan granskning
+DUPLICATE = 0.01  # m: två brytpunkter i rad som ligger så nära varandra är en dubblett
+TIER_AUTO, TIER_REVIEW = "auto", "granska"
+
+SNAP_VERTEX, SNAP_EDGE, ADD_VERTEX, REMOVE_VERTEX = "brytpunkt", "gräns", "planbrytpunkt", "dubblett"
 KIND_TITLES = {SNAP_VERTEX: "Flytta brytpunkt till brytpunkt", SNAP_EDGE: "Stäng glapp mot gräns",
-               ADD_VERTEX: "Lägg till planområdets brytpunkt"}
-TARGET_TITLES = {"detaljplan": "planområdet", "anvandning_yta": "användningsområde", "egenskap_yta": "egenskapsområde"}
+               ADD_VERTEX: "Lägg till gemensam brytpunkt", REMOVE_VERTEX: "Ta bort dubblerad brytpunkt"}
+TARGET_TITLES = {"detaljplan": "planområdet", "anvandning_yta": "användningsområdet", "egenskap_yta": "egenskapsområdet"}
 TABLE_TITLES = {"anvandning_yta": "Användningsområde", "egenskap_yta": "Egenskapsområde"}
 
 
 @dataclass(frozen=True)
 class Change:
-    """En föreslagen ändring av en yta: flytta en brytpunkt (``old`` → ``new``) eller lägga till en (``old`` är None)."""
+    """En föreslagen ändring av en yta: flytta en brytpunkt (``old`` → ``new``), lägga till en (``old`` är None) eller ta
+    bort en (``new`` är None)."""
     kind: str
     table: str
     fid: int
     old: Optional[tuple]
-    new: tuple
+    new: Optional[tuple]
     distance: float  # m: hur långt brytpunkten flyttas (0 vid tillägg på gränsen)
     reference: str  # vad den anpassas till: "detaljplan", "anvandning_yta" eller "egenskap_yta"
 
     @property
     def title(self) -> str:
         return KIND_TITLES[self.kind]
+
+    @property
+    def tier(self) -> str:
+        """``TIER_AUTO`` (högst en centimeter: säkert, görs utan granskning) eller ``TIER_REVIEW`` (större, att granska)."""
+        return TIER_AUTO if self.distance <= SAFE else TIER_REVIEW
 
     @property
     def noise(self) -> bool:
@@ -63,6 +78,8 @@ class Change:
             return f"Flytta brytpunkten {length} till {target}s brytpunkt"
         if self.kind == SNAP_EDGE:
             return f"Stäng glapp på {length} mot {target}s gräns"
+        if self.kind == REMOVE_VERTEX:
+            return f"Ta bort en brytpunkt som ligger {length} från den förra"
         return f"Lägg till en brytpunkt där {target} har en ({length} från ytans kant)"
 
     @property
@@ -86,8 +103,9 @@ def summarize(changes: list[Change]) -> str:
     planområdets gräns". Ett enda förslag får sin egen text."""
     if len(changes) == 1:
         return changes[0].text
-    moves = [c for c in changes if c.kind != ADD_VERTEX]
+    moves = [c for c in changes if c.kind in (SNAP_VERTEX, SNAP_EDGE)]
     adds = [c for c in changes if c.kind == ADD_VERTEX]
+    removes = [c for c in changes if c.kind == REMOVE_VERTEX]
     parts = []
     if moves:
         targets = " och ".join(sorted({TARGET_TITLES.get(c.reference, c.reference) + "s" for c in moves}))
@@ -95,6 +113,8 @@ def summarize(changes: list[Change]) -> str:
                      f"mot {targets} gräns")
     if adds:
         parts.append(f"lägg till {len(adds)} brytpunkter")
+    if removes:
+        parts.append(f"ta bort {len(removes)} dubblerade brytpunkter")
     text = " och ".join(parts)
     return text[:1].upper() + text[1:]
 
@@ -196,29 +216,43 @@ def _snap_vertex(vertex: QgsPointXY, refs: list[Reference], tolerance: float):
     return best
 
 
+def _usable(geometry: Optional[QgsGeometry]) -> bool:
+    return geometry is not None and not geometry.isNull() and not geometry.isEmpty() and not is_degenerate(geometry)
+
+
 def analyze(plan: Optional[QgsGeometry], uses: list[tuple], properties: list[tuple],
             tolerance: float = DEFAULT_TOLERANCE) -> list[Change]:
     """Föreslår ändringar. ``uses`` och ``properties`` är listor av ``(fid, geometri)``; ordningen i listan avgör
-    vilken av två lika viktiga ytor som anpassar sig till vilken (den senare till den tidigare)."""
+    vilken av två lika viktiga ytor som anpassar sig till vilken (den senare till den tidigare). Företräde: planområde,
+    användning, egenskap."""
     changes: list[Change] = []
     plan_ref = _references("detaljplan", plan)
 
-    ordered_uses = [(fid, g) for fid, g in uses if g is not None and not g.isNull() and not g.isEmpty()
-                    and not is_degenerate(g)]
+    ordered_uses = [(fid, g) for fid, g in uses if _usable(g)]
     for index, (fid, geometry) in enumerate(ordered_uses):
         refs = [plan_ref] if plan_ref else []
         refs += [r for r in (_references("anvandning_yta", g) for _, g in ordered_uses[:index]) if r]
-        changes += _vertex_changes("anvandning_yta", fid, geometry, refs, tolerance)
-        if plan_ref:
-            changes += _added_plan_vertices("anvandning_yta", fid, geometry, plan_ref, tolerance, changes)
+        changes += _area_changes("anvandning_yta", fid, geometry, refs, tolerance)
 
     use_refs = [r for r in (_references("anvandning_yta", g) for _, g in ordered_uses) if r]
-    for fid, geometry in properties:
-        if geometry is None or geometry.isNull() or geometry.isEmpty() or is_degenerate(geometry):
-            continue
+    ordered_properties = [(fid, g) for fid, g in properties if _usable(g)]
+    for index, (fid, geometry) in enumerate(ordered_properties):
         refs = ([plan_ref] if plan_ref else []) + use_refs
-        changes += _vertex_changes("egenskap_yta", fid, geometry, refs, tolerance)
+        refs += [r for r in (_references("egenskap_yta", g) for _, g in ordered_properties[:index]) if r]
+        changes += _area_changes("egenskap_yta", fid, geometry, refs, tolerance)
     return changes
+
+
+def _area_changes(table: str, fid: int, geometry: QgsGeometry, refs: list[Reference], tolerance: float) -> list[Change]:
+    """Alla förslag för en yta: dubbletter först, sedan brytpunkter som flyttas och gemensamma som läggs till. Brytpunkter
+    som tas bort som dubbletter flyttas inte också."""
+    removed = _duplicate_vertices(table, fid, geometry)
+    gone = {c.old for c in removed}
+    found = list(removed)
+    moves = [c for c in _vertex_changes(table, fid, geometry, refs, tolerance) if c.old not in gone]
+    found += moves
+    found += _added_vertices(table, fid, geometry, refs, tolerance, moves)
+    return found
 
 
 def _vertex_changes(table: str, fid: int, geometry: QgsGeometry, refs: list[Reference], tolerance: float) -> list[Change]:
@@ -232,30 +266,54 @@ def _vertex_changes(table: str, fid: int, geometry: QgsGeometry, refs: list[Refe
     return found
 
 
-def _added_plan_vertices(table: str, fid: int, geometry: QgsGeometry, plan_ref: Reference, tolerance: float,
-                         existing: list[Change]) -> list[Change]:
-    """Planområdets brytpunkter som ligger vid ytans gräns men saknas i ytan."""
+def _added_vertices(table: str, fid: int, geometry: QgsGeometry, refs: list[Reference], tolerance: float,
+                    existing: list[Change]) -> list[Change]:
+    """Brytpunkter hos planområdet eller en yta med högre företräde som ligger vid ytans gräns men saknas i ytan (en
+    T-skarv): ytan får en brytpunkt där, så att de delar den."""
     boundary = _boundary(geometry)
     if boundary is None:
         return []
     own = vertices(geometry)
-    moved_to = {c.new for c in existing if c.fid == fid and c.table == table}
-    found = []
-    for point in plan_ref.points:
-        if _key(point) in moved_to or any(point.distance(v) <= tolerance for v in own):
-            continue  # ytan har redan (eller får) en brytpunkt där
-        nearest = boundary.nearestPoint(QgsGeometry.fromPointXY(point))
-        if nearest.isNull():
+    moved_to = {c.new for c in existing if c.fid == fid and c.table == table and c.new is not None}
+    found, seen = [], set()
+    for ref in refs:
+        for point in ref.points:
+            key = _key(point)
+            if key in moved_to or key in seen or any(point.distance(v) <= tolerance for v in own):
+                continue  # ytan har redan (eller får) en brytpunkt där
+            nearest = boundary.nearestPoint(QgsGeometry.fromPointXY(point))
+            if nearest.isNull():
+                continue
+            d = point.distance(nearest.asPoint())
+            if d <= tolerance:
+                found.append(Change(ADD_VERTEX, table, fid, None, key, d, ref.name))
+                seen.add(key)
+    return found
+
+
+def _duplicate_vertices(table: str, fid: int, geometry: QgsGeometry) -> list[Change]:
+    """Två brytpunkter i rad (också över ringens skarv) som ligger inom ``DUPLICATE`` från varandra: den andra är en
+    dubblett och tas bort. En ring behåller alltid minst tre brytpunkter."""
+    found: list[Change] = []
+    for part in _parts(geometry):
+        if part.type() != Qgis.GeometryType.Polygon:
             continue
-        d = point.distance(nearest.asPoint())
-        if d <= tolerance:
-            found.append(Change(ADD_VERTEX, table, fid, None, _key(point), d, plan_ref.name))
+        for ring in part.asPolygon():
+            points = ring[:-1]
+            keep = len(points)
+            for i, point in enumerate(points):
+                following = points[(i + 1) % len(points)]
+                d = point.distance(following)
+                if keep > 3 and d <= DUPLICATE:
+                    found.append(Change(REMOVE_VERTEX, table, fid, _key(following), None, d, ""))
+                    keep -= 1
     return found
 
 
 # -- genomförande -------------------------------------------------------------------------------
 def apply_to_geometry(geometry: QgsGeometry, changes: list[Change]) -> tuple[QgsGeometry, int, int]:
-    """Genomför ändringarna på en geometri. Returnerar (ny geometri, antal gjorda, antal hoppade över).
+    """Genomför ändringarna på en geometri (flytta, lägga till eller ta bort brytpunkter). Returnerar (ny geometri,
+    antal gjorda, antal hoppade över).
 
     Brytpunkterna hittas via sina koordinater, så ordningen mellan ändringarna spelar ingen roll. En ändring som
     skulle ge en ogiltig geometri (t.ex. en korsande gräns) hoppas över."""
@@ -263,11 +321,15 @@ def apply_to_geometry(geometry: QgsGeometry, changes: list[Change]) -> tuple[Qgs
     done = skipped = 0
     for change in changes:
         trial = QgsGeometry(current)
-        target = QgsPointXY(*change.new)
-        if change.old is None:
+        if change.new is None:  # ta bort en dubblett
+            _, at, _, _, distance = _closest_vertex(trial, QgsPointXY(*change.old))
+            ok = at >= 0 and distance <= 1e-4 and trial.deleteVertex(at)
+        elif change.old is None:  # lägg till en gemensam brytpunkt
+            target = QgsPointXY(*change.new)
             _, _, after, _ = _segment(trial, target)
             ok = after >= 0 and trial.insertVertex(target.x(), target.y(), after)
-        else:
+        else:  # flytta
+            target = QgsPointXY(*change.new)
             _, at, _, _, distance = _closest_vertex(trial, QgsPointXY(*change.old))
             ok = at >= 0 and distance <= 1e-4 and trial.moveVertex(target.x(), target.y(), at)
         if ok and trial.isGeosValid() and not trial.isEmpty():

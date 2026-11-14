@@ -40,6 +40,7 @@ from .label_tool import LabelTool
 from .messages import push
 from .select_tool import SelectTool
 from .topology_dialog import TopologyDialog
+from .topology_preview import TopologyPreview
 from .validation_dialog import ValidationDialog
 
 ICONS = Path(__file__).resolve().parent.parent / "icons"
@@ -160,6 +161,7 @@ class PlanToolBar(QToolBar):
         self._issue_band.setColor(QColor(179, 38, 30, 90))
         self._issue_band.setStrokeColor(QColor(179, 38, 30))
         self._issue_band.setWidth(2)
+        self._topology_preview = TopologyPreview(iface.mapCanvas())  # förslagen i topologikontrollen, före och efter
 
         # ny plan och öppna finns alltid tillgängliga; resten hör till en öppen plan
         self.act_new = QAction(icon("new.svg"), NEW_TIP, self)
@@ -901,6 +903,7 @@ class PlanToolBar(QToolBar):
     def check_topology(self):
         """Öppnar dialogen för topologikontroll: brytpunkter och glapp som nästan sammanfaller, och täckning och överlapp
         (om hela planområdet har användning, användning utanför planområdet, överlapp mellan ytor, ytor utan utbredning).
+        Markerar man ett förslag visas det i kartan innan det görs (se ``TopologyPreview``).
         Kan inte användas medan redigeringen pågår. De valda ändringarna (och att fylla en saknad användning eller ta
         bort tomma ytor) startar redigeringen och görs i redigeringsbufferten; de sparas när den avslutas."""
         if self.controller.editing:
@@ -923,8 +926,10 @@ class PlanToolBar(QToolBar):
 
         dialog = TopologyDialog(self.controller.topology_changes, apply, self._show_item, self.iface.mainWindow(),
                                 findings=self.controller.topology_findings, fill_use=fill, controller=self.controller,
-                                remove_empty=remove_empty, describe=self.controller.area_label)
+                                remove_empty=remove_empty, describe=self.controller.area_label,
+                                preview=self._topology_preview.show)
         dialog.exec()
+        self._topology_preview.clear()
 
     def _show_item(self, item):
         """Markerar och zoomar till ytan ett förslag (``Change``) eller en avvikelse (``Issue``) gäller."""
