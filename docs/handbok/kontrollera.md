@@ -92,7 +92,7 @@ Under rubriken *Kräver ditt beslut* visas avvikelserna om täckning och överla
 - **Användning utanför planområdet** och **användningsområden som överlappar** varandra (fel eller varning, efter storlek).
 - **Glapp mellan användningsområden** som är smalare än regeln tillåter, och **egenskap utanför användningen**.
 - **Ogiltig gräns:** en yta som korsar sig själv.
-- **Ytor utan utbredning** (fel): en yta med area 0, till exempel en spets som går ut och tillbaka längs en gräns och som
+- **Ytor utan utbredning** (fel): en yta med area 0 (eller en remsa smalare än 1 mm), till exempel en spets som går ut och tillbaka längs en gräns och som
   en ritning har lämnat efter sig. Den innehåller ingen information. Knappen **Ta bort tomma ytor** tar bort dem (ett
   ångra-steg per lager). Ytorna räknas inte med bland förslagen om att flytta brytpunkter.
 

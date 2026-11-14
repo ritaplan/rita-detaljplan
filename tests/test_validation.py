@@ -67,6 +67,20 @@ class GeometryRules(unittest.TestCase):
         self.assertIn("5 000.0 m²", issues[0].text)
         self.assertEqual(issues[0].table, "detaljplan")
 
+    def test_a_missing_piece_smaller_than_a_hundredth_of_a_square_metre_is_not_reported(self):
+        """Avrundning ("0,0 m² av planområdet saknar användning") ska inte bli en egen rad bredvid det som verkligen saknas."""
+        holey = "MultiPolygon(((0 0, 50 0, 50 100, 0 100, 0 0), (10 10, 10.05 10, 10.05 10.05, 10 10.05, 10 10)))"
+        issues = v.check_geometry(plan_data(uses=(holey, sq(50, 0, 100, 80))))
+        self.assertEqual([i.code for i in issues], ["DP-0002"], [i.text for i in issues])
+        self.assertIn("1 000.0 m²", issues[0].text)
+
+    def test_a_thin_strip_inside_the_tolerance_is_not_reported_next_to_a_real_gap(self):
+        """Användningen ligger 3 mm snett: remsan under den är större än 0,01 m² men ryms inom 10 cm och är inget fel."""
+        tilted = "MultiPolygon(((50 0.003, 100 0, 100 80, 50 80, 50 0.003)))"
+        issues = v.check_geometry(plan_data(uses=(sq(0, 0, 50, 100), tilted)))
+        self.assertEqual([i.code for i in issues], ["DP-0002"], [i.text for i in issues])
+        self.assertIn("1 000.0 m²", issues[0].text)
+
     def test_ten_centimetres_are_tolerated_but_half_a_metre_is_not(self):
         self.assertEqual(v.check_geometry(plan_data(uses=(sq(0, 0, 50, 100), sq(50, 0, 99.95, 100)))), [])
         short = v.check_geometry(plan_data(uses=(sq(0, 0, 50, 100), sq(50, 0, 99.5, 100))))

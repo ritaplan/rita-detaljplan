@@ -9,6 +9,9 @@ Formatet följer [Keep a Changelog](https://keepachangelog.com/sv/1.1.0/), versi
   med ett meddelande (användning, egenskap och planområde). Brus upp till 1 cm (samma gräns som *Rättas automatiskt*)
   i en yta man ritar eller ändrar rättas tyst mot planområdets, användningarnas och egenskapernas brytpunkter och gränser
   (`topology.tidy`; bara den egna ytan ändras). Vid spara tas ytor utan utbredning bort, med ett meddelande.
+- **Smalare skräp hittas också:** en yta räknas som utan utbredning även om den är en remsa smalare än 1 mm i snitt
+  (area över gränsen men ändå en linje), och en saknad del av planområdet som ryms inom reglernas 10 cm tolerans
+  (en remsa under 10 cm) får ingen egen rad "0,0 m² saknar användning" bredvid det som verkligen saknas.
 - **Listan har tre avsnitt:** *Rättas automatiskt* (högst 1 cm, ikryssat), *Förslag att granska* (större, inte ikryssat) och
   *Kräver ditt beslut* (täckning och överlapp, görs inte automatiskt).
 - **Förhandsvisning i kartan:** markerar du en rad ritas dess ändringar direkt: en röd ring där brytpunkten ligger nu, en

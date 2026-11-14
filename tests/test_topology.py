@@ -706,6 +706,13 @@ class EmptyAreaTests(TopologyCase):
         missing = {f.fid for f in full if f.text == "Saknar bestämmelse." and f.table == "egenskap_yta"}
         self.assertFalse(missing & {self.spike1.id(), self.spike2.id()})
 
+    def test_a_strip_narrower_than_a_millimetre_is_empty_even_with_an_area_just_over_the_limit(self):
+        spike = poly((0, 0), (20, 0.0006), (0, 0.0012))  # 20 m lång, 1 mm bred: area 0,012 m² men en linje
+        self.assertGreater(spike.area(), t.EMPTY_AREA)
+        self.assertTrue(t.is_degenerate(spike))
+        self.assertFalse(t.is_degenerate(poly((0, 0), (20, 0), (20, 0.005), (0, 0.005))), "5 mm bred är en (smal) yta")
+        self.assertFalse(t.is_degenerate(poly((0, 0), (1, 0), (1, 1), (0, 1))))
+
     def test_a_self_crossing_area_is_not_empty_even_though_its_signed_area_is_zero(self):
         bow = self.draw("egenskap_yta", "MultiPolygon(((10 10, 50 50, 50 10, 10 50, 10 10)))")
         pump()

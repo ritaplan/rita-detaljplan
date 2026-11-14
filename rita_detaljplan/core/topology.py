@@ -120,12 +120,13 @@ def summarize(changes: list[Change]) -> str:
 
 
 def is_degenerate(geometry: Optional[QgsGeometry]) -> bool:
-    """En yta utan utbredning (area 0 också efter reparation, t.ex. en spets som går ut och tillbaka längs en gräns).
-    Den innehåller ingen information och räknas varken som förslag eller som något andra ytor anpassas till."""
+    """En yta utan utbredning (area 0 också efter reparation, eller en remsa som är smalare än en millimeter i snitt, t.ex.
+    en spets som går ut och tillbaka längs en gräns). Den innehåller ingen information och räknas varken som förslag eller som något andra ytor anpassas till."""
     if geometry is None or geometry.isNull() or geometry.isEmpty() or geometry.type() != Qgis.GeometryType.Polygon:
         return False
     if abs(geometry.area()) > EMPTY_AREA:
-        return False
+        # en remsa smalare än en millimeter i snitt (2 x area / omkrets) är en linje, inte en yta
+        return geometry.isGeosValid() and geometry.length() > 0 and 2 * geometry.area() / geometry.length() <= NOISE
     if geometry.isGeosValid():
         return True
     # en självkorsande gräns (en fjärilsform) kan få area 0 i summan men har verklig utbredning: reparera först

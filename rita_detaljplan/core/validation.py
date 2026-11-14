@@ -338,8 +338,11 @@ def check_geometry(data: PlanData) -> list[Issue]:
                                 "Planområdet saknar användning: hela ytan ska ha en användningsbestämmelse.",
                                 "detaljplan", _owner(part, data.plan_areas) or data.plan.fid, part))
     else:
-        if plan.difference(use_union.buffer(TOLERANCE, 4)).area() > MIN_AREA:  # 10 cm tolerans avgör
+        padded = use_union.buffer(TOLERANCE, 4)
+        if plan.difference(padded).area() > MIN_AREA:  # 10 cm tolerans avgör
             for part in _parts(plan.difference(use_union)):  # den rapporterade ytan är den verkliga, obuffrad
+                if part.difference(padded).area() <= MIN_AREA:
+                    continue  # en del som helt ryms inom toleransen (en remsa under 10 cm) saknar inte användning
                 issues.append(Issue(ERROR, "DP-0002", f"{_m2(part.area())} av planområdet saknar användning.",
                                     "detaljplan", _owner(part, data.plan_areas) or data.plan.fid, part))
         for use in uses:
