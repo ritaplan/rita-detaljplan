@@ -2,7 +2,7 @@
 
 Formatet följer [Keep a Changelog](https://keepachangelog.com/sv/1.1.0/), versionsnumren [Semantic Versioning](https://semver.org/lang/sv/).
 
-## [Kommande]
+## [0.1.87] – en yta kan ha flera grafiska bestämmelser, till exempel korsmark och indelning i fastigheter
 
 - **En yta kan ha flera grafiska bestämmelser samtidigt, till exempel korsmark och indelning i fastigheter.** Förut sparade
   ytan bara den första bestämmelsens symbol, så lades korsmark till på en yta som redan hade indelning i fastigheter
