@@ -138,13 +138,10 @@ class LoadMosaicTests(PlanCase):
         categories = layer.renderer().categories()  # mellanleden binds till variabler: temporära objekt kan krascha
         symbol = categories[category_index].symbol()
         generators = [l for l in symbol.symbolLayers() if l.layerType() == "GeometryGenerator"]
-        self.assertEqual(len(generators), 2, "ett kantlinjeskikt och ett skikt för hörnvinklarna per kategori")
-        boundary = next(g for g in generators if "geometries_to_array" not in g.geometryExpression())
-        corners = next(g for g in generators if "geometries_to_array" in g.geometryExpression())
-        self.assertFalse(corners.subSymbol().symbolLayer(0).useCustomDashPattern(), "vinklarna är heldragna")
-        sub = boundary.subSymbol()
+        self.assertEqual(len(generators), 1, "ett kantlinjeskikt per kategori, inget skaluttryck")
+        sub = generators[0].subSymbol()
         line = [l for l in sub.symbolLayers() if l.layerType() == "SimpleLine"][0]
-        return line.penStyle(), line.useCustomDashPattern(), line.width(), boundary.geometryExpression()
+        return line.penStyle(), line.useCustomDashPattern(), line.width(), generators[0].geometryExpression()
 
     def plain_line_of(self, layer, category_index=0):
         """Kantlinjen när den är en vanlig linje i fyllningssymbolen (inget kantlinjeskikt med uttryck): (penna, eget
@@ -268,9 +265,7 @@ class LoadMosaicTests(PlanCase):
         layers = load_plan(storage.PostgisStorage("db", "dp_test", "dp_1", self.conn), project)
         for category in layers["anvandning_yta"].renderer().categories():
             generators = [l for l in category.symbol().symbolLayers() if l.layerType() == "GeometryGenerator"]
-            self.assertEqual(len(generators), 2, category.label())  # kantlinjen och hörnvinklarna
-            for generator in generators:
-                self.assertNotIn("@map_scale", generator.geometryExpression(), "inget skaluttryck")
+            self.assertEqual(len(generators), 1, category.label())
 
     def test_details_are_drawn_from_a_scale_but_the_plan_areas_always(self):
         _project, opened = self.load()

@@ -163,17 +163,6 @@ class SavedProjectSymbolClassTests(PlanCase):
             self.assertTrue(has_current_symbol_class(layer, table), table)
             self.assertIsInstance(layer.renderer(), QgsCategorizedSymbolRenderer)
 
-    def test_a_project_saved_before_the_corner_bends_is_restyled_when_opened(self):
-        from rita_detaljplan.core.symbology import has_corner_caps
-        for table in ("detaljplan", "anvandning_yta", "egenskap_yta"):
-            layer = self.layers[table]
-            self.assertTrue(has_corner_caps(layer, table), table)
-            layer.removeCustomProperty("rita/corner_caps")  # som ett projekt som sparats av en äldre version
-            self.assertFalse(has_corner_caps(layer, table), table)
-            self.assertTrue(upgrade_symbology(QgsProject.instance()), f"{table} ritas om")
-            self.assertTrue(has_corner_caps(layer, table), table)
-        self.assertFalse(upgrade_symbology(QgsProject.instance()), "inget att göra när allt är aktuellt")
-
 
 if __name__ == "__main__":
     unittest.main()
