@@ -165,7 +165,7 @@ class SavedProjectSymbolClassTests(PlanCase):
 
     def test_a_project_saved_before_the_corner_bends_is_restyled_when_opened(self):
         from rita_detaljplan.core.symbology import has_corner_caps
-        for table in ("anvandning_yta", "egenskap_yta"):
+        for table in ("detaljplan", "anvandning_yta", "egenskap_yta"):
             layer = self.layers[table]
             self.assertTrue(has_corner_caps(layer, table), table)
             layer.removeCustomProperty("rita/corner_caps")  # som ett projekt som sparats av en äldre version

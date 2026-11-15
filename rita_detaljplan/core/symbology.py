@@ -310,7 +310,9 @@ def _corner_caps(style: QgsStyle, symbol_name: str, boundary: str, reference_sca
     if to_mm is None or dash <= 0:
         return None
     # Sizes are in millimetres on paper at the reference scale: constant in map units (metres) whatever the map scale.
-    arm = round(dash / 2 * to_mm * (reference_scale or 1000) / 1000, 4)
+    # Benen är halva strecket, men minst en och en halv linjebredd så att vinkeln syns också på en tjock linje.
+    width = base.width() * (PT_TO_MM if base.widthUnit() == Qgis.RenderUnit.Points else 1.0)
+    arm = round(max(dash / 2 * to_mm, 1.5 * width) * (reference_scale or 1000) / 1000, 4)
     cap = base.clone()
     cap.setUseCustomDashPattern(False)
     cap.setPenStyle(Qt.PenStyle.SolidLine)
@@ -547,9 +549,9 @@ def has_fragile_dashes(renderer) -> bool:
 
 
 def has_corner_caps(layer: QgsVectorLayer, table: str) -> bool:
-    """Om användnings- och egenskapslagret ritar en vinkel runt kantlinjens hörn (se ``_corner_caps``); ett projekt som
+    """Om plan-, användnings- och egenskapslagret ritar en vinkel runt kantlinjens hörn (se ``_corner_caps``); ett projekt som
     sparats av en äldre version gör det inte."""
-    return table not in ("anvandning_yta", "egenskap_yta") or layer.customProperty(CORNER_CAPS_PROPERTY) == 1
+    return table not in ("detaljplan", "anvandning_yta", "egenskap_yta")         or layer.customProperty(CORNER_CAPS_PROPERTY) == 1
 
 
 def has_current_symbol_class(layer: QgsVectorLayer, table: str) -> bool:
@@ -578,7 +580,10 @@ def _set_renderer(layer: QgsVectorLayer, renderer, reference_scale: float) -> No
 def style_plan_area(layer: QgsVectorLayer, style: QgsStyle, layers: dict[str, QgsVectorLayer],
                     reference_scale: float = 1000) -> None:
     """Planområdet: ingen fyllning, bara planområdesgränsen (överst i hierarkin, ritas hel)."""
-    _set_renderer(layer, QgsSingleSymbolRenderer(_fill(None, _outline_from(style, "Planområdesgräns"))), reference_scale)
+    outline = [_outline_from(style, "Planområdesgräns"),
+               _corner_caps(style, "Planområdesgräns", "boundary($geometry)", reference_scale)]
+    _set_renderer(layer, QgsSingleSymbolRenderer(_fill(None, outline)), reference_scale)
+    layer.setCustomProperty(CORNER_CAPS_PROPERTY, 1)
 
 
 def style_plan_area_solid(layer: QgsVectorLayer, style: QgsStyle | None = None, reference_scale: float = 1000) -> None:

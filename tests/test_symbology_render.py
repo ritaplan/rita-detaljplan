@@ -579,12 +579,15 @@ class PatternTests(RenderCase):
     def corners_are_closed(self, table, square, **attributes):
         """Om kantlinjen är sluten i alla fyra hörn på en kvadratisk yta (en mörk bildpunkt i varje hörn)."""
         plan = "MultiPolygon(((0 0, 60 0, 60 30, 0 30, 0 0)))"
-        self.add("detaljplan", plan)
-        if table != "anvandning_yta":
-            self.add("anvandning_yta", plan, bestammelser=1, farg="Gul", beteckning="BC")
         (x0, y0), (x1, y1) = square
         ring = f"MultiPolygon((({x0} {y0}, {x1} {y0}, {x1} {y1}, {x0} {y1}, {x0} {y0})))"
-        self.add(table, ring, bestammelser=1, **attributes)
+        if table == "detaljplan":  # själva planområdet är kvadraten
+            self.add("detaljplan", ring)
+        else:
+            self.add("detaljplan", plan)
+            if table != "anvandning_yta":
+                self.add("anvandning_yta", plan, bestammelser=1, farg="Gul", beteckning="BC")
+            self.add(table, ring, bestammelser=1, **attributes)
         image = self.render(self.in_map_order(["detaljplan", "anvandning_yta", "egenskap_yta"]),
                             extent=(-2, -2, 62, 32), size=800, reference=1000, dpi=384)
         scale = image.width() / 64  # bilden är kvadratisk, 64 enheter bred och centrerad på (30, 15)
@@ -604,6 +607,9 @@ class PatternTests(RenderCase):
 
     def test_the_dashed_boundary_of_a_property_is_closed_at_every_corner(self):
         self.assertEqual(self.corners_are_closed("egenskap_yta", ((9, 7), (31, 23)), beteckning="e1"), [True] * 4)
+
+    def test_the_dashed_plan_boundary_is_closed_at_every_corner(self):
+        self.assertEqual(self.corners_are_closed("detaljplan", ((3, 3), (40, 20))), [True] * 4)
 
     def test_only_real_corners_get_a_bend_not_smooth_curves(self):
         from rita_detaljplan.core import symbology
