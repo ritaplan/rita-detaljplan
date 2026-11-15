@@ -192,6 +192,14 @@ class AreaSummary(unittest.TestCase):
         summary = rows.summarize([plain, symbolic])
         self.assertEqual((summary["symbol"], summary["anvandningsform"]), ("Stängsel ska finnas", "Kvartersmark"))
 
+    def test_an_area_keeps_every_symbol_of_its_provisions_in_order_without_repeats(self):
+        division = {"tabell": "egenskap_yta", "beteckning": "a1", "symbol": "Fastighetsindelning"}
+        plus = {"tabell": "egenskap_yta", "beteckning": "e1", "symbol": "Marken får endast förses med viss typ av byggnadsverk"}
+        none = {"tabell": "egenskap_yta", "beteckning": "x"}
+        self.assertEqual(rows.summarize([division, none, plus, dict(division)])["symbol"],
+                         "Fastighetsindelning|Marken får endast förses med viss typ av byggnadsverk")
+        self.assertIsNone(rows.summarize([none])["symbol"])
+
     def test_provisions_without_any_label_still_count_as_assigned(self):
         summary = rows.summarize([{"tabell": "egenskap_linje", "beteckning": None}])
         self.assertEqual((summary["bestammelser"], summary["beteckning"]), (1, ""))

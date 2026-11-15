@@ -135,6 +135,23 @@ class AddTests(AssignmentCase):
         area = self.area("egenskap_linje", line)
         self.assertEqual((area["symbol"], area["bestammelser"]), ("Utfart får inte finnas", 1))
 
+    def test_a_property_with_both_property_division_and_cross_ground_keeps_both_symbols(self):
+        # Korsmark och indelning i fastigheter är två grafiska bestämmelser på samma yta: ytan sparar bådas symboler, i
+        # den ordning bestämmelserna lades till (förut bara den förstas, så den andra ritades aldrig).
+        self.use(LEFT)
+        prop = self.prop()
+        from rita_detaljplan.core.catalog import Catalog  # det utvalda provurvalet har inga grafiska bestämmelser
+        full = Catalog.load(ROOT / "rita_detaljplan" / "data" / "planbestammelsekatalog.json")
+        division = pick(full, layer="egenskap_yta", form="Kvartersmark", symbol="Fastighetsindelning")
+        cross = pick(full, layer="egenskap_yta", form="Kvartersmark",
+                     symbol="Marken får endast förses med viss typ av byggnadsverk")
+        self.assign("egenskap_yta", prop, division)
+        self.assertEqual(self.area("egenskap_yta", prop)["symbol"], "Fastighetsindelning")
+        self.assign("egenskap_yta", prop, cross)
+        area = self.area("egenskap_yta", prop)
+        self.assertEqual((area["symbol"], area["bestammelser"]),
+                         ("Fastighetsindelning|Marken får endast förses med viss typ av byggnadsverk", 2))
+
     def test_rows_are_created_with_uuid_plan_link_and_version_time(self):
         use = self.use()
         self.add("detaljplan", PLAN)

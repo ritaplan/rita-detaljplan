@@ -2,6 +2,16 @@
 
 Formatet följer [Keep a Changelog](https://keepachangelog.com/sv/1.1.0/), versionsnumren [Semantic Versioning](https://semver.org/lang/sv/).
 
+## [Kommande]
+
+- **En yta kan ha flera grafiska bestämmelser samtidigt, till exempel korsmark och indelning i fastigheter.** Förut sparade
+  ytan bara den första bestämmelsens symbol, så lades korsmark till på en yta som redan hade indelning i fastigheter
+  (eller tvärtom) ritades bara den första. Nu sparar ytan alla symboler (fältet `symbol`, åtskilda av `|`) och ritas med
+  korsmarkens mönster och fastighetsindelningens kantlinje tillsammans. Fastighetsindelningens linje ersätter fortfarande
+  den vanliga egenskapsgränsen. Planer som sparats med äldre version ritas om när de öppnas, men en yta som redan har båda
+  bestämmelserna får sin symbol uppdaterad först när någon av dess bestämmelser ändras (lägg till eller ta bort en).
+  Fil för fil: `core/rows.py` (`summarize`), `core/symbology.py`, `core/project.py` (`upgrade_symbology`).
+
 ## [0.1.86] – säkrare databaslösenord, roterbar text, och topologikontrollen: tystare, tydligare och med täckning och överlapp
 
 - **Säkerhet: databaslösenordet sparas inte längre i projektfilen.** Lagrens adress innehöll användarnamn och lösenord i

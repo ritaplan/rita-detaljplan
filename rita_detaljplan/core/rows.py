@@ -130,8 +130,11 @@ def build_row(entry: cat.CatalogEntry, values: list[bm.VariableValue], motiv: Op
             "beteckningsindex": index}
 
 
+SYMBOL_SEPARATOR = "|"  # ytans symbol är alla bestämmelsernas symboler, åtskilda av detta tecken
+
+
 def summarize(rows: Iterable[dict]) -> dict[str, Any]:
-    """Det en yta visar utifrån sina bestämmelser: beteckning, färg, symbol och användningsform.
+    """Det en yta visar utifrån sina bestämmelser: beteckning, färg, symboler och användningsform.
 
     Saknas bestämmelser är ``bestammelser`` 0 och beteckningen tom (NULL), och ytan ritas som "saknar bestämmelse"."""
     rows = list(rows)
@@ -142,11 +145,16 @@ def summarize(rows: Iterable[dict]) -> dict[str, Any]:
         label = (row.get("beteckning") or "").strip()
         if label and label not in labels:
             labels.append(label)
+    symbols: list[str] = []  # alla symboler, i bestämmelsernas ordning: en yta kan ha både korsmark och fastighetsindelning
+    for row in rows:
+        symbol = row.get("symbol")
+        if symbol and symbol not in symbols:
+            symbols.append(symbol)
     use = rows[0].get("tabell") == cat.USE_LAYER
     return {
         "beteckning": ("" if use else " ").join(labels),
         "farg": next((r["farg"] for r in rows if r.get("farg")), None),
-        "symbol": next((r["symbol"] for r in rows if r.get("symbol")), None),
+        "symbol": SYMBOL_SEPARATOR.join(symbols) or None,
         "anvandningsform": next((r["anvandningsform"] for r in rows if r.get("anvandningsform")), None),
         "bestammelser": len(rows),
     }

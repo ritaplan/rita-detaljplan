@@ -19,7 +19,7 @@ if HAVE_QGIS:
     from qgis.PyQt.QtCore import Qt
     from rita_detaljplan.core import geopackage, model
     from rita_detaljplan.core.project import create_plan_project, load_plan
-    from rita_detaljplan.core.symbology import UNASSIGNED, _SYMBOL_CLASS, _USE_CLASS
+    from rita_detaljplan.core.symbology import UNASSIGNED, _AREA_CLASS, _USE_CLASS
     from test_toolbar import GuiCase
     from test_symbology_render import RenderCase, is_dark
 
@@ -94,7 +94,7 @@ class SplitTests(SplitCase):
         self.controller.add_bestammelse("egenskap_yta", prop.id(), entry, filled(entry))
         parts = self.split("egenskap_yta")
         self.assertEqual([f["bestammelser"] for f in parts], [1, 1])
-        self.assertEqual([self.klass(f, _SYMBOL_CLASS) for f in parts].count(UNASSIGNED), 0)
+        self.assertEqual([self.klass(f, _AREA_CLASS) for f in parts].count(UNASSIGNED), 0)
 
     def test_a_split_area_without_provisions_stays_without_them(self):
         parts = self.split("anvandning_yta")

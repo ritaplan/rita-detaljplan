@@ -78,8 +78,6 @@ UNASSIGNED_COLOR = (220, 90, 40)
 
 # Uttryck som ger klassen för varje objekt: "ej tilldelad" så länge bestämmelse saknas.
 _USE_CLASS = f"CASE WHEN coalesce(\"bestammelser\", 0) = 0 THEN '{UNASSIGNED}' ELSE coalesce(\"farg\", '') END"
-_SYMBOL_CLASS = (f"CASE WHEN coalesce(\"bestammelser\", 0) = 0 THEN '{UNASSIGNED}' "
-                 "ELSE coalesce(\"symbol\", '') END")
 _UNASSIGNED_CLASS = f"CASE WHEN coalesce(\"bestammelser\", 0) = 0 THEN '{UNASSIGNED}' ELSE '' END"
 
 # Boverkets symbolnamn -> symbol i stilbiblioteket, när namnen skiljer sig åt.
@@ -95,6 +93,23 @@ AREA_SYMBOLS = (
 LINE_SYMBOLS = ("Utfart får inte finnas", "Stängsel ska finnas")
 # Symboler som ritas som linje längs ytans kant i stället för som fyllning (indelning i fastigheter, Boverket)
 OUTLINE_SYMBOLS = ("Fastighetsindelning",)
+
+
+def _has_symbol(name: str) -> str:
+    """Uttryck: ytans eller linjens symbolfält innehåller symbolen (fältet kan ha flera, åtskilda av ``|``)."""
+    return f"array_contains(string_to_array(coalesce(\"symbol\", ''), '|'), '{name}')"
+
+
+def _symbol_class(names: tuple[str, ...]) -> str:
+    """Klassen för ett objekt med flera symboler: den första av ``names`` som objektet har, annars ''. Ett objekt kan ha
+    både korsmark och fastighetsindelning; fyllningen väljs här och kantlinjen läggs till separat."""
+    cases = " ".join(f"WHEN {_has_symbol(name)} THEN '{name}'" for name in names)
+    return f"CASE WHEN coalesce(\"bestammelser\", 0) = 0 THEN '{UNASSIGNED}' ELSE CASE {cases} ELSE '' END END"
+
+
+_AREA_CLASS = _symbol_class(AREA_SYMBOLS)
+_LINE_CLASS = _symbol_class(LINE_SYMBOLS)
+_DIVISION = _has_symbol("Fastighetsindelning")  # ytan har bestämmelsen indelning i fastigheter
 
 def load_style(path: Path = STYLE_FILE) -> QgsStyle:
     style = QgsStyle()
@@ -471,6 +486,14 @@ def has_fragile_dashes(renderer) -> bool:
     return renderer is not None and any(fragile(symbol) for symbol in renderer.symbols(QgsRenderContext()))
 
 
+def has_current_symbol_class(layer: QgsVectorLayer, table: str) -> bool:
+    """Om egenskapslagrets renderare klassar objekten på alla deras symboler (ett projekt som sparats med en äldre version
+    klassade på ett enda värde, så en yta med både fastighetsindelning och korsmark visade bara den ena)."""
+    renderer = layer.renderer()
+    expected = {"egenskap_yta": _AREA_CLASS, "egenskap_linje": _LINE_CLASS}.get(table)
+    return not isinstance(renderer, QgsCategorizedSymbolRenderer) or expected is None         or renderer.classAttribute() == expected
+
+
 def has_outlines_last(renderer) -> bool:
     """Om en yterenderare ritar kantlinjerna sist (se ``_outlines_last``); linjelager har inget att ordna."""
     return renderer is None or not any(s.type() == Qgis.SymbolType.Fill for s in renderer.symbols(QgsRenderContext())) \
@@ -535,19 +558,28 @@ def _style_use(layer: QgsVectorLayer, reference_scale: float, outline) -> None:
 
 
 def _for_kind(expression: str, secondary: bool) -> str:
-    """Kantlinjen bara för egenskapsytor av rätt slag (vanlig eller sekundär egenskapsgräns), annars ingen linje."""
-    return f"CASE WHEN coalesce(\"sekundar\", 0) = {1 if secondary else 0} THEN {expression} ELSE {_EMPTY} END"
+    """Kantlinjen bara för egenskapsytor av rätt slag (vanlig eller sekundär egenskapsgräns), annars ingen linje. En yta
+    med indelning i fastigheter har den kantlinjen i stället (se ``_for_division``)."""
+    return (f"CASE WHEN coalesce(\"sekundar\", 0) = {1 if secondary else 0} AND NOT ({_DIVISION}) "
+            f"THEN {expression} ELSE {_EMPTY} END")
+
+
+def _for_division(expression: str) -> str:
+    """Kantlinjen för indelning i fastigheter, bara för ytor som har den bestämmelsen (vid sidan av eventuell fyllning)."""
+    return f"CASE WHEN {_DIVISION} THEN {expression} ELSE {_EMPTY} END"
 
 
 def style_property_area(layer: QgsVectorLayer, style: QgsStyle, layers: dict[str, QgsVectorLayer],
                         reference_scale: float = 1000) -> None:
     """Egenskapsytor: vanlig egenskapsgräns (streck, punkt, punkt) eller, för ytor som ritats som sekundära, sekundär
-    egenskapsgräns (streck och plustecken). Där de sammanfaller ritas de ovanpå varandra."""
+    egenskapsgräns (streck och plustecken). Där de sammanfaller ritas de ovanpå varandra. En yta med indelning i
+    fastigheter ritas med den kantlinjen i stället för egenskapsgränsen, och den kan också ha en fyllning (korsmark)."""
     expression = hierarchical_boundary(layers, "egenskap_yta", ("detaljplan", "anvandning_yta"), same_kind=True)
 
     def outline():
         return [_generated_outline(style, "Egenskapsgräns", _for_kind(expression, False)),
-                _generated_outline(style, "Sekundär egenskapsgräns", _for_kind(expression, True))]
+                _generated_outline(style, "Sekundär egenskapsgräns", _for_kind(expression, True)),
+                *(_generated_outline(style, name, _for_division(expression)) for name in OUTLINE_SYMBOLS)]
 
     categories = []
     for name in AREA_SYMBOLS:
@@ -556,13 +588,9 @@ def style_property_area(layer: QgsVectorLayer, style: QgsStyle, layers: dict[str
             symbol = _robust_pattern(pattern.clone())
             _append_outlines(symbol, outline())
             categories.append(QgsRendererCategory(name, _tidy(symbol), name))
-    for name in OUTLINE_SYMBOLS:  # t.ex. indelning i fastigheter: ingen fyllning, kanten ritas med symbolens linje
-        line = _generated_outline(style, name, expression)
-        if line is not None:
-            categories.append(QgsRendererCategory(name, _fill(None, line), name))
     categories.append(QgsRendererCategory(UNASSIGNED, _hatched(UNASSIGNED_COLOR, None, outline()), "Saknar bestämmelse"))
     categories.append(QgsRendererCategory("", _fill(None, outline()), "Övriga egenskaper"))
-    _set_renderer(layer, QgsCategorizedSymbolRenderer(_SYMBOL_CLASS, categories), reference_scale)
+    _set_renderer(layer, QgsCategorizedSymbolRenderer(_AREA_CLASS, categories), reference_scale)
     _apply_labels(layer, reference_scale, bold=False)
 
 
@@ -577,7 +605,7 @@ def style_property_line(layer: QgsVectorLayer, style: QgsStyle, layers: dict[str
         {"color": "220,90,40", "width": "0.6", "line_style": "dash"})), "Saknar bestämmelse"))
     categories.append(QgsRendererCategory("", _tidy(QgsLineSymbol.createSimple({"color": "0,0,0", "width": "0.5"})),
                                           "Övriga"))
-    _set_renderer(layer, QgsCategorizedSymbolRenderer(_SYMBOL_CLASS, categories), reference_scale)
+    _set_renderer(layer, QgsCategorizedSymbolRenderer(_LINE_CLASS, categories), reference_scale)
     _apply_labels(layer, reference_scale, bold=False, is_line=True)
 
 

@@ -566,16 +566,15 @@ class PatternTests(RenderCase):
                      if is_dark(image.pixelColor(x, y)))
         self.assertGreater(inside, 30)
 
-    def test_the_line_for_property_division_is_its_own_symbol_and_not_the_plain_property_boundary(self):
+    def test_the_line_for_property_division_is_a_layer_of_every_property_symbol_and_has_no_fill_of_its_own(self):
         _, categories = self.categories()
-        self.assertIn("Fastighetsindelning", categories)
-        symbol = categories["Fastighetsindelning"].symbol()
-        generators = [l for l in symbol.symbolLayers() if l.layerType() == "GeometryGenerator"]
-        self.assertEqual(len(generators), 1)
-        line = generators[0].subSymbol()
-        self.assertEqual(line.symbolLayer(0).layerType(), "MarkerLine", "markörer längs linjen, inte streck")
-        plain = categories["Fastighetsindelning"].symbol().symbolLayer(0)
-        self.assertEqual(plain.color().alpha(), 0, "ingen fyllning")
+        self.assertNotIn("Fastighetsindelning", categories, "fastighetsindelning är ingen fyllning utan en kantlinje")
+        for name in ("", "Marken får endast förses med viss typ av byggnadsverk"):
+            symbol = categories[name].symbol()
+            lines = [l.subSymbol().symbolLayer(0).layerType() for l in symbol.symbolLayers()
+                     if l.layerType() == "GeometryGenerator"]
+            self.assertIn("MarkerLine", lines, f"markörer längs linjen (inte streck) i {name!r}")
+        self.assertEqual(categories[""].symbol().symbolLayer(0).color().alpha(), 0, "ingen fyllning")
 
     def test_property_division_markers_do_not_double_up_at_boundary_cuts(self):
         # placements var tidigare "Interval|LastVertex|FirstVertex": när kantlinjen delas upp i flera bitar (se
@@ -606,6 +605,39 @@ class PatternTests(RenderCase):
         self.assertGreater(different, 50, "linjen för fastighetsindelning skiljer sig från egenskapsgränsen")
         fill = with_symbol.pixelColor(250, 250)
         self.assertGreater(fill.red(), 200, "ytan fylls inte")
+
+    def test_an_area_with_both_property_division_and_cross_ground_draws_both(self):
+        # En yta kan ha flera grafiska bestämmelser: fastighetsindelningens kantlinje och korsmarkens mönster ritas båda,
+        # oavsett vilken som lades till först (förut ritades bara den första bestämmelsens symbol).
+        plan = "MultiPolygon(((0 0, 60 0, 60 30, 0 30, 0 0)))"
+        area = "MultiPolygon(((10 5, 50 5, 50 25, 10 25, 10 5)))"
+        cross = "Marken får endast förses med viss typ av byggnadsverk"
+        self.add("detaljplan", plan)
+        self.add("anvandning_yta", plan, bestammelser=1, farg="Gul", beteckning="BC")
+        self.add("egenskap_yta", area, bestammelser=2, beteckning="a1 e1", symbol=cross)
+        order = self.in_map_order(["detaljplan", "anvandning_yta", "egenskap_yta"])
+
+        def drawn(symbols):
+            self.set_attr("egenskap_yta", "symbol", symbols)
+            return self.render(order, extent=(-2, -2, 62, 32), size=800, reference=1000, dpi=384)
+
+        def differs(one, other, x_range, y_range):
+            """Antal bildpunkter som skiljer sig i ett område (kartkoordinater). Bilden är kvadratisk: 64 enheter bred,
+            centrerad på (30, 15)."""
+            scale = one.width() / 64
+            xs = range(int((x_range[0] + 2) * scale), int((x_range[1] + 2) * scale))
+            ys = range(int(one.height() / 2 - (y_range[1] - 15) * scale), int(one.height() / 2 - (y_range[0] - 15) * scale))
+            return sum(1 for x in xs for y in ys if one.pixelColor(x, y) != other.pixelColor(x, y))
+
+        only_cross, only_division = drawn(cross), drawn("Fastighetsindelning")
+        inside, edge = ((14, 46), (8, 22)), ((9.0, 11.0), (6, 24))
+        self.assertGreater(differs(only_cross, only_division, *inside), 50, "korsmarken syns inne i ytan")
+        self.assertGreater(differs(only_cross, only_division, *edge), 50, "fastighetsindelningens linje syns vid kanten")
+        for symbols in ("Fastighetsindelning|" + cross, cross + "|Fastighetsindelning"):
+            both = drawn(symbols)
+            self.assertEqual(differs(both, only_cross, *inside), 0, f"korsmarkens mönster ritas fullt ut ({symbols})")
+            self.assertGreater(differs(both, only_cross, *edge), 50, f"fastighetsindelningens linje saknas ({symbols})")
+            self.assertGreater(differs(both, only_division, *inside), 50, f"korsmarkens mönster saknas ({symbols})")
 
 
 @unittest.skipUnless(HAVE_QGIS, "QGIS Python behövs")

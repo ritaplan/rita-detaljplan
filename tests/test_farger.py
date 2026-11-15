@@ -147,5 +147,22 @@ class SavedProjectColourTests(PlanCase):
         self.assertEqual(self.beige(), BEIGE)
 
 
+@unittest.skipUnless(HAVE_QGIS, "QGIS Python behövs")
+class SavedProjectSymbolClassTests(PlanCase):
+    def test_a_project_saved_with_a_renderer_that_classes_on_one_symbol_is_restyled_when_opened(self):
+        from qgis.core import QgsCategorizedSymbolRenderer
+        from rita_detaljplan.core.symbology import has_current_symbol_class
+        for table in ("egenskap_yta", "egenskap_linje"):
+            layer = self.layers[table]
+            self.assertTrue(has_current_symbol_class(layer, table), table)
+            old = layer.renderer().clone()
+            old.setClassAttribute("coalesce(\"symbol\", '')")  # som äldre versioner klassade: på ett enda värde
+            layer.setRenderer(old)
+            self.assertFalse(has_current_symbol_class(layer, table), table)
+            self.assertTrue(upgrade_symbology(QgsProject.instance()), f"{table} ritas om")
+            self.assertTrue(has_current_symbol_class(layer, table), table)
+            self.assertIsInstance(layer.renderer(), QgsCategorizedSymbolRenderer)
+
+
 if __name__ == "__main__":
     unittest.main()
