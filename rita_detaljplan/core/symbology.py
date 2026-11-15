@@ -263,6 +263,66 @@ def _generated_outline(style: QgsStyle, symbol_name: str, expression: str):
     return generator
 
 
+CORNER_MIN_TURN = 20  # grader: ett hörn är en brytpunkt där linjen vrider sig minst så mycket (mjukare böjar får inget hörn)
+PT_TO_MM = 25.4 / 72
+CORNER_CAPS_PROPERTY = "rita/corner_caps"  # lagrets egenskap som visar att hörnvinklarna ritas (se has_corner_caps)
+
+
+def _corner_expression(boundary: str, arm: float) -> str:
+    """Uttryck som ger en kort vinkel (två ben av längden ``arm``, i kartans enheter) runt varje hörn på ``boundary``.
+    Hörn är linjens inre brytpunkter, och startpunkten på en sluten ring, där linjen vrider sig minst ``CORNER_MIN_TURN``
+    grader. Benen kortas till en tredjedel av grannsträckan så att de aldrig når en nästa brytpunkt. ``boundary`` är en
+    linje eller en samling linjer.
+
+    Uttrycket är med flit grunt: QGIS tolkar kapslade funktioner i exponentiell tid, och uttrycket tolkas en gång för
+    varje kategori i varje lager. ``@v`` är hörnets tre punkter (före, hörnet, efter)."""
+    def toward(index: int) -> str:
+        step = f"make_line(array_get(@v, 1), array_get(@v, {index}))"
+        return f"line_interpolate_point({step}, min({arm}, length({step}) / 3))"
+
+    turn = ("abs(((degrees(azimuth(array_get(@v, 1), array_get(@v, 2))) - degrees(azimuth(array_get(@v, 0), "
+            "array_get(@v, 1)))) + 540) % 360 - 180)")
+    # point_n räknar från 1. Första punkten på en sluten ring har den näst sista punkten (inte den sista, som är samma
+    # punkt) före sig.
+    vertices = ("array(point_n(@part, if(@element = 0, num_points(@part) - 1, @element)), point_n(@part, @element + 1), "
+                "point_n(@part, @element + 2))")
+    corner = (f"with_variable('v', {vertices}, if({turn} >= {CORNER_MIN_TURN}, "
+              f"make_line({toward(0)}, array_get(@v, 1), {toward(2)}), {_EMPTY}))")
+    corners = (f"collect_geometries(array_foreach(generate_series(if(is_closed(@part), 0, 1), num_points(@part) - 2), "
+               f"{corner}))")
+    return f"collect_geometries(array_foreach(geometries_to_array({boundary}), with_variable('part', @element, {corners})))"
+
+
+def _corner_caps(style: QgsStyle, symbol_name: str, boundary: str, reference_scale: float):
+    """Ett heldraget linjeskikt som böjer ett streck runt varje hörn på kantlinjen ``boundary``, i linjesymbolens färg och
+    bredd. Stilbibliotekets streckmönster är inpassade efter hörn (``alignDashPattern``), men det stängs av i ``_tidy``
+    (PDF-filen blir annars omöjlig för Acrobat), så hörnen hamnar där mönstret råkar ha en lucka och ser öppna ut. Benen är
+    halva strecklängden. Inget skikt för linjer utan eget streckmönster.
+
+    Vinklarna ritas på ytans egen kantlinje, inte på den beräknade (gränshierarkin): den är dyr, och en vinkel som hamnar
+    på en kant som en annan yta redan ritar täcker bara hörnet på samma sätt som grannens egen vinkel."""
+    line = style.symbol(symbol_name)
+    base = line.symbolLayer(0) if line is not None and line.symbolLayerCount() else None
+    if not isinstance(base, QgsSimpleLineSymbolLayer) or not base.useCustomDashPattern():
+        return None
+    dash = float(base.customDashVector()[0])
+    to_mm = {Qgis.RenderUnit.Points: PT_TO_MM, Qgis.RenderUnit.Millimeters: 1.0}.get(base.customDashPatternUnit())
+    if to_mm is None or dash <= 0:
+        return None
+    # Sizes are in millimetres on paper at the reference scale: constant in map units (metres) whatever the map scale.
+    arm = round(dash / 2 * to_mm * (reference_scale or 1000) / 1000, 4)
+    cap = base.clone()
+    cap.setUseCustomDashPattern(False)
+    cap.setPenStyle(Qt.PenStyle.SolidLine)
+    cap.setPenCapStyle(Qt.PenCapStyle.FlatCap)
+    symbol = QgsLineSymbol()
+    symbol.changeSymbolLayer(0, cap)
+    generator = QgsGeometryGeneratorSymbolLayer.create({"geometryModifier": _corner_expression(boundary, arm),
+                                                        "SymbolType": "Line"})
+    generator.setSubSymbol(_tidy(symbol))
+    return generator
+
+
 def _append_outlines(symbol, outline) -> None:
     """Lägger kantlinjeskikten (ett skikt, eller flera i en lista) överst på symbolen."""
     for layer in (outline if isinstance(outline, (list, tuple)) else [outline]):
@@ -486,6 +546,12 @@ def has_fragile_dashes(renderer) -> bool:
     return renderer is not None and any(fragile(symbol) for symbol in renderer.symbols(QgsRenderContext()))
 
 
+def has_corner_caps(layer: QgsVectorLayer, table: str) -> bool:
+    """Om användnings- och egenskapslagret ritar en vinkel runt kantlinjens hörn (se ``_corner_caps``); ett projekt som
+    sparats av en äldre version gör det inte."""
+    return table not in ("anvandning_yta", "egenskap_yta") or layer.customProperty(CORNER_CAPS_PROPERTY) == 1
+
+
 def has_current_symbol_class(layer: QgsVectorLayer, table: str) -> bool:
     """Om egenskapslagrets renderare klassar objekten på alla deras symboler (ett projekt som sparats med en äldre version
     klassade på ett enda värde, så en yta med både fastighetsindelning och korsmark visade bara den ena)."""
@@ -529,7 +595,9 @@ def style_plan_area_solid(layer: QgsVectorLayer, style: QgsStyle | None = None, 
 def style_use(layer: QgsVectorLayer, style: QgsStyle, layers: dict[str, QgsVectorLayer],
               reference_scale: float = 1000) -> None:
     expression = hierarchical_boundary(layers, "anvandning_yta", ("detaljplan",))
-    _style_use(layer, reference_scale, lambda: _generated_outline(style, "Användningsgräns", expression))
+    _style_use(layer, reference_scale, lambda: [_generated_outline(style, "Användningsgräns", expression),
+                                                _corner_caps(style, "Användningsgräns", "boundary($geometry)", reference_scale)])
+    layer.setCustomProperty(CORNER_CAPS_PROPERTY, 1)
 
 
 def style_use_overview(layer: QgsVectorLayer, style: QgsStyle, reference_scale: float = 1000) -> None:
@@ -578,6 +646,7 @@ def style_property_area(layer: QgsVectorLayer, style: QgsStyle, layers: dict[str
 
     def outline():
         return [_generated_outline(style, "Egenskapsgräns", _for_kind(expression, False)),
+                _corner_caps(style, "Egenskapsgräns", _for_kind("boundary($geometry)", False), reference_scale),
                 _generated_outline(style, "Sekundär egenskapsgräns", _for_kind(expression, True)),
                 *(_generated_outline(style, name, _for_division(expression)) for name in OUTLINE_SYMBOLS)]
 
@@ -591,6 +660,7 @@ def style_property_area(layer: QgsVectorLayer, style: QgsStyle, layers: dict[str
     categories.append(QgsRendererCategory(UNASSIGNED, _hatched(UNASSIGNED_COLOR, None, outline()), "Saknar bestämmelse"))
     categories.append(QgsRendererCategory("", _fill(None, outline()), "Övriga egenskaper"))
     _set_renderer(layer, QgsCategorizedSymbolRenderer(_AREA_CLASS, categories), reference_scale)
+    layer.setCustomProperty(CORNER_CAPS_PROPERTY, 1)
     _apply_labels(layer, reference_scale, bold=False)
 
 

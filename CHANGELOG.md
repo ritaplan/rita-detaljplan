@@ -2,6 +2,16 @@
 
 Formatet följer [Keep a Changelog](https://keepachangelog.com/sv/1.1.0/), versionsnumren [Semantic Versioning](https://semver.org/lang/sv/).
 
+## [Kommande]
+
+- **Kantlinjens streck böjer sig runt hörnen.** Streckmönstret på användningsgränsen och egenskapsgränsen är inte inpassat
+  efter hörn (det är avstängt med flit, eftersom det gjorde PDF-filer som Acrobat inte kunde spara som bild), så ett hörn
+  kunde hamna i en lucka och se öppet ut. Nu ritas ett kort heldraget streck, ett halvt streck långt åt vardera hållet,
+  som böjer sig runt varje hörn (där linjen vrider sig minst 20 grader). Mjuka böjar får inget. Det är vanliga heldragna
+  linjer, så PDF-filerna blir lika enkla som förut. Äldre planer ritas om när de öppnas (omritningen tar ungefär en halv
+  sekund). Hörn där en yta möter en annan yta får sin vinkel av båda ytorna. Fil för fil: `core/symbology.py`
+  (`_corner_caps`, `_corner_expression`), `core/project.py` (`upgrade_symbology`).
+
 ## [0.1.87] – en yta kan ha flera grafiska bestämmelser, till exempel korsmark och indelning i fastigheter
 
 - **En yta kan ha flera grafiska bestämmelser samtidigt, till exempel korsmark och indelning i fastigheter.** Förut sparade
