@@ -366,6 +366,22 @@ class FixedLabelPositionTests(RenderCase):
             for text, position in shown.items():
                 self.assertEqual(position, whole[text], f"{text} flyttade sig i utsnittet {extent}")
 
+    def test_a_text_moved_by_hand_stays_put_when_its_position_is_outside_the_view(self):
+        # QGIS ignorerar ett datadefinierat textläge som ligger utanför kartutsnittet och lägger då texten på ytans
+        # automatiska plats: en flyttad text hoppade när man zoomade in på ytan
+        square = "MultiPolygon(((0 0, 400 0, 400 400, 0 400, 0 0)))"
+        self.add("detaljplan", "MultiPolygon(((-100 -100, 500 -100, 500 500, -100 500, -100 -100)))")
+        self.add("anvandning_yta", square, beteckning="B", label_x=50.0, label_y=60.0)
+        self.add("egenskap_yta", square, beteckning="e1", label_x=330.0, label_y=340.0)
+        whole = self.label_positions((-20, -20, 420, 420))
+        for text, wanted in (("B", (50.0, 60.0)), ("e₁", (330.0, 340.0))):
+            self.assertAlmostEqual(whole[text][0], wanted[0], delta=1.0, msg="den flyttade texten står på sitt läge")
+            self.assertAlmostEqual(whole[text][1], wanted[1], delta=1.0, msg="den flyttade texten står på sitt läge")
+        for extent in ((150, 150, 300, 300), (100, 100, 250, 250), (200, 0, 400, 200)):  # lägena syns inte i utsnittet
+            shown = self.label_positions(extent)
+            for text, position in shown.items():
+                self.assertEqual(position, whole[text], f"{text} flyttade sig i utsnittet {extent}")
+
 
 @unittest.skipUnless(HAVE_QGIS, "QGIS Python behövs")
 class LabelTests(RenderCase):
@@ -411,7 +427,7 @@ class LabelTests(RenderCase):
     def test_the_property_label_is_placed_inside_its_own_area_and_yields_to_the_use_label(self):
         from qgis.core import Qgis, QgsPalLayerSettings
         prop, use = self.settings("egenskap_yta"), self.settings("anvandning_yta")
-        self.assertEqual(prop.placement, Qgis.LabelPlacement.Horizontal, "inom den egna ytan")
+        self.assertEqual(prop.placement, Qgis.LabelPlacement.OverPoint, "på en fast punkt inne i den egna ytan")
         self.assertEqual(prop.placementSettings().overlapHandling(), Qgis.LabelOverlapHandling.AllowOverlapIfRequired)
         self.assertEqual(prop.quadOffset, QgsPalLayerSettings.QuadrantOver)
         self.assertEqual((prop.xOffset, prop.yOffset), (0, 0), "ingen förskjutning bort från den egna ytan")
@@ -486,49 +502,84 @@ class LabelTests(RenderCase):
         self.assertTrue(use.isExpression and prop.isExpression)
         self.assertTrue(self.settings("egenskap_linje").isExpression)
 
-    def test_a_leader_line_is_configured_to_appear_only_when_the_text_is_outside_its_area(self):
-        for table in ("anvandning_yta", "egenskap_yta"):
-            settings = self.settings(table)  # måste hållas vid liv: callout() ger en pekare in i den
-            callout = settings.callout()
-            self.assertIsInstance(callout, QgsSimpleLineCallout, table)
-            self.assertTrue(callout.enabled(), table)
-            self.assertEqual(callout.anchorPoint(), QgsCallout.AnchorPoint.PointOnExterior, table)
-            self.assertEqual(callout.lineSymbol().color().name(), "#000000", table)
-            self.assertLessEqual(callout.lineSymbol().width(), 0.3, "tunn linje")
-            expr = callout.dataDefinedProperties().property(QgsCallout.Property.MinimumCalloutLength).expressionString()
-            self.assertIn("label_x", expr)
-            self.assertIn("intersects", expr)
+    def leader_layers(self, table):
+        """Ledlinjens linjeskikt i varje kategoris symbol (ett per kategori)."""
+        from qgis.core import QgsGeometryGeneratorSymbolLayer
+        renderer = self.layers[table].renderer()  # måste hållas vid liv: symbolerna ger pekare in i den
+        self.keep = getattr(self, "keep", [])
+        self.keep.append(renderer)
+        found = []
+        categories = renderer.categories()  # också den måste hållas vid liv
+        self.keep.append(categories)
+        for category in categories:
+            symbol = category.symbol()
+            self.keep.append(symbol)
+            found.append([layer for layer in symbol.symbolLayers()
+                          if isinstance(layer, QgsGeometryGeneratorSymbolLayer) and "label_x" in layer.geometryExpression()])
+        return found
 
-    def destination(self, table, feature):
-        """Ledlinjens ändpunkt (x, y) för en yta, enligt uttrycken i ledlinjens inställningar."""
-        from qgis.core import QgsExpression, QgsExpressionContext, QgsExpressionContextUtils
-        settings = self.settings(table)  # måste hållas vid liv: callout() ger en pekare in i den
-        callout = settings.callout()
-        props = callout.dataDefinedProperties()
+    def test_a_leader_line_is_a_thin_line_layer_that_appears_only_when_the_text_is_outside_its_area(self):
+        for table in ("anvandning_yta", "egenskap_yta"):
+            per_category = self.leader_layers(table)
+            self.assertTrue(per_category, table)
+            for layers in per_category:
+                self.assertEqual(len(layers), 1, f"{table}: en ledlinje i varje kategori")
+                self.assertIn("intersects", layers[0].geometryExpression())
+                line = layers[0].subSymbol()
+                self.assertIsNotNone(line, table)
+                self.assertEqual(line.color().name(), "#000000", table)
+                self.assertLessEqual(line.width(), 0.3, "tunn linje")
+            settings = self.settings(table)  # måste hållas vid liv: callout() ger en pekare in i den
+            self.assertFalse(settings.callout() is not None and settings.callout().enabled(),
+                             "en callout ritas inte för en text med egen punkt som geometri")
+
+    def leader(self, table, feature):
+        """Ledlinjen (en geometri) för en yta, enligt uttrycket i ytans ledlinjeskikt."""
+        from qgis.core import QgsExpression, QgsExpressionContext, QgsExpressionContextUtils, QgsGeometry
+        expression = self.leader_layers(table)[0][0].geometryExpression()
         context = QgsExpressionContext(QgsExpressionContextUtils.globalProjectLayerScopes(self.layers[table]))
         context.setFeature(feature)
-        return tuple(QgsExpression(props.property(prop).expressionString()).evaluate(context)
-                     for prop in (QgsCallout.Property.DestinationX, QgsCallout.Property.DestinationY))
+        query = QgsExpression(expression)
+        result = query.evaluate(context)
+        self.assertFalse(query.hasEvalError(), query.evalErrorString())
+        return QgsGeometry(result)
+
+    def test_there_is_no_leader_line_for_a_text_that_is_not_moved_or_is_moved_within_its_area(self):
+        plan = "MultiPolygon(((0 0, 100 0, 100 60, 0 60, 0 0)))"
+        self.assertTrue(self.leader("anvandning_yta", self.add("anvandning_yta", plan)).isEmpty())
+        self.assertTrue(self.leader("anvandning_yta", self.add("anvandning_yta", plan, label_x=40.0, label_y=20.0)).isEmpty())
 
     def test_the_leader_line_ends_a_little_inside_the_area_not_on_its_boundary(self):
         from qgis.core import QgsGeometry, QgsPointXY
         plan = "MultiPolygon(((0 0, 100 0, 100 60, 0 60, 0 0)))"
         feature = self.add("anvandning_yta", plan, label_x=130.0, label_y=30.0)
-        x, y = self.destination("anvandning_yta", feature)
-        end = QgsGeometry.fromPointXY(QgsPointXY(x, y))
-        area = feature.geometry()
-        self.assertTrue(area.contains(end), "ändpunkten ligger inne i ytan")
+        line = self.leader("anvandning_yta", feature)
+        self.assertFalse(line.isEmpty())
+        points = [QgsPointXY(v.x(), v.y()) for v in line.vertices()]
+        x, y = points[0].x(), points[0].y()
+        self.assertTrue(feature.geometry().contains(QgsGeometry.fromPointXY(points[0])), "ändpunkten ligger inne i ytan")
         boundary_distance = min(x, 100 - x, y, 60 - y)  # ytan är en rektangel 100 x 60 m
         self.assertAlmostEqual(boundary_distance, 3.5, delta=0.05, msg="3,5 mm (3,5 m i skala 1:1000) från gränsen")
         self.assertAlmostEqual(y, 30.0, delta=0.05, msg="rakt in från den närmaste punkten på gränsen")
 
+    def test_the_leader_line_stops_outside_the_text_box_so_it_does_not_cross_the_text(self):
+        plan = "MultiPolygon(((0 0, 100 0, 100 60, 0 60, 0 0)))"
+        feature = self.add("anvandning_yta", plan, beteckning="BCDE", label_x=140.0, label_y=30.0)
+        points = list(self.leader("anvandning_yta", feature).vertices())
+        outer = points[-1]
+        # textens halva bredd: 4 tecken, 6 m hög text (6 mm i skala 1:1000), 0,62 av storleken per tecken
+        half_width = 4 * 6.0 * 0.62 / 2
+        self.assertGreater(140.0 - outer.x(), half_width, "linjen slutar före textrutan")
+        self.assertLess(140.0 - outer.x(), half_width + 2.0, "men inte långt före den")
+
     def test_the_leader_end_never_goes_deeper_than_the_middle_of_a_narrow_area(self):
-        from qgis.core import QgsGeometry, QgsPointXY
         narrow = "MultiPolygon(((0 0, 100 0, 100 1, 0 1, 0 0)))"
         feature = self.add("egenskap_yta", narrow, label_x=50.0, label_y=30.0)
-        x, y = self.destination("egenskap_yta", feature)
-        self.assertTrue(feature.geometry().buffer(0.01, 4).contains(QgsGeometry.fromPointXY(QgsPointXY(x, y))))
-        self.assertLessEqual(abs(y - 0.5), 0.5, "högst till ytans mitt")
+        start = list(self.leader("egenskap_yta", feature).vertices())[0]
+        self.assertTrue(feature.geometry().buffer(0.01, 4).contains(
+            __import__("qgis.core", fromlist=["QgsGeometry"]).QgsGeometry.fromPointXY(
+                __import__("qgis.core", fromlist=["QgsPointXY"]).QgsPointXY(start.x(), start.y()))))
+        self.assertLessEqual(abs(start.y() - 0.5), 0.5, "högst till ytans mitt")
 
     def test_the_line_layers_get_no_leader_line_at_all(self):
         settings = self.settings("egenskap_linje")

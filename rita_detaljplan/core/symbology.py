@@ -22,7 +22,6 @@ from pathlib import Path
 
 from qgis.core import (
     Qgis,
-    QgsCallout,
     QgsCategorizedSymbolRenderer,
     QgsFillSymbol,
     QgsFillSymbolLayer,
@@ -37,7 +36,6 @@ from qgis.core import (
     QgsRenderContext,
     QgsRendererCategory,
     QgsSimpleFillSymbolLayer,
-    QgsSimpleLineCallout,
     QgsSimpleLineSymbolLayer,
     QgsSimpleMarkerSymbolLayer,
     QgsSingleSymbolRenderer,
@@ -312,8 +310,24 @@ PROPERTY_TEXT_MM = 3.5  # egenskapsbestämmelsernas: tydligt mindre än användn
 CHAR_WIDTH = 0.62  # ungefärlig medelbredd på ett tecken i fet stil, i delar av textstorleken (för radbrytning)
 
 
+# Ytans textpunkt: tyngdpunkten om den ligger i ytan, annars en punkt inne i ytan. Räknas på hela ytans geometri.
+_AREA_ANCHOR = "CASE WHEN intersects(centroid($geometry), $geometry) THEN centroid($geometry) ELSE point_on_surface($geometry) END"
+
+
+def _place_at_point(settings: QgsPalLayerSettings) -> None:
+    """Ytans text står på en fast punkt: det läge användaren flyttat den till (``label_x``/``label_y``), annars ytans textpunkt
+    (``_AREA_ANCHOR``). Punkten är etikettens egen geometri (en geometrigenerator), inte ett datadefinierat läge: QGIS
+    struntar i ett datadefinierat läge som ligger utanför det synliga kartutsnittet och lägger då texten på ytans automatiska
+    plats, så en text som flyttats för hand hoppade när man zoomade in. Texten är centrerad på punkten."""
+    settings.geometryGenerator = (f'make_point(coalesce("label_x", x({_AREA_ANCHOR})), '
+                                  f'coalesce("label_y", y({_AREA_ANCHOR})))')
+    settings.geometryGeneratorType = Qgis.GeometryType.Point
+    settings.geometryGeneratorEnabled = True
+
+
 def _move_by_fields(settings: QgsPalLayerSettings) -> None:
-    """Texten placeras automatiskt, men på det läge användaren flyttat den till om ``label_x``/``label_y`` är satta."""
+    """Texten placeras automatiskt, men på det läge användaren flyttat den till om ``label_x``/``label_y`` är satta (för en
+    linje; ytornas texter se ``_place_at_point``)."""
     props = settings.dataDefinedProperties()
     props.setProperty(QgsPalLayerSettings.Property.PositionX, QgsProperty.fromField("label_x"))
     props.setProperty(QgsPalLayerSettings.Property.PositionY, QgsProperty.fromField("label_y"))
@@ -346,35 +360,48 @@ def _wrap_by_width(settings: QgsPalLayerSettings, size: float, fit_area: bool = 
 
 
 LEADER_INSET_MM = 3.5  # hur långt in i ytan ledlinjen slutar (mm på papper i referensskalan)
+LEADER_GAP_MM = 0.4  # luft mellan ledlinjens yttre ände och texten (mm på papper i referensskalan)
+TEXT_HEIGHT = 0.6  # textrutans halva höjd, i delar av textstorleken (för ledlinjens ände vid texten)
 
 
-def _leader_end(coordinate: str, inset: float) -> str:
-    """Uttryck för ledlinjens ändpunkt (``coordinate`` = "x" eller "y"): punkten på ytans gräns närmast texten, flyttad
-    ``inset`` (kartans enheter) inåt mot ytans mittpunkt, dock aldrig längre än dit. Ledlinjen slutar då en bit inne i
-    ytan i stället för på begränsningslinjen."""
-    return (f"with_variable('gr', closest_point($geometry, make_point(\"label_x\", \"label_y\")), "
-            f"with_variable('in', coalesce(pole_of_inaccessibility($geometry, 0.1), @gr), "
-            f"with_variable('lin', make_line(@gr, @in), "
-            f"{coordinate}(line_interpolate_point(@lin, min({inset}, length(@lin)))))))")
+def _leader_geometry(inset: float, size: float, gap: float) -> str:
+    """Ledlinjen från en text som flyttats utanför sin yta in till ytan, som ett uttryck för en geometrigenerator. Linjen går
+    från en punkt ``inset`` (kartans enheter) innanför ytans gräns, rakt mot textens läge (dock aldrig längre in än ytans
+    mitt), och slutar ``gap`` utanför textrutan så att den inte går genom texten. Tom när texten inte flyttats eller ligger
+    inne i ytan. ``size`` är textstorleken i kartans enheter. Textrutans mått uppskattas ur textens längd (eller textrutans
+    bredd, ``label_w``).
+
+    Ledlinjen är ett linjeskikt i ytans symbol, inte en callout: en callout ritas inte för en text som har en egen punkt som
+    geometri (se ``_place_at_point``)."""
+    half_width = ("coalesce(\"label_w\", length(coalesce(\"beteckning\", '')) * " + str(size * CHAR_WIDTH) + ") / 2")
+    direction = "azimuth(@lp, @a)"
+    exit_distance = (f"min(({half_width}) / max(abs(sin({direction})), 0.001), "
+                     f"{size * TEXT_HEIGHT} / max(abs(cos({direction})), 0.001)) + {gap}")
+    return ("CASE WHEN \"label_x\" IS NULL OR \"label_y\" IS NULL THEN " + _EMPTY + " ELSE "
+            "with_variable('lp', make_point(\"label_x\", \"label_y\"), "
+            "CASE WHEN intersects($geometry, @lp) THEN " + _EMPTY + " ELSE "
+            "with_variable('gr', closest_point($geometry, @lp), "
+            "with_variable('in', coalesce(pole_of_inaccessibility($geometry, 0.1), @gr), "
+            f"with_variable('a', line_interpolate_point(make_line(@gr, @in), min({inset}, distance(@gr, @in))), "
+            f"make_line(@a, line_interpolate_point(make_line(@lp, @a), min({exit_distance}, distance(@lp, @a))))"
+            ")))END)END")
 
 
-def _leader_callout(inset: float = 0.0) -> QgsSimpleLineCallout:
-    """Tunn svart ledlinje till ytan, som bara visas när texten flyttats utanför den (se ``_move_by_fields``): den
-    kortaste tillåtna längden sätts till 0 då, annars orimligt stor så att linjen aldrig ritas i övriga fall. Med
-    ``inset`` > 0 slutar linjen så långt in i ytan (annars på dess gräns)."""
-    callout = QgsSimpleLineCallout()
-    callout.setEnabled(True)
-    callout.setAnchorPoint(QgsCallout.AnchorPoint.PointOnExterior)
-    callout.setLineSymbol(QgsLineSymbol.createSimple({"color": "0,0,0", "width": "0.15", "width_unit": "MM"}))
-    props = callout.dataDefinedProperties()
-    props.setProperty(QgsCallout.Property.MinimumCalloutLength, QgsProperty.fromExpression(
-        'CASE WHEN "label_x" IS NOT NULL AND "label_y" IS NOT NULL '
-        'AND NOT intersects($geometry, make_point("label_x", "label_y")) THEN 0 ELSE 999999 END'))
-    if inset > 0:
-        props.setProperty(QgsCallout.Property.DestinationX, QgsProperty.fromExpression(_leader_end("x", inset)))
-        props.setProperty(QgsCallout.Property.DestinationY, QgsProperty.fromExpression(_leader_end("y", inset)))
-    callout.setDataDefinedProperties(props)
-    return callout
+def _leader_layer(reference_scale: float, size_mm: float):
+    """Tunn svart ledlinje (se ``_leader_geometry``), för en yta vars text flyttats utanför den."""
+    per_mm = reference_scale / 1000.0  # meter i kartan per mm på papper
+    generator = QgsGeometryGeneratorSymbolLayer.create({
+        "geometryModifier": _leader_geometry(LEADER_INSET_MM * per_mm, size_mm * per_mm, LEADER_GAP_MM * per_mm),
+        "SymbolType": "Line"})
+    generator.setSubSymbol(QgsLineSymbol.createSimple({"color": "0,0,0", "width": "0.15", "width_unit": "MM",
+                                                       "capstyle": "flat"}))
+    return generator
+
+
+def _with_leader(symbol, reference_scale: float, size_mm: float):
+    """Ytans symbol med ledlinjen överst."""
+    symbol.appendSymbolLayer(_leader_layer(reference_scale, size_mm))
+    return symbol
 
 
 def _labeling(reference_scale: float = 1000, *, bold: bool = True, is_use: bool = False,
@@ -401,8 +428,10 @@ def _labeling(reference_scale: float = 1000, *, bold: bool = True, is_use: bool 
     fmt.buffer().setColor(QColor(255, 255, 255))
     settings.setFormat(fmt)
     if not is_point:  # en egenskapspunkts text kan inte flyttas: den står alltid intill punkten
-        _move_by_fields(settings)
-        if not is_line:
+        if is_line:
+            _move_by_fields(settings)
+        else:
+            _place_at_point(settings)
             _rotate_by_field(settings)
     if is_point:
         # texten intill punkten (helst snett ovanför till höger), som höjder på en plankarta
@@ -429,7 +458,6 @@ def _labeling(reference_scale: float = 1000, *, bold: bool = True, is_use: bool 
         settings.priority = 3
         settings.obstacleSettings().setIsObstacle(False)  # egenskapsytan får inte trycka undan användningens etikett
         _wrap_by_width(settings, size_mm * per_mm)
-        settings.setCallout(_leader_callout(LEADER_INSET_MM * per_mm))
         return QgsVectorLayerSimpleLabeling(settings)
     settings.placement = Qgis.LabelPlacement.OverPoint
     settings.centroidInside = True  # punkten tvingas in i ytan även för konkava och smala former
@@ -438,7 +466,6 @@ def _labeling(reference_scale: float = 1000, *, bold: bool = True, is_use: bool 
     settings.priority = 10
     settings.zIndex = 10.0
     _wrap_by_width(settings, size_mm * per_mm, fit_area=False)  # radbryts bara om textrutan omformats
-    settings.setCallout(_leader_callout(LEADER_INSET_MM * per_mm))
     return QgsVectorLayerSimpleLabeling(settings)
 
 
@@ -474,12 +501,14 @@ def labels_in_millimeters(layer: QgsVectorLayer) -> bool:
 
 def has_fixed_label_position(layer: QgsVectorLayer, table: str) -> bool:
     """Om ytornas texter har en fast plats, oberoende av vilken del av kartan som syns (ett projekt som sparats av en äldre
-    version lät QGIS välja plats i den synliga delen av egenskapsytan, så texten hoppade när man flyttade kartan)."""
+    version lät QGIS välja plats i den synliga delen av ytan, eller ignorera ett flyttat läge som låg utanför kartutsnittet,
+    så texten hoppade när man zoomade eller flyttade kartan; se ``_place_at_point``)."""
     if table not in ("anvandning_yta", "egenskap_yta"):
         return True
     labeling = layer.labeling()
     settings = labeling.settings() if labeling is not None and hasattr(labeling, "settings") else None
-    return settings is None or (settings.placement == Qgis.LabelPlacement.OverPoint and settings.centroidWhole)
+    return settings is None or (settings.placement == Qgis.LabelPlacement.OverPoint and settings.geometryGeneratorEnabled
+                                and "label_x" in settings.geometryGenerator)
 
 
 def has_fragile_dashes(renderer) -> bool:
@@ -561,10 +590,13 @@ def style_use_overview(layer: QgsVectorLayer, style: QgsStyle, reference_scale: 
 
 
 def _style_use(layer: QgsVectorLayer, reference_scale: float, outline) -> None:
-    categories = [QgsRendererCategory(name, _fill(rgb, outline()), name) for name, rgb in FARGER.items()]
-    categories.append(QgsRendererCategory(UNASSIGNED, _hatched(UNASSIGNED_COLOR, (250, 250, 250), outline()),
+    def lead(symbol):
+        return _with_leader(symbol, reference_scale, USE_TEXT_MM)
+
+    categories = [QgsRendererCategory(name, lead(_fill(rgb, outline())), name) for name, rgb in FARGER.items()]
+    categories.append(QgsRendererCategory(UNASSIGNED, lead(_hatched(UNASSIGNED_COLOR, (250, 250, 250), outline())),
                                           "Saknar bestämmelse"))
-    categories.append(QgsRendererCategory("", _fill(FALLBACK_FARG, outline()), "Övriga"))
+    categories.append(QgsRendererCategory("", lead(_fill(FALLBACK_FARG, outline())), "Övriga"))
     _set_renderer(layer, QgsCategorizedSymbolRenderer(_USE_CLASS, categories), reference_scale)
     layer.setBlendMode(QPainter.CompositionMode.CompositionMode_Multiply)  # grundkartan syns genom användningens färg
     _apply_labels(layer, reference_scale, is_use=True)
@@ -592,7 +624,8 @@ def style_property_area(layer: QgsVectorLayer, style: QgsStyle, layers: dict[str
     def outline():
         return [_generated_outline(style, "Egenskapsgräns", _for_kind(expression, False)),
                 _generated_outline(style, "Sekundär egenskapsgräns", _for_kind(expression, True)),
-                *(_generated_outline(style, name, _for_division(expression)) for name in OUTLINE_SYMBOLS)]
+                *(_generated_outline(style, name, _for_division(expression)) for name in OUTLINE_SYMBOLS),
+                _leader_layer(reference_scale, PROPERTY_TEXT_MM)]
 
     categories = []
     for name in AREA_SYMBOLS:

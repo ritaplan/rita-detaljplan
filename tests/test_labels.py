@@ -338,9 +338,15 @@ class LabelPlacementTests(RenderCase):
             labeling = self.layers[table].labeling()  # måste hållas vid liv så länge inställningarna används
             settings = labeling.settings()
             props = settings.dataDefinedProperties()
-            self.assertEqual(props.property(QgsPalLayerSettings.Property.PositionX).field(), "label_x", table)
-            self.assertEqual(props.property(QgsPalLayerSettings.Property.PositionY).field(), "label_y", table)
-            self.assertTrue(props.isActive(QgsPalLayerSettings.Property.PositionX), table)
+            if table == "egenskap_linje":  # en linjes text följer linjen tills den flyttas
+                self.assertEqual(props.property(QgsPalLayerSettings.Property.PositionX).field(), "label_x", table)
+                self.assertEqual(props.property(QgsPalLayerSettings.Property.PositionY).field(), "label_y", table)
+                self.assertTrue(props.isActive(QgsPalLayerSettings.Property.PositionX), table)
+            else:  # en ytas text står på en fast punkt: det flyttade läget, annars ytans textpunkt
+                self.assertTrue(settings.geometryGeneratorEnabled, table)
+                self.assertIn('coalesce("label_x"', settings.geometryGenerator, table)
+                self.assertIn('coalesce("label_y"', settings.geometryGenerator, table)
+                self.assertFalse(props.isActive(QgsPalLayerSettings.Property.PositionX), table)
 
     def label_pixels(self, **attrs):
         plan = "MultiPolygon(((0 0, 100 0, 100 60, 0 60, 0 0)))"

@@ -176,6 +176,7 @@ class SavedProjectLabelPositionTests(PlanCase):
             settings = old.settings()
             settings.placement = Qgis.LabelPlacement.Horizontal  # som egenskapsytornas texter var förut
             settings.centroidWhole = False
+            settings.geometryGeneratorEnabled = False
             old.setSettings(settings)
             layer.setLabeling(old)
             self.assertFalse(has_fixed_label_position(layer, table), table)

@@ -137,7 +137,8 @@ class LoadMosaicTests(PlanCase):
         uttrycket i användningslagrets första kategori: (penna, eget streckmönster, bredd, uttryck)."""
         categories = layer.renderer().categories()  # mellanleden binds till variabler: temporära objekt kan krascha
         symbol = categories[category_index].symbol()
-        generators = [l for l in symbol.symbolLayers() if l.layerType() == "GeometryGenerator"]
+        generators = [l for l in symbol.symbolLayers() if l.layerType() == "GeometryGenerator"
+                      and "label_x" not in l.geometryExpression()]  # utan ledlinjen (den hör till texten)
         self.assertEqual(len(generators), 1, "ett kantlinjeskikt per kategori, inget skaluttryck")
         sub = generators[0].subSymbol()
         line = [l for l in sub.symbolLayers() if l.layerType() == "SimpleLine"][0]
@@ -148,7 +149,9 @@ class LoadMosaicTests(PlanCase):
         streckmönster, bredd, antal geometrigeneratorer)."""
         categories = layer.renderer().categories()
         symbol = categories[category_index].symbol()
-        types = [l.layerType() for l in symbol.symbolLayers()]
+        # ledlinjen (en geometrigenerator som hör till texten) räknas inte som kantlinjeskikt
+        types = [l.layerType() for l in symbol.symbolLayers()
+                 if l.layerType() != "GeometryGenerator" or "label_x" not in l.geometryExpression()]
         line = [l for l in symbol.symbolLayers() if l.layerType() == "SimpleLine"][0]
         return line.penStyle(), line.useCustomDashPattern(), line.width(), types.count("GeometryGenerator")
 
@@ -264,7 +267,8 @@ class LoadMosaicTests(PlanCase):
         project = QgsProject()
         layers = load_plan(storage.PostgisStorage("db", "dp_test", "dp_1", self.conn), project)
         for category in layers["anvandning_yta"].renderer().categories():
-            generators = [l for l in category.symbol().symbolLayers() if l.layerType() == "GeometryGenerator"]
+            generators = [l for l in category.symbol().symbolLayers() if l.layerType() == "GeometryGenerator"
+                          and "label_x" not in l.geometryExpression()]
             self.assertEqual(len(generators), 1, category.label())
 
     def test_details_are_drawn_from_a_scale_but_the_plan_areas_always(self):
