@@ -2,6 +2,15 @@
 
 Formatet följer [Keep a Changelog](https://keepachangelog.com/sv/1.1.0/), versionsnumren [Semantic Versioning](https://semver.org/lang/sv/).
 
+## [Kommande]
+
+- **Texterna på användnings- och egenskapsytorna står still.** Egenskapsytornas texter placerades i den del av ytan som
+  syntes i fönstret, så de hoppade när man panorerade eller zoomade. Nu ligger varje text på en fast plats mitt i sin
+  hela yta (en punkt inne i ytan, också för smala eller L-formade ytor), oavsett vilken del av kartan som visas.
+  Användningens texter låg redan fast. Vill man ha en text någon annanstans flyttar man den som förut. En egenskapstext
+  tar inte längre hänsyn till användningens text: ligger de nära varandra kan de hamna ovanpå varandra, och då flyttar
+  man den ena. Planer som sparats med äldre version ritas om när de öppnas.
+
 ## [0.1.87] – en yta kan ha flera grafiska bestämmelser, till exempel korsmark och indelning i fastigheter
 
 - **En yta kan ha flera grafiska bestämmelser samtidigt, till exempel korsmark och indelning i fastigheter.** Förut sparade

@@ -419,9 +419,12 @@ def _labeling(reference_scale: float = 1000, *, bold: bool = True, is_use: bool 
         settings.obstacleSettings().setIsObstacle(False)
         return QgsVectorLayerSimpleLabeling(settings)
     if not is_use:
-        # i första hand inom den egna ytan, radbruten efter ytans bredd, och utan att lägga sig över användningens text
-        # (den har högre prioritet): överlapp tillåts bara om det inte finns något annat ställe
-        settings.placement = Qgis.LabelPlacement.Horizontal
+        # Fast plats: mitt i den egna ytan (en punkt inne i hela ytan, inte i den del som syns), radbruten efter ytans bredd.
+        # Med ``Horizontal`` letade QGIS en plats i den synliga delen av ytan, så texten hoppade när man panorerade eller
+        # zoomade. Vill man ha den någon annanstans flyttar man den (``label_x``, ``label_y``).
+        settings.placement = Qgis.LabelPlacement.OverPoint
+        settings.centroidInside = True
+        settings.centroidWhole = True
         settings.placementSettings().setOverlapHandling(Qgis.LabelOverlapHandling.AllowOverlapIfRequired)
         settings.priority = 3
         settings.obstacleSettings().setIsObstacle(False)  # egenskapsytan får inte trycka undan användningens etikett
@@ -467,6 +470,16 @@ def labels_in_millimeters(layer: QgsVectorLayer) -> bool:
     labeling = layer.labeling()
     settings = labeling.settings() if labeling is not None and hasattr(labeling, "settings") else None
     return settings is None or settings.format().sizeUnit() == Qgis.RenderUnit.Millimeters
+
+
+def has_fixed_label_position(layer: QgsVectorLayer, table: str) -> bool:
+    """Om ytornas texter har en fast plats, oberoende av vilken del av kartan som syns (ett projekt som sparats av en äldre
+    version lät QGIS välja plats i den synliga delen av egenskapsytan, så texten hoppade när man flyttade kartan)."""
+    if table not in ("anvandning_yta", "egenskap_yta"):
+        return True
+    labeling = layer.labeling()
+    settings = labeling.settings() if labeling is not None and hasattr(labeling, "settings") else None
+    return settings is None or (settings.placement == Qgis.LabelPlacement.OverPoint and settings.centroidWhole)
 
 
 def has_fragile_dashes(renderer) -> bool:

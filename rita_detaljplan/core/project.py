@@ -321,10 +321,11 @@ def upgrade_symbology(project: QgsProject) -> bool:
     gemensam gräns kunde täckas till hälften av grannens fyllning, och texterna skalades dubbelt när man zoomade).
     Behåller den referensskala planen redan har.
     Returnerar True om något ritades om."""
-    layers = [find_layer(project, layer_def.name) for layer_def in model.LAYERS]
-    stale = [layer for layer in layers if layer is not None
+    layers = {layer_def.name: find_layer(project, layer_def.name) for layer_def in model.LAYERS}
+    stale = [layer for table, layer in layers.items() if layer is not None
              and not (symbology.has_outlines_last(layer.renderer()) and symbology.labels_in_millimeters(layer)
-                      and not symbology.has_fragile_dashes(layer.renderer()))]
+                      and not symbology.has_fragile_dashes(layer.renderer())
+                      and symbology.has_fixed_label_position(layer, table))]
     for table in ("egenskap_yta", "egenskap_linje"):
         layer = find_layer(project, table)
         if layer is not None and layer not in stale and not symbology.has_current_symbol_class(layer, table):

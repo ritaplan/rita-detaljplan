@@ -327,6 +327,47 @@ class RotationRenderTests(RenderCase):
 
 
 @unittest.skipUnless(HAVE_QGIS, "QGIS Python behövs")
+class FixedLabelPositionTests(RenderCase):
+    """Texterna står på samma ställe oavsett vilken del av kartan som syns."""
+    USE = "MultiPolygon(((0 0, 100 0, 100 40, 40 40, 40 100, 0 100, 0 0)))"  # L-formad: placeringen har något att välja på
+    PROPERTIES = {"e1": "MultiPolygon(((5 5, 60 5, 60 35, 5 35, 5 5)))",
+                  "a1": "MultiPolygon(((5 45, 35 45, 35 95, 5 95, 5 45)))"}
+
+    def label_positions(self, extent):
+        settings = QgsMapSettings()
+        settings.setLayers([self.layers["anvandning_yta"], self.layers["egenskap_yta"]])
+        settings.setDestinationCrs(QgsCoordinateReferenceSystem("EPSG:3006"))
+        settings.setExtent(QgsRectangle(*extent))
+        settings.setOutputSize(QSize(600, 600))
+        settings.setBackgroundColor(QColor(255, 255, 255))
+        restyle(QgsProject.instance(), 1000)
+        job = QgsMapRendererParallelJob(settings)
+        loop = QEventLoop()
+        job.finished.connect(loop.quit)
+        QTimer.singleShot(20000, loop.quit)
+        job.start()
+        loop.exec()
+        self.assertFalse(job.isActive(), "renderingen blev inte klar")
+        results = job.takeLabelingResults()
+        self.assertIsNotNone(results)
+        return {label.labelText: (round(label.labelRect.center().x(), 1), round(label.labelRect.center().y(), 1))
+                for label in results.allLabels()}
+
+    def test_a_text_does_not_move_when_the_map_is_panned_or_zoomed(self):
+        self.add("detaljplan", PLAN)
+        self.add("anvandning_yta", self.USE, beteckning="BCDEFGH")
+        for name, wkt in self.PROPERTIES.items():
+            self.add("egenskap_yta", wkt, beteckning=name)
+        whole = self.label_positions((-10, -10, 110, 110))
+        self.assertEqual(set(whole), {"BCDEFGH", "e₁", "a₁"}, "alla tre texterna ritas")
+        # utsnitt som klipper ytorna på olika sätt: avskuret till höger, avskuret till vänster, inzoomat, utzoomat
+        for extent in ((-10, -10, 70, 110), (30, -10, 110, 110), (20, 20, 60, 60), (-30, -30, 130, 130)):
+            shown = self.label_positions(extent)
+            for text, position in shown.items():
+                self.assertEqual(position, whole[text], f"{text} flyttade sig i utsnittet {extent}")
+
+
+@unittest.skipUnless(HAVE_QGIS, "QGIS Python behövs")
 class LabelTests(RenderCase):
     def settings(self, table):
         return self.layers[table].labeling().settings()

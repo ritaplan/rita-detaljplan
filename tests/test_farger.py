@@ -164,5 +164,24 @@ class SavedProjectSymbolClassTests(PlanCase):
             self.assertIsInstance(layer.renderer(), QgsCategorizedSymbolRenderer)
 
 
+@unittest.skipUnless(HAVE_QGIS, "QGIS Python behövs")
+class SavedProjectLabelPositionTests(PlanCase):
+    def test_a_project_saved_with_texts_that_follow_the_visible_part_is_restyled_when_opened(self):
+        from qgis.core import Qgis
+        from rita_detaljplan.core.symbology import has_fixed_label_position
+        for table in ("anvandning_yta", "egenskap_yta"):
+            layer = self.layers[table]
+            self.assertTrue(has_fixed_label_position(layer, table), table)
+            old = layer.labeling().clone()
+            settings = old.settings()
+            settings.placement = Qgis.LabelPlacement.Horizontal  # som egenskapsytornas texter var förut
+            settings.centroidWhole = False
+            old.setSettings(settings)
+            layer.setLabeling(old)
+            self.assertFalse(has_fixed_label_position(layer, table), table)
+            self.assertTrue(upgrade_symbology(QgsProject.instance()), f"{table} ritas om")
+            self.assertTrue(has_fixed_label_position(layer, table), table)
+
+
 if __name__ == "__main__":
     unittest.main()
