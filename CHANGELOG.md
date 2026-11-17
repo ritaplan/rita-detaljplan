@@ -2,7 +2,7 @@
 
 Formatet följer [Keep a Changelog](https://keepachangelog.com/sv/1.1.0/), versionsnumren [Semantic Versioning](https://semver.org/lang/sv/).
 
-## [Kommande]
+## [0.1.88] – texterna på ytorna står still när man zoomar och panorerar
 
 - **Texterna på användnings- och egenskapsytorna står still.** Egenskapsytornas texter placerades i den del av ytan som
   syntes i fönstret, så de hoppade när man panorerade eller zoomade. Och en text som flyttats för hand hoppade till ytans
@@ -11,7 +11,10 @@ Formatet följer [Keep a Changelog](https://keepachangelog.com/sv/1.1.0/), versi
   textpunkt (tyngdpunkten, eller en punkt inne i ytan för smala eller L-formade ytor). Vill man ha en text någon
   annanstans flyttar man den som förut. En egenskapstext tar inte längre hänsyn till användningens text: ligger de nära
   varandra kan de hamna ovanpå varandra, och då flyttar man den ena. Planer som sparats med äldre version ritas om när
-  de öppnas.
+  de öppnas. Ledlinjen från en utflyttad text in till ytan ritas nu som ett eget tunt linjeskikt i ytans symbol (QGIS ritar
+  ingen callout för en text med egen punkt) och slutar strax före textrutan.
+  Fil för fil: `core/symbology.py` (`_place_at_point`, `_leader_geometry`, `has_fixed_label_position`),
+  `core/project.py` (`upgrade_symbology`).
 
 ## [0.1.87] – en yta kan ha flera grafiska bestämmelser, till exempel korsmark och indelning i fastigheter
 
