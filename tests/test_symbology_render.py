@@ -12,9 +12,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from plan_case import HAVE_QGIS, INSIDE, LEFT, LINE_INSIDE, PLAN, RIGHT, PlanCase  # noqa: E402
 
 if HAVE_QGIS:
-    from qgis.core import (QgsCallout, QgsCoordinateReferenceSystem, QgsLayoutExporter, QgsLayoutItemMap, QgsLayoutSize,
+    from qgis.core import (QgsCoordinateReferenceSystem, QgsLayoutExporter, QgsLayoutItemMap, QgsLayoutSize,
                           QgsMapRendererParallelJob, QgsMapSettings, QgsPrintLayout, QgsProject, QgsRectangle,
-                          QgsRenderContext, QgsSimpleLineCallout, QgsSimpleLineSymbolLayer, QgsUnitTypes)
+                          QgsRenderContext, QgsSimpleLineSymbolLayer, QgsUnitTypes)
     from qgis.PyQt.QtCore import QEventLoop, QPointF, QSize, QTimer
     from qgis.PyQt.QtGui import QColor, QImage, QPainter, QPolygonF
     from rita_detaljplan.core import catalog as cat
