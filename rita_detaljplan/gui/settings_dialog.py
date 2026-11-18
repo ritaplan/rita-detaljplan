@@ -42,6 +42,16 @@ class SettingsDialog(QDialog):
         if config.authcfg and self.ngp_auth.findData(config.authcfg) < 0:
             self.ngp_auth.addItem(config.authcfg, config.authcfg)
         self.ngp_auth.setCurrentIndex(max(0, self.ngp_auth.findData(config.authcfg)))
+        self.ngp_search_auth = QComboBox()  # nyckeln för Sök-API:et (konsument): behövs bara om den skiljer sig från ovan
+        self.ngp_search_auth.addItem("(samma som ovan)", "")
+        for cid, name in settings.auth_configs():
+            self.ngp_search_auth.addItem(f"{name} ({cid})", cid)
+        if config.search_authcfg and self.ngp_search_auth.findData(config.search_authcfg) < 0:
+            self.ngp_search_auth.addItem(config.search_authcfg, config.search_authcfg)
+        self.ngp_search_auth.setCurrentIndex(max(0, self.ngp_search_auth.findData(config.search_authcfg)))
+        self.ngp_search_auth.setToolTip("Databashanteraren frågar Lantmäteriets Sök-API om en plan finns i NGP. Det räcker "
+                                        "med en konsumentnyckel för datamängden Detaljplan. En producent har oftast "
+                                        "båda nycklarna: välj konsumentnyckeln här om den är en annan än leveransnyckeln.")
         self.ngp_env.setCurrentIndex(max(0, self.ngp_env.findData(config.environment)))
         self.ngp_note = QLabel("Nyckel och hemlighet från Lantmäteriets API-portal lagras i QGIS autentiseringsdatabas: "
                                "lägg till en konfiguration av typen <i>Grundläggande autentisering</i> under "
@@ -58,6 +68,7 @@ class SettingsDialog(QDialog):
         form.addRow("Adress till API:et", self.ngp_base)
         form.addRow("Adress till tokentjänsten", self.ngp_token)
         form.addRow("Autentisering", self.ngp_auth)
+        form.addRow("Nyckel för sökning (konsument)", self.ngp_search_auth)
         self.ngp_box = QGroupBox("Leverans till NGP")
         box = QVBoxLayout(self.ngp_box)
         box.addWidget(self.ngp_note)
@@ -78,7 +89,8 @@ class SettingsDialog(QDialog):
 
     def ngp_config(self) -> "ngp.NgpConfig":
         return ngp.NgpConfig(environment=self.ngp_env.currentData(), base_url=self.ngp_base.text().strip(),
-                             token_url=self.ngp_token.text().strip(), authcfg=self.ngp_auth.currentData() or "")
+                             token_url=self.ngp_token.text().strip(), authcfg=self.ngp_auth.currentData() or "",
+                             search_authcfg=self.ngp_search_auth.currentData() or "")
 
     def test_connection(self) -> bool:
         """Kontrollerar att tjänsten är uppe och att inloggningen fungerar. Blockerar kort medan anropen görs."""
@@ -97,11 +109,22 @@ class SettingsDialog(QDialog):
             return False
         finally:
             QApplication.restoreOverrideCursor()
-        self.ngp_result.setText(f"<span style='color:#1b7f3b'>Tjänsten är {health} och inloggningen fungerar.</span>")
+        text = f"Tjänsten är {health} och inloggningen fungerar."
+        if config.search_authcfg:  # en egen nyckel för sökningen: kontrollera också den
+            try:
+                self._search_client(config).token()
+            except ngp.NgpError as exc:
+                self.ngp_result.setText(f"<span style='color:#b3261e'>{text} Nyckeln för sökning: {exc}</span>")
+                return False
+            text += " Nyckeln för sökning fungerar."
+        self.ngp_result.setText(f"<span style='color:#1b7f3b'>{text}</span>")
         return True
 
     def _client(self, config: "ngp.NgpConfig") -> "ngp.NgpClient":  # särskilt för att kunna bytas ut i tester
         return ngp.NgpClient(config)
+
+    def _search_client(self, config: "ngp.NgpConfig") -> "ngp.NgpSearchClient":  # likaså
+        return ngp.NgpSearchClient(config)
 
     def accept(self):
         settings.set_ngp_config(self.ngp_config())

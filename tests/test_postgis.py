@@ -47,6 +47,7 @@ class FakeConnection:
         self.plan_rows = {}  # schema -> rader [plan, namn, beteckning, kommun, syfte, status, typ]
         self.status_counts = {}  # schema -> {status: antal planer}, för planmosaiken
         self.decision_rows = {}  # schema -> rader [plan, diarienummer, påbörjad, antagande, laga kraft, genomförandetid]
+        self.plan_identities = {}  # schema -> rader [plan, objektidentitet] (planområdenas id, som NGP känner dem)
         self.may_create_schemas = True  # rätten CREATE på databasen
         self.may_create_tables = True  # rätten CREATE på scheman som finns
 
@@ -112,6 +113,9 @@ class FakeConnection:
         match = re.match(r'SELECT "status", count\(DISTINCT "plan"\) FROM "(\w+)"\."detaljplan" GROUP BY "status"', sql)
         if match:
             return [[status, number] for status, number in self.status_counts.get(match.group(1), {}).items()]
+        match = re.match(r'SELECT "plan", "objektidentitet" FROM "(\w+)"\."detaljplan"', sql)
+        if match:
+            return self.plan_identities.get(match.group(1), [])
         match = re.match(r'SELECT "plan", "namn".* FROM "(\w+)"\."detaljplan"', sql)
         if match:
             return self.plan_rows.get(match.group(1), [])
@@ -704,6 +708,108 @@ class OpenDialogTests(PlanCase):
     def visible_ids(self, dialog):
         return [dialog.model.item(dialog.proxy.mapToSource(dialog.proxy.index(i, 0)).row(), 0).data(ROW_ROLE).plan_id
                 for i in range(dialog.proxy.rowCount())]
+
+    NORR, SODER = "0f0e0d0c-0b0a-4090-8080-070605040302", "1a1b1c1d-2a2b-4c3d-9e4f-505152535455"
+
+    def with_ngp(self, hits, environment="ver", search_authcfg=""):
+        """Databashanteraren med de tre planerna, där NGP-frågan besvaras av ``hits`` (objektidentitet -> ``PlanHit``).
+        Returnerar (dialog, frågor), där frågorna är de id som skickades till NGP."""
+        from rita_detaljplan.core import ngp_client as ngp
+        conn = self.detailed()
+        conn.plan_identities["dp_a"] = [["kv_norr", self.NORR], ["kv_soder", self.SODER]]
+        asked = []
+
+        class Client:
+            def find(self, ids):
+                asked.append(list(ids))
+                return {i: hits[i] for i in ids if i in hits}
+
+        dialog = self.dialog({"planer": conn})
+        dialog._ngp_client = lambda config: Client()
+        config = ngp.environment_config(environment, "auth1", search_authcfg)
+        patcher = mock.patch("rita_detaljplan.gui.database_manager_dialog.settings.ngp_config", return_value=config)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        return dialog, asked
+
+    def ngp_text(self, dialog, plan_id):
+        from rita_detaljplan.gui.database_manager_dialog import COLUMN_FIELDS
+        for index in range(dialog.model.rowCount()):
+            if dialog.model.item(index, 0).data(ROW_ROLE).plan_id == plan_id:
+                item = dialog.model.item(index, COLUMN_FIELDS.index("ngp"))
+                return item.text(), item.toolTip()
+        self.fail(f"{plan_id} finns inte i listan")
+
+    def test_the_ngp_column_starts_empty_and_the_plans_know_their_ids(self):
+        dialog, _asked = self.with_ngp({})
+        self.assertEqual(self.ngp_text(dialog, "kv_norr"), ("", ""))
+        rows = {r.plan_id: r for r in dialog._rows}
+        self.assertEqual(rows["kv_norr"].objektidentiteter, (self.NORR,))
+        self.assertEqual(rows["gamla"].objektidentiteter, (), "ett schema utan identiteter ger ett tomt svar")
+
+    def test_checking_ngp_asks_about_the_selected_plans_only_and_shows_the_answer(self):
+        from rita_detaljplan.core import ngp_client as ngp
+        hit = ngp.PlanHit(self.NORR, "Kv Norr", "1-23", "laga kraft", "2026-06-01", "2026-06-01", "2026-06-02T08:00:00Z")
+        dialog, asked = self.with_ngp({self.NORR: hit})
+        self.select(dialog, "kv_norr", "kv_soder")
+        dialog.check_ngp.click()
+        self.assertEqual(asked, [[self.NORR, self.SODER]])
+        text, tip = self.ngp_text(dialog, "kv_norr")
+        self.assertTrue(text.startswith("Finns i NGP: laga kraft"), text)
+        self.assertIn("(Verifiering)", text, "Verifieringsmiljön nämns så att den inte tas för produktion")
+        self.assertIn("lokalt: samråd", text, "NGP och databasen är oense om planstatusen")
+        for part in ("Kv Norr", "2026-06-01", "2026-06-02 08:00:00"):
+            self.assertIn(part, tip)
+        self.assertEqual(self.ngp_text(dialog, "kv_soder")[0], "Finns inte i NGP (Verifiering)")
+        self.assertEqual(self.ngp_text(dialog, "gamla"), ("", ""), "de andra planerna är orörda")
+        self.assertIn("1 finns där", dialog.notice.text())
+        self.assertEqual(self.visible_ids(dialog).count("kv_norr"), 1, "listan lästes inte om")
+
+    def test_without_a_selection_every_visible_plan_is_checked(self):
+        dialog, asked = self.with_ngp({})
+        dialog.table.clearSelection()
+        dialog.check_ngp.click()
+        self.assertEqual(sorted(asked[0]), sorted([self.NORR, self.SODER]), "bara planer med id kan frågas")
+        self.assertEqual(self.ngp_text(dialog, "gamla")[0], "Saknar id")
+
+    def test_a_production_answer_does_not_mention_an_environment(self):
+        from rita_detaljplan.core import ngp_client as ngp
+        hit = ngp.PlanHit(self.NORR, status="samråd")
+        dialog, _asked = self.with_ngp({self.NORR: hit}, environment="prod")
+        self.select(dialog, "kv_norr")
+        dialog.check_ngp.click()
+        self.assertEqual(self.ngp_text(dialog, "kv_norr")[0], "Finns i NGP: samråd")
+
+    def test_the_answer_survives_a_reload_of_the_list(self):
+        from rita_detaljplan.core import ngp_client as ngp
+        dialog, _asked = self.with_ngp({self.NORR: ngp.PlanHit(self.NORR, status="samråd")}, environment="prod")
+        self.select(dialog, "kv_norr")
+        dialog.check_ngp.click()
+        dialog.reload()
+        self.assertEqual(self.ngp_text(dialog, "kv_norr")[0], "Finns i NGP: samråd")
+
+    def test_missing_settings_are_explained_and_nothing_is_asked(self):
+        from rita_detaljplan.core import ngp_client as ngp
+        dialog, asked = self.with_ngp({})
+        config = ngp.environment_config("ver")  # ingen nyckel vald
+        with mock.patch("rita_detaljplan.gui.database_manager_dialog.settings.ngp_config", return_value=config):
+            dialog.check_ngp.click()
+        self.assertEqual(asked, [])
+        self.assertIn("autentiseringskonfiguration", dialog.error.text())
+
+    def test_an_error_from_ngp_is_shown_and_leaves_the_column_alone(self):
+        from rita_detaljplan.core import ngp_client as ngp
+        dialog, _asked = self.with_ngp({})
+
+        class Broken:
+            def find(self, ids):
+                raise ngp.NgpError("Ingen kontakt med api.lantmateriet.se")
+
+        dialog._ngp_client = lambda config: Broken()
+        self.select(dialog, "kv_norr")
+        dialog.check_ngp.click()
+        self.assertIn("Ingen kontakt", dialog.error.text())
+        self.assertEqual(self.ngp_text(dialog, "kv_norr"), ("", ""))
 
     def select(self, dialog, *plan_ids):
         """Väljer planerna (flera med Ctrl, som användaren)."""

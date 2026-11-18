@@ -176,6 +176,22 @@ vanligt. Skydda den igen när du är klar.
 > till databasen, eller en äldre version av pluginet, kan fortfarande ändra planens tabeller. Vill ni stänga det också
 > behöver databasens egna rättigheter sättas för användarna.
 
+### Se om planen finns i NGP
+
+Kolumnen **NGP** visar om en plan finns hos Nationella geodataplattformen. Markera planerna (eller markera ingen, så
+gäller det alla synliga) och klicka på **Kolla i NGP**. Pluginet frågar då Lantmäteriets Sök-API för detaljplaner med
+planens objektidentitet, och kolumnen visar till exempel *Finns i NGP: laga kraft* eller *Finns inte i NGP*. Håll
+muspekaren över raden för uppgifterna NGP har: namn, beteckning, status, datum för laga kraft och när den senaste
+versionen blev tillgänglig. Skiljer sig statusen i NGP från planstatusen i databasen står det i kolumnen.
+
+- Det går med en **konsumentnyckel** för datamängden Detaljplan. En kommun som är producent har oftast också den.
+  Välj nyckeln under **Rita Detaljplan → Inställningar för leverans till NGP…**, i *Nyckel för sökning*. Står den på
+  *samma som ovan* används leveransnyckeln.
+- Miljön (Verifiering eller Produktion) följer inställningarna och nämns i kolumnen när den inte är Produktion.
+- Svaret är det NGP sa vid frågan. Det sparas inte i planen och visas tills du läser om listan med ett nytt val av
+  databas eller stänger dialogen.
+- *Finns i NGP* betyder att planen ligger i NGP:s sökindex, inte säkert att den har vunnit laga kraft: läs statusen.
+
 ### Bryta lås
 
 Är en utcheckning övergiven, till exempel efter en kraschad dator, markerar du planen och klickar på **Bryt lås…**. Du får

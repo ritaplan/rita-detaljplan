@@ -30,6 +30,7 @@ class PlanRow:
     antagande: str = ""
     laga_kraft: str = ""
     genomforandetid: str = ""
+    objektidentiteter: tuple = ()  # planområdenas objektidentiteter: planens id hos NGP (se ``ngp_client.NgpSearchClient``)
     lock: Optional[checkout.Lock] = None
     protection: Optional[Protection] = None
 
@@ -107,6 +108,17 @@ def _plan_fields(connection, schema: str) -> dict[str, dict[str, str]]:
     return {_text(row[0]): dict(zip(keys, (_text(v) for v in row[1:]))) for row in rows}
 
 
+def _plan_identities(connection, schema: str) -> dict[str, tuple]:
+    """Planområdenas objektidentiteter per plan: det är dem NGP känner planen på."""
+    rows = _query(connection, f'SELECT "plan", "objektidentitet" FROM {_table(schema, model.DETALJPLAN.name)}')
+    found: dict[str, list[str]] = {}
+    for row in rows:
+        identity = _text(row[1])
+        if identity:
+            found.setdefault(_text(row[0]), []).append(identity)
+    return {plan_id: tuple(ids) for plan_id, ids in found.items()}
+
+
 def _first(items: list[list[str]], index: int) -> str:
     """Första icke-tomma värdet i kolumnen ``index``."""
     return next((item[index] for item in items if item[index]), "")
@@ -143,6 +155,8 @@ def list_plans(connection_name: str, connection, schema: str) -> list[PlanRow]:
     protections = _protections(connection, schema)
     fields = _plan_fields(connection, schema)
     decisions = _decision_fields(connection, schema)
+    identities = _plan_identities(connection, schema)
     return [PlanRow(connection_name, schema, plan_id, lock=locks.get(plan_id), protection=protections.get(plan_id),
+                    objektidentiteter=identities.get(plan_id, ()),
                     **{**fields.get(plan_id, {}), **decisions.get(plan_id, {})})
             for plan_id in plan_ids]

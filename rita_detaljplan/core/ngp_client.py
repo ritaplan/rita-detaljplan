@@ -24,7 +24,7 @@ from __future__ import annotations
 import json
 import re
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Callable, Optional
 from urllib.parse import quote, urlparse
 
@@ -36,6 +36,11 @@ VER_BASE = "https://api-ver.lantmateriet.se/distribution/geodatakatalog/uppdater
 PROD_BASE = "https://api.lantmateriet.se/distribution/geodatakatalog/uppdatering/v1"
 VER_TOKEN = "https://api-ver.lantmateriet.se/token"  # antagande: standardtjänsten i Lantmäteriets API-portal
 PROD_TOKEN = "https://api.lantmateriet.se/token"
+# Sök-API:et för detaljplaner (OGC API Features/STAC, spec detaljplan-api-2.2): här frågar man om en plan finns i NGP
+SEARCH_PATH = "/sokning/v1/detaljplan/v2"
+VER_SEARCH = "https://api-ver.lantmateriet.se/distribution/geodatakatalog" + SEARCH_PATH
+PROD_SEARCH = "https://api.lantmateriet.se/distribution/geodatakatalog" + SEARCH_PATH
+SEARCH_CHUNK = 100  # så många planer i en fråga
 TIMEOUT_MS = 60000
 STATUSES = ("registrerad", "mottagen", "validerad", "valideringsfel", "publicerad", "fel")
 DONE = ("validerad", "valideringsfel", "publicerad", "fel")  # när klienten slutar vänta
@@ -50,11 +55,12 @@ class Environment:
     title: str
     base_url: str
     token_url: str
+    search_url: str = ""
 
 
 ENVIRONMENTS = {
-    "ver": Environment("ver", "Verifiering", VER_BASE, VER_TOKEN),
-    "prod": Environment("prod", "Produktion", PROD_BASE, PROD_TOKEN),
+    "ver": Environment("ver", "Verifiering", VER_BASE, VER_TOKEN, VER_SEARCH),
+    "prod": Environment("prod", "Produktion", PROD_BASE, PROD_TOKEN, PROD_SEARCH),
 }
 
 
@@ -67,6 +73,7 @@ class NgpConfig:
     token_url: str = VER_TOKEN
     authcfg: str = ""
     media_type: str = MEDIA_TYPE
+    search_authcfg: str = ""  # nyckeln för Sök-API:et (konsument); tom = samma som ``authcfg``
 
     @property
     def title(self) -> str:
@@ -75,6 +82,31 @@ class NgpConfig:
     @property
     def is_production(self) -> bool:
         return self.environment == "prod"
+
+    @property
+    def search_url(self) -> str:
+        """Adressen till Sök-API:et: den som hör till miljön, eller för en egen adress samma som Uppdatering-API:ets men med
+        sökvägen ersatt. Tom om den inte går att räkna ut."""
+        env = ENVIRONMENTS.get(self.environment)
+        if env is not None:
+            return env.search_url
+        marker = "/uppdatering/v1"
+        base = self.base_url.strip().rstrip("/")
+        return base[:-len(marker)] + SEARCH_PATH if base.endswith(marker) else ""
+
+    def search_problems(self) -> list[str]:
+        """Vad som saknas eller är fel i inställningarna innan man kan fråga NGP om en plan finns där."""
+        found = []
+        if not self.search_url:
+            found.append("Adressen till Sök-API:et går inte att räkna ut ur adressen till Uppdatering-API:et.")
+        elif not _safe_url(self.search_url):
+            found.append("Adressen till Sök-API:et måste börja med https://.")
+        if self.token_url.strip() and not _safe_url(self.token_url):
+            found.append("Adressen till tokentjänsten måste börja med https://.")
+        if self.token_url.strip() and not (self.search_authcfg or self.authcfg):
+            found.append("Välj en autentiseringskonfiguration med nyckel och hemlighet från API-portalen (en "
+                         "konsumentnyckel för datamängden Detaljplan räcker).")
+        return found
 
     def problems(self) -> list[str]:
         """Vad som saknas eller är fel i inställningarna innan man kan leverera."""
@@ -97,9 +129,10 @@ def _safe_url(url: str) -> bool:
     return parsed.scheme == "http" and parsed.hostname in ("127.0.0.1", "localhost")
 
 
-def environment_config(key: str, authcfg: str = "") -> NgpConfig:
+def environment_config(key: str, authcfg: str = "", search_authcfg: str = "") -> NgpConfig:
     env = ENVIRONMENTS[key]
-    return NgpConfig(environment=key, base_url=env.base_url, token_url=env.token_url, authcfg=authcfg)
+    return NgpConfig(environment=key, base_url=env.base_url, token_url=env.token_url, authcfg=authcfg,
+                     search_authcfg=search_authcfg)
 
 
 class NgpError(RuntimeError):
@@ -453,6 +486,73 @@ class NgpClient:
         status = self.reception(reception)
         report = self.report(reception, plan) if status.typ in ("validerad", "valideringsfel", "publicerad") else None
         return Delivery(reception, plan, status, report, [f"Status: {status.typ}"])
+
+
+@dataclass(frozen=True)
+class PlanHit:
+    """En detaljplan som finns i NGP:s sökindex (ett referensobjekt): uppgifterna NGP visar om den."""
+    objektidentitet: str
+    namn: str = ""
+    beteckning: str = ""
+    status: str = ""  # till exempel "laga kraft", "antagen", "granskning" (specifikationen definierar ingen lista)
+    datum_lagakraft: str = ""
+    datum_statusforandring: str = ""
+    version: str = ""  # när den senaste versionen blev tillgänglig i NGP
+
+
+CONSUMER_HINT = ("Behörighet saknas. Nyckeln måste vara kopplad till Sök-API:et för detaljplaner (en konsumentnyckel för "
+                 "datamängden Detaljplan i Lantmäteriets API-portal).")
+
+
+def _text(value) -> str:
+    return "" if value is None else str(value).strip()
+
+
+def parse_hits(data) -> list[PlanHit]:
+    """Planerna i ett svar från Sök-API:et (en GeoJSON ``FeatureCollection`` av referensobjekt)."""
+    features = data.get("features") if isinstance(data, dict) else None
+    hits = []
+    for feature in features if isinstance(features, list) else []:
+        if not isinstance(feature, dict):
+            continue
+        props = feature.get("properties") if isinstance(feature.get("properties"), dict) else {}
+        plan = props.get("detaljplan") if isinstance(props.get("detaljplan"), dict) else {}
+        identity = _text(feature.get("id") or plan.get("objektidentitet")).lower()
+        if identity:
+            hits.append(PlanHit(identity, _text(plan.get("namn")), _text(plan.get("beteckning")), _text(plan.get("status")),
+                                _text(plan.get("datumLagakraft")), _text(plan.get("datumStatusforandring")),
+                                _text(props.get("datetime"))))
+    return hits
+
+
+class NgpSearchClient(NgpClient):
+    """Frågar Sök-API:et om planer finns i NGP, med planens objektidentitet (``POST /search`` med ``ids``). Kräver bara en
+    konsumentnyckel för datamängden Detaljplan. Använder samma inloggning som leveransen (``token_url``), med
+    ``search_authcfg`` om den är vald, annars ``authcfg``.
+
+    **Overifierat mot NGP**, som leveransen: följer specifikationen (detaljplan-api-2.2) och är testat mot en låtsasserver."""
+
+    def __init__(self, config: NgpConfig, transport: Optional[Transport] = None,
+                 sleep: Callable[[float], None] = time.sleep, clock: Callable[[], float] = time.monotonic):
+        search = replace(config, base_url=config.search_url, authcfg=config.search_authcfg or config.authcfg)
+        super().__init__(search, transport, sleep, clock)
+
+    def find(self, identities) -> dict[str, PlanHit]:
+        """De av planerna (objektidentiteter) som finns i NGP, med objektidentiteten i gemener som nyckel. Ogiltiga id hoppas över."""
+        unique = list(dict.fromkeys(i.strip().lower() for i in identities if _UUID_RE.match(i.strip().lower())))
+        found: dict[str, PlanHit] = {}
+        for start in range(0, len(unique), SEARCH_CHUNK):
+            chunk = unique[start:start + SEARCH_CHUNK]
+            body = json.dumps({"ids": chunk, "limit": len(chunk)}).encode()
+            try:
+                response = self._call("POST", "/search", "Kunde inte söka i NGP", body=body)
+            except NgpError as exc:
+                if exc.status == 403:
+                    raise NgpError(CONSUMER_HINT, 403) from exc
+                raise
+            for hit in parse_hits(response.json()):
+                found[hit.objektidentitet] = hit
+        return found
 
 
 def _plan_identity(collection: dict) -> str:

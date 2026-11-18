@@ -46,6 +46,9 @@ Vid exporten
 3. Välj eller skapa en **autentiseringskonfiguration** av typen *Grundläggande autentisering*, med nyckel och
    hemlighet från Lantmäteriets API-portal. Uppgifterna sparas i QGIS autentiseringsdatabas, inte av pluginet.
 4. Klicka på **Testa anslutning** för att kontrollera att tjänsten svarar och att inloggningen fungerar.
+5. Vill du i databashanteraren kunna se om planerna finns i NGP använder du **Nyckel för sökning**. Välj där din
+   konsumentnyckel för datamängden Detaljplan, om den inte är samma som leveransnyckeln (se
+   [Se om planen finns i NGP](lagring.md#se-om-planen-finns-i-ngp)).
 
 <!-- BILD: ngp-installningar.png | Inställningar för leverans till NGP med miljö och autentisering -->
 

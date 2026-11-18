@@ -38,7 +38,8 @@ def ngp_config():
     base = str(store.value(KEY_NGP + "base_url", defaults.base_url if defaults else "") or "")
     token = str(store.value(KEY_NGP + "token_url", defaults.token_url if defaults else "") or "")
     return ngp.NgpConfig(environment=environment, base_url=base, token_url=token,
-                         authcfg=str(store.value(KEY_NGP + "authcfg", "") or ""))
+                         authcfg=str(store.value(KEY_NGP + "authcfg", "") or ""),
+                         search_authcfg=str(store.value(KEY_NGP + "search_authcfg", "") or ""))
 
 
 def set_ngp_config(config) -> None:
@@ -47,6 +48,7 @@ def set_ngp_config(config) -> None:
     store.setValue(KEY_NGP + "base_url", config.base_url.strip())
     store.setValue(KEY_NGP + "token_url", config.token_url.strip())
     store.setValue(KEY_NGP + "authcfg", config.authcfg)
+    store.setValue(KEY_NGP + "search_authcfg", config.search_authcfg)
 
 
 def auth_configs() -> list[tuple[str, str]]:

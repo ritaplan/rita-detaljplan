@@ -263,6 +263,114 @@ class ClientTests(ServerCase):
         self.assertIn("mottagen", str(caught.exception))
 
 
+HIT_ID = "0f0e0d0c-0b0a-4090-8080-070605040302"
+
+
+def search_answer(*ids):
+    """Ett svar från Sök-API:et (en FeatureCollection av referensobjekt) för planerna ``ids``."""
+    return {"type": "FeatureCollection", "features": [
+        {"type": "Feature", "id": i, "geometry": None, "properties": {
+            "datetime": "2026-06-02T08:00:00Z",
+            "detaljplan": {"objektidentitet": i, "beteckning": "1-23", "namn": "Kv Norr", "status": "laga kraft",
+                           "datumLagakraft": "2026-06-01", "datumStatusforandring": "2026-06-01"}}} for i in ids]}
+
+
+class SearchTests(unittest.TestCase):
+    """Frågan om en plan finns i NGP (Sök-API:et för detaljplaner, spec 2.2), mot en låtsastransport."""
+
+    def client(self, answers, search_authcfg="", authcfg="deliver", environment="ver"):
+        calls = []
+
+        def transport(method, url, headers, body, authcfg_used):
+            calls.append((method, url, headers, json.loads(body) if body and url.endswith("/search") else body, authcfg_used))
+            if url.endswith("/token"):
+                return ngp.Response(200, {}, json.dumps({"access_token": "tok", "expires_in": 300}).encode())
+            answer = answers.pop(0)
+            return answer if isinstance(answer, ngp.Response) else ngp.Response(200, {}, json.dumps(answer).encode())
+
+        config = ngp.environment_config(environment, authcfg, search_authcfg)
+        return ngp.NgpSearchClient(config, transport=transport, sleep=no_sleep), calls
+
+    def test_the_search_addresses_follow_the_environments(self):
+        self.assertEqual(ngp.ENVIRONMENTS["ver"].search_url,
+                         "https://api-ver.lantmateriet.se/distribution/geodatakatalog/sokning/v1/detaljplan/v2")
+        self.assertEqual(ngp.ENVIRONMENTS["prod"].search_url,
+                         "https://api.lantmateriet.se/distribution/geodatakatalog/sokning/v1/detaljplan/v2")
+
+    def test_an_own_address_gets_the_search_address_from_the_update_address(self):
+        config = ngp.NgpConfig("egen", "https://exempel.se/distribution/geodatakatalog/uppdatering/v1", "")
+        self.assertEqual(config.search_url, "https://exempel.se/distribution/geodatakatalog/sokning/v1/detaljplan/v2")
+        self.assertEqual(ngp.NgpConfig("egen", "https://exempel.se/annat", "").search_url, "")
+        self.assertTrue(ngp.NgpConfig("egen", "https://exempel.se/annat", "").search_problems())
+
+    def test_search_settings_need_a_key_but_either_one_will_do(self):
+        self.assertTrue(ngp.environment_config("ver").search_problems(), "ingen nyckel alls")
+        self.assertEqual(ngp.environment_config("ver", "leverans").search_problems(), [], "leveransnyckeln används")
+        self.assertEqual(ngp.environment_config("ver", "", "konsument").search_problems(), [], "en egen nyckel räcker")
+
+    def test_a_plan_in_ngp_is_found_by_its_identity_with_the_data_ngp_shows(self):
+        client, calls = self.client([search_answer(HIT_ID)])
+        found = client.find([HIT_ID.upper()])  # gemener i svaret oavsett hur id skrivs
+        self.assertEqual(list(found), [HIT_ID])
+        hit = found[HIT_ID]
+        self.assertEqual((hit.namn, hit.beteckning, hit.status), ("Kv Norr", "1-23", "laga kraft"))
+        self.assertEqual((hit.datum_lagakraft, hit.version), ("2026-06-01", "2026-06-02T08:00:00Z"))
+        method, url, headers, body, _auth = calls[-1]
+        self.assertEqual((method, url), ("POST", ngp.VER_SEARCH + "/search"))
+        self.assertEqual(body, {"ids": [HIT_ID], "limit": 1})
+        self.assertEqual(headers["Authorization"], "Bearer tok")
+
+    def test_a_plan_that_is_not_in_ngp_is_missing_from_the_answer(self):
+        client, _calls = self.client([search_answer()])
+        self.assertEqual(client.find([HIT_ID]), {})
+
+    def test_the_login_uses_the_search_key_when_there_is_one_and_otherwise_the_delivery_key(self):
+        client, calls = self.client([search_answer()], search_authcfg="konsument")
+        client.find([HIT_ID])
+        self.assertEqual(calls[0][4], "konsument")
+        client, calls = self.client([search_answer()])
+        client.find([HIT_ID])
+        self.assertEqual(calls[0][4], "deliver")
+
+    def test_invalid_and_duplicate_ids_are_not_sent_and_nothing_is_asked_without_ids(self):
+        client, calls = self.client([search_answer(HIT_ID)])
+        client.find([HIT_ID, HIT_ID.upper(), "inte-ett-id", ""])
+        self.assertEqual(calls[-1][3]["ids"], [HIT_ID])
+        client, calls = self.client([])
+        self.assertEqual(client.find(["", "nej"]), {})
+        self.assertEqual(calls, [], "inga anrop, inte ens inloggning")
+
+    def test_many_plans_are_asked_in_chunks(self):
+        ids = [f"00000000-0000-4000-8000-{n:012d}" for n in range(ngp.SEARCH_CHUNK + 5)]
+        client, calls = self.client([search_answer(*ids[:ngp.SEARCH_CHUNK]), search_answer(*ids[ngp.SEARCH_CHUNK:])])
+        found = client.find(ids)
+        self.assertEqual(len(found), len(ids))
+        searches = [c for c in calls if c[1].endswith("/search")]
+        self.assertEqual([len(c[3]["ids"]) for c in searches], [ngp.SEARCH_CHUNK, 5])
+
+    def test_missing_rights_are_explained_as_a_consumer_key_problem(self):
+        client, _calls = self.client([ngp.Response(403, {}, b'{"reason": "Forbidden"}')])
+        with self.assertRaises(ngp.NgpError) as caught:
+            client.find([HIT_ID])
+        self.assertIn("konsumentnyckel", str(caught.exception))
+        self.assertEqual(caught.exception.status, 403)
+
+    def test_other_errors_are_explained_like_the_rest_of_the_client(self):
+        client, _calls = self.client([ngp.Response(401, {}, b"")] * 2)
+        with self.assertRaises(ngp.NgpError) as caught:
+            client.find([HIT_ID])
+        self.assertIn("Inloggningen avvisades", str(caught.exception))
+
+    def test_answers_that_are_not_what_the_specification_says_give_no_hits_instead_of_errors(self):
+        for answer in (None, [], {"features": None}, {"features": ["x", {"properties": None}]}, {"type": "Feature"}):
+            self.assertEqual(ngp.parse_hits(answer), [], answer)
+
+    def test_the_identity_may_be_in_the_properties_when_the_feature_has_no_id(self):
+        data = search_answer(HIT_ID)
+        del data["features"][0]["id"]
+        self.assertEqual([h.objektidentitet for h in ngp.parse_hits(data)], [HIT_ID])
+
+
 class DeliveryTests(ServerCase):
     plan = "0f0e0d0c-0b0a-4090-8080-070605040302"
 
@@ -429,7 +537,7 @@ class SettingsTests(unittest.TestCase):
     @staticmethod
     def _clear():
         store = QgsSettings()
-        for key in ("environment", "base_url", "token_url", "authcfg"):
+        for key in ("environment", "base_url", "token_url", "authcfg", "search_authcfg"):
             store.remove(settings.KEY_NGP + key)
 
     def test_the_default_is_the_verification_environment_without_a_login(self):
@@ -442,6 +550,34 @@ class SettingsTests(unittest.TestCase):
         config = settings.ngp_config()
         self.assertEqual((config.environment, config.base_url, config.authcfg), ("prod", ngp.PROD_BASE, "cfg42"))
         self.assertTrue(config.is_production)
+
+    def test_the_search_key_is_remembered_separately_and_is_empty_by_default(self):
+        self.assertEqual(settings.ngp_config().search_authcfg, "")
+        settings.set_ngp_config(ngp.NgpConfig("ver", ngp.VER_BASE, ngp.VER_TOKEN, "leverans", search_authcfg="konsument"))
+        config = settings.ngp_config()
+        self.assertEqual((config.authcfg, config.search_authcfg), ("leverans", "konsument"))
+
+    def test_the_settings_dialog_offers_the_search_key_and_tests_it_when_it_is_chosen(self):
+        settings.set_ngp_config(ngp.NgpConfig("ver", ngp.VER_BASE, ngp.VER_TOKEN, "leverans", search_authcfg="konsument"))
+        dialog = SettingsDialog()
+        self.addCleanup(dialog.deleteLater)
+        self.assertEqual(dialog.ngp_search_auth.currentData(), "konsument")
+        self.assertEqual(dialog.ngp_config().search_authcfg, "konsument")
+        asked = []
+
+        class Fake:
+            def health(self):
+                return "UP"
+
+            def token(self):
+                asked.append("token")
+                return "t"
+
+        dialog._client = lambda config: Fake()
+        dialog._search_client = lambda config: Fake()
+        self.assertTrue(dialog.test_connection())
+        self.assertEqual(asked, ["token", "token"], "både leveransnyckeln och sökningens nyckel prövas")
+        self.assertIn("Nyckeln för sökning fungerar", dialog.ngp_result.text())
 
     def test_an_own_address_is_kept_as_typed(self):
         settings.set_ngp_config(ngp.NgpConfig("egen", " https://min.server/api ", "", "cfg"))

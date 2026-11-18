@@ -2,6 +2,17 @@
 
 Formatet följer [Keep a Changelog](https://keepachangelog.com/sv/1.1.0/), versionsnumren [Semantic Versioning](https://semver.org/lang/sv/).
 
+## [Kommande]
+
+- **Kolla i NGP: databashanteraren visar om en plan finns hos Nationella geodataplattformen.** Ny kolumn **NGP** och knapp
+  **Kolla i NGP** (markerade planer, annars alla synliga). Pluginet frågar Lantmäteriets Sök-API för detaljplaner med
+  planens objektidentitet och visar *Finns i NGP: laga kraft*, *Finns inte i NGP* eller *Saknar id*, med namn, status,
+  datum för laga kraft och senaste version i verktygstipset. Skiljer sig statusen i NGP från planens visas det. Det räcker
+  med en konsumentnyckel för datamängden Detaljplan: i NGP-inställningarna finns ett nytt val, **Nyckel för sökning**
+  (annars används leveransnyckeln), och *Testa anslutning* prövar den också. **Overifierat mot Lantmäteriets riktiga
+  miljö**, som leveransen. Fil för fil: `core/ngp_client.py` (`NgpSearchClient`, `PlanHit`), `core/plan_overview.py`,
+  `core/settings.py`, `gui/database_manager_dialog.py`, `gui/settings_dialog.py`.
+
 ## [0.1.88] – texterna på ytorna står still när man zoomar och panorerar
 
 - **Texterna på användnings- och egenskapsytorna står still.** Egenskapsytornas texter placerades i den del av ytan som
