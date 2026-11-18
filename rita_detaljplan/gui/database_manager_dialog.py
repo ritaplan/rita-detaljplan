@@ -585,7 +585,7 @@ class DatabaseManagerDialog(QDialog):
         return found
 
     def _ngp_answered(self, config, rows, exception, result) -> None:
-        """Svaret från NGP (i huvudtråden): moln i tabellen och en sammanfattning."""
+        """Svaret från NGP (i huvudtråden): molnen i tabellen. Ingen ruta under listan: kontrollen ska inte störa."""
         self._ngp_running = False
         if self._closed:
             return
@@ -596,13 +596,8 @@ class DatabaseManagerDialog(QDialog):
                 self.error.setText(f"NGP ({config.title}): {exception}")
         else:
             hits, likely, problem = result
-            counts = {NGP_SAME: 0, NGP_LIKELY: 0, NGP_NONE: 0}
             for row in rows:
-                kind, tip = ngp_state(row, hits, config, likely.get(self._key(row)), problem)
-                self._ngp[self._key(row)] = (kind, tip)
-                counts[kind] = counts.get(kind, 0) + 1
-            self.notice.setText(f"NGP ({config.title}): {counts[NGP_SAME]} finns, {counts[NGP_LIKELY]} troligen under ett "
-                                f"annat id, {counts[NGP_NONE]} finns inte.")
+                self._ngp[self._key(row)] = ngp_state(row, hits, config, likely.get(self._key(row)), problem)
         self._show_ngp()
         self._start_ngp_check()  # planer som kom till medan frågan pågick
 

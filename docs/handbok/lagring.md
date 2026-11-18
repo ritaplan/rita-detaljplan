@@ -190,7 +190,7 @@ för detaljplaner med planens objektidentitet:
 
 Håll muspekaren över molnet för förklaringen: namn, beteckning, status, datum för laga kraft och när den senaste
 versionen blev tillgänglig. Skiljer sig statusen i NGP från planstatusen i databasen står det där. Kolumnen går att
-sortera. Under listan står en sammanfattning av svaret.
+sortera.
 
 - Det går med en **konsumentnyckel** för datamängden Detaljplan. En kommun som är producent har oftast också den.
   Välj nyckeln under **Rita Detaljplan → Inställning anslutning NGP…**, på fliken *Sökning*. Står nyckeln på

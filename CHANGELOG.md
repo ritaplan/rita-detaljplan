@@ -9,7 +9,7 @@ Formatet följer [Keep a Changelog](https://keepachangelog.com/sv/1.1.0/), versi
   behövs. **Mörkgrönt** moln = finns med samma id, **ljusgrönt** = finns troligen under ett annat id, **rött** = finns inte,
   **grått** = kan inte sägas (saknar id, sökningen inte inställd, NGP svarade inte). Förklaringen (namn, status, datum för
   laga kraft, senaste version, skäl till en trolig träff) visas när man håller muspekaren över molnet. Skiljer sig
-  statusen i NGP från planens visas det. Kolumnen går att sortera, och en sammanfattning visas under listan. Svaren
+  statusen i NGP från planens visas det. Kolumnen går att sortera. Ingen informationsruta visas under listan. Svaren
   gäller tills dialogen stängs; *Läs om listan* frågar om allt. Det räcker med en konsumentnyckel för datamängden
   Detaljplan. Provat mot Lantmäteriets produktionsmiljö: sökningen svarar och matchar. Fil för fil: `core/ngp_client.py`
   (`NgpSearchClient`, `PlanHit`), `core/plan_overview.py`, `gui/database_manager_dialog.py`.

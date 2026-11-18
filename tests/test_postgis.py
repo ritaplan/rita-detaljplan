@@ -794,7 +794,7 @@ class OpenDialogTests(PlanCase):
         kind, tip = self.ngp_state_of(dialog, "gamla")
         self.assertEqual(kind, NGP_UNKNOWN)
         self.assertIn("Saknar id", tip)
-        self.assertIn("1 finns", dialog.notice.text())
+        self.assertEqual(dialog.notice.text(), "", "ingen informationsruta när kontrollen är klar")
 
     def test_a_production_answer_does_not_mention_an_environment(self):
         from rita_detaljplan.core import ngp_client as ngp
@@ -812,8 +812,7 @@ class OpenDialogTests(PlanCase):
         for part in (other.objektidentitet, self.NORR, "samma beteckning"):
             self.assertIn(part, tip)
         self.assertEqual(self.ngp_state_of(dialog, "kv_soder")[0], NGP_NONE)
-        self.assertIn("1 troligen under ett annat id", dialog.notice.text())
-        self.assertIn("1 finns inte", dialog.notice.text())
+        self.assertEqual(dialog.notice.text(), "")
 
     def test_the_clouds_have_the_agreed_colours(self):
         from rita_detaljplan.gui import database_manager_dialog as d
