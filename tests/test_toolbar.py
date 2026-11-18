@@ -1766,7 +1766,7 @@ class PluginTests(GuiCase):
         self.assertIs(toggle, self.plugin.toolbar.bottom_toolbar.toggleViewAction())
 
     def test_the_menu_opens_the_ngp_settings_dialog(self):
-        self.assertIn("Inställningar för leverans till NGP…", [a.text() for a in self.plugin.actions])
+        self.assertIn("Inställning anslutning NGP…", [a.text() for a in self.plugin.actions])
         with mock.patch("rita_detaljplan.plugin.SettingsDialog") as dialog_cls:  # inte den riktiga: den är modal
             self.plugin.open_settings()
         dialog_cls.assert_called_once()

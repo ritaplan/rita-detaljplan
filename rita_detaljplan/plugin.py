@@ -104,7 +104,7 @@ class DetaljplanPlugin:
         self.iface.addPluginToMenu(MENU, more_tools)
         self.actions.append(more_tools)
         self._add_action("Uppdatera planbestämmelsekatalogen…", self.update_catalog)
-        self._add_action("Inställningar för leverans till NGP…", self.open_settings)
+        self._add_action("Inställning anslutning NGP…", self.open_settings)
         self._add_action("Skapa exempellayout för plankarta…", self.create_example_sheet)
         self.iface.addPluginToMenu(MENU, self._separator())
         self._add_action("Skapa arkivpaket…", lambda _checked=False: self.open_archive())
@@ -263,7 +263,7 @@ class DetaljplanPlugin:
         box.exec()
 
     def open_settings(self):
-        """Inställningar för leverans till NGP."""
+        """Inställning anslutning NGP (produktion, verifiering och sökning)."""
         SettingsDialog(self.iface.mainWindow()).exec()
 
     # -- planer -------------------------------------------------------------------

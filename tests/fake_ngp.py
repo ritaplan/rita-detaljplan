@@ -43,6 +43,7 @@ class FakeNgp:
         self.validate_after = 1  # antal statusfrågor efter uppladdning innan valideringen är klar
         self.publish_after = 2  # ytterligare frågor tills en validerad mottagning är publicerad
         self.stuck = False  # valideringen blir aldrig klar
+        self.health = "UP"  # vad /health svarar (DOWN ger 503)
         self.rule = default_rule
         self.expire_token_once = False
         self.receptions: dict[str, dict] = {}
@@ -127,7 +128,7 @@ class FakeNgp:
             return self._fault(handler, 404, "Not Found", "Okänd adress")
         path = path[len(base):]
         if path == "/health":
-            return self._send(handler, 200, {"status": "UP"})
+            return self._send(handler, 503 if self.health == "DOWN" else 200, {"status": self.health})
         if not self._authorised(handler):
             return
         if path == "/mottagning" and method == "POST":

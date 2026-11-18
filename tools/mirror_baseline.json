@@ -12,8 +12,8 @@
   "lines": 4
  },
  "core/ngp_client.py": {
-  "fingerprint": "a98ff01415a542a4",
-  "lines": 30
+  "fingerprint": "02323f2759946b2d",
+  "lines": 229
  },
  "gui/about_dialog.py": {
   "fingerprint": "e3b0c44298fc1c14",
@@ -36,7 +36,7 @@
   "lines": 0
  },
  "gui/settings_dialog.py": {
-  "fingerprint": "689e460bd57ca363",
-  "lines": 3
+  "fingerprint": "b44ed123b47ba4e2",
+  "lines": 293
  }
 }

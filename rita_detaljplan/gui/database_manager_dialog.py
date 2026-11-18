@@ -456,7 +456,7 @@ class DatabaseManagerDialog(QDialog):
                                         for i in range(self.proxy.rowCount())]
         if not rows:
             return
-        config = settings.ngp_config()
+        config = settings.ngp_search_config()
         problems = config.search_problems()
         if problems:
             self.error.setText("Kan inte fråga NGP: " + " ".join(problems) + " Se NGP-inställningarna.")

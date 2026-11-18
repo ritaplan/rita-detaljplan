@@ -8,10 +8,23 @@ Formatet följer [Keep a Changelog](https://keepachangelog.com/sv/1.1.0/), versi
   **Kolla i NGP** (markerade planer, annars alla synliga). Pluginet frågar Lantmäteriets Sök-API för detaljplaner med
   planens objektidentitet och visar *Finns i NGP: laga kraft*, *Finns inte i NGP* eller *Saknar id*, med namn, status,
   datum för laga kraft och senaste version i verktygstipset. Skiljer sig statusen i NGP från planens visas det. Det räcker
-  med en konsumentnyckel för datamängden Detaljplan: i NGP-inställningarna finns ett nytt val, **Nyckel för sökning**
-  (annars används leveransnyckeln), och *Testa anslutning* prövar den också. **Overifierat mot Lantmäteriets riktiga
-  miljö**, som leveransen. Fil för fil: `core/ngp_client.py` (`NgpSearchClient`, `PlanHit`), `core/plan_overview.py`,
-  `core/settings.py`, `gui/database_manager_dialog.py`, `gui/settings_dialog.py`.
+  med en konsumentnyckel för datamängden Detaljplan. Provat mot Lantmäteriets produktionsmiljö: sökningen svarar och
+  matchar. Fil för fil: `core/ngp_client.py` (`NgpSearchClient`, `PlanHit`), `core/plan_overview.py`,
+  `gui/database_manager_dialog.py`.
+- **Kolla i NGP hittar planer som ligger under ett annat id.** Har planen levererats av ett annat program, eller har
+  planområdet fått ett nytt id i QGIS, matchar pluginet den mot kommunens planer i NGP på beteckning, datum för laga kraft
+  och namn (ungefär). Kolumnen visar *Troligen i NGP (annat id)*, och verktygstipset visar skälen och båda id:n. Är två
+  kandidater lika bra gissar pluginet inte. Sökningen ber om GeoJSON (tjänsten gav 406 på vanlig JSON). Ny modul
+  `core/ngp_match.py`.
+- **Inställning anslutning NGP: tre flikar och en kontroll som visar om anslutningen är aktiv.** Dialogen heter nu
+  *Inställning anslutning NGP* och har en flik för **Produktion**, en för **Verifiering** och en för **Sökning**, var och
+  en med egna adresser och egen nyckel. Överst väljer man vilken miljö leveransen går till. **Kontrollera anslutningen**
+  loggar in och ber tjänsten om hälsan: grön prick = aktiv, röd = fel med förklaring (till exempel att en konsumentnyckel
+  inte har behörighet att leverera). Prickarna syns också på flikarna, och **Kontrollera alla** prövar alla flikar som har
+  en nyckel. Det ersätter *Testa anslutning*, vars hälsokontroll saknade inloggning och därför gav missvisande fel.
+  Sökningen har egen miljö och egen nyckel (annars leveransnyckeln i miljön). Tidigare inställningar gäller fortfarande för
+  den miljö som var vald, och en tidigare egen adress flyttas till Verifiering. Fil för fil: `gui/settings_dialog.py`,
+  `core/settings.py` (`ngp_environment_config`, `ngp_search_config`), `core/ngp_client.py` (`Health`, `check`).
 
 ## [0.1.88] – texterna på ytorna står still när man zoomar och panorerar
 

@@ -185,9 +185,15 @@ muspekaren över raden för uppgifterna NGP har: namn, beteckning, status, datum
 versionen blev tillgänglig. Skiljer sig statusen i NGP från planstatusen i databasen står det i kolumnen.
 
 - Det går med en **konsumentnyckel** för datamängden Detaljplan. En kommun som är producent har oftast också den.
-  Välj nyckeln under **Rita Detaljplan → Inställningar för leverans till NGP…**, i *Nyckel för sökning*. Står den på
-  *samma som ovan* används leveransnyckeln.
+  Välj nyckeln under **Rita Detaljplan → Inställning anslutning NGP…**, på fliken *Sökning*. Står nyckeln på
+  *samma nyckel som leveransen i den miljön* används leveransnyckeln. Där väljer du också miljön du frågar i, och
+  *Kontrollera anslutningen* visar om sökningen är aktiv och hur många kommuner nyckeln ser.
 - Miljön (Verifiering eller Produktion) följer inställningarna och nämns i kolumnen när den inte är Produktion.
+- **Planer som ligger under ett annat id** hittas också. Har planen levererats av ett annat program, eller har
+  planområdet fått ett nytt id i QGIS, finns den i NGP under ett annat id. Pluginet läser då kommunens planer i NGP och
+  jämför beteckning, datum för laga kraft och namn. Kolumnen visar *Troligen i NGP (annat id)*, och verktygstipset visar
+  skälen och båda id:n. Beteckning och datum måste stämma (eller datum och nästan samma namn): det är en trolig träff,
+  inte en säker.
 - Svaret är det NGP sa vid frågan. Det sparas inte i planen och visas tills du läser om listan med ett nytt val av
   databas eller stänger dialogen.
 - *Finns i NGP* betyder att planen ligger i NGP:s sökindex, inte säkert att den har vunnit laga kraft: läs statusen.

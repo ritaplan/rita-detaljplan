@@ -41,16 +41,19 @@ Vid exporten
 ### Ställ in leveransen första gången
 
 1. Öppna inställningarna med **Inställningar…** i dialogen *Leverans och export*, eller via
-   **Rita Detaljplan → Inställningar för leverans till NGP…**.
-2. Välj **miljö**: *Verifiering* eller *Produktion*. Börja med *Verifiering*.
+   **Rita Detaljplan → Inställning anslutning NGP…**. Dialogen har tre flikar: **Produktion**, **Verifiering** och
+   **Sökning**, var och en med egna adresser och egen nyckel.
+2. Välj överst vilken miljö **leveransen går till**: *Verifiering* eller *Produktion*. Börja med *Verifiering*.
 3. Välj eller skapa en **autentiseringskonfiguration** av typen *Grundläggande autentisering*, med nyckel och
-   hemlighet från Lantmäteriets API-portal. Uppgifterna sparas i QGIS autentiseringsdatabas, inte av pluginet.
-4. Klicka på **Testa anslutning** för att kontrollera att tjänsten svarar och att inloggningen fungerar.
-5. Vill du i databashanteraren kunna se om planerna finns i NGP använder du **Nyckel för sökning**. Välj där din
-   konsumentnyckel för datamängden Detaljplan, om den inte är samma som leveransnyckeln (se
+   hemlighet från Lantmäteriets API-portal, på fliken för den miljön. Uppgifterna sparas i QGIS
+   autentiseringsdatabas, inte av pluginet. Leverans kräver en nyckel med producentbehörighet.
+4. Klicka på **Kontrollera anslutningen**. Pluginet loggar in och ber tjänsten om hälsan, och fliken visar en grön
+   prick (aktiv) eller en röd (med förklaring). **Kontrollera alla** prövar alla flikar som har en nyckel.
+5. Vill du i databashanteraren kunna se om planerna finns i NGP använder du fliken **Sökning**. Välj där din
+   konsumentnyckel för datamängden Detaljplan och vilken miljö du frågar i (se
    [Se om planen finns i NGP](lagring.md#se-om-planen-finns-i-ngp)).
 
-<!-- BILD: ngp-installningar.png | Inställningar för leverans till NGP med miljö och autentisering -->
+<!-- BILD: ngp-installningar.png | Inställning anslutning NGP med flikarna Produktion, Verifiering och Sökning -->
 
 Dialogen *Leverans och export* öppnas alltid, även innan inställningarna är gjorda. Då är *Leverera till NGP*
 avstängt med en förklaring, men *Spara som JSON-fil* fungerar.

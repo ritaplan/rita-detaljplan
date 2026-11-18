@@ -733,7 +733,7 @@ class OpenDialogTests(PlanCase):
         dialog = self.dialog({"planer": conn})
         dialog._ngp_client = lambda config: Client()
         config = ngp.environment_config(environment, "auth1", search_authcfg)
-        patcher = mock.patch("rita_detaljplan.gui.database_manager_dialog.settings.ngp_config", return_value=config)
+        patcher = mock.patch("rita_detaljplan.gui.database_manager_dialog.settings.ngp_search_config", return_value=config)
         patcher.start()
         self.addCleanup(patcher.stop)
         return dialog, asked
@@ -798,7 +798,7 @@ class OpenDialogTests(PlanCase):
         from rita_detaljplan.core import ngp_client as ngp
         dialog, asked = self.with_ngp({})
         config = ngp.environment_config("ver")  # ingen nyckel vald
-        with mock.patch("rita_detaljplan.gui.database_manager_dialog.settings.ngp_config", return_value=config):
+        with mock.patch("rita_detaljplan.gui.database_manager_dialog.settings.ngp_search_config", return_value=config):
             dialog.check_ngp.click()
         self.assertEqual(asked, [])
         self.assertIn("autentiseringskonfiguration", dialog.error.text())

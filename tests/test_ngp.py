@@ -575,9 +575,7 @@ class SettingsTests(unittest.TestCase):
 
     @staticmethod
     def _clear():
-        store = QgsSettings()
-        for key in ("environment", "base_url", "token_url", "authcfg", "search_authcfg"):
-            store.remove(settings.KEY_NGP + key)
+        QgsSettings().remove(settings.KEY_NGP.rstrip("/"))
 
     def test_the_default_is_the_verification_environment_without_a_login(self):
         config = settings.ngp_config()
@@ -590,36 +588,36 @@ class SettingsTests(unittest.TestCase):
         self.assertEqual((config.environment, config.base_url, config.authcfg), ("prod", ngp.PROD_BASE, "cfg42"))
         self.assertTrue(config.is_production)
 
-    def test_the_search_key_is_remembered_separately_and_is_empty_by_default(self):
-        self.assertEqual(settings.ngp_config().search_authcfg, "")
-        settings.set_ngp_config(ngp.NgpConfig("ver", ngp.VER_BASE, ngp.VER_TOKEN, "leverans", search_authcfg="konsument"))
-        config = settings.ngp_config()
-        self.assertEqual((config.authcfg, config.search_authcfg), ("leverans", "konsument"))
+    def test_every_environment_has_its_own_settings(self):
+        settings.set_ngp_config(ngp.NgpConfig("prod", ngp.PROD_BASE, ngp.PROD_TOKEN, "produktion"))
+        settings.set_ngp_config(ngp.NgpConfig("ver", ngp.VER_BASE, "https://annan/token", "verifiering"))
+        settings.set_ngp_active("prod")
+        self.assertEqual(settings.ngp_config().authcfg, "produktion")
+        ver = settings.ngp_environment_config("ver")
+        self.assertEqual((ver.authcfg, ver.token_url), ("verifiering", "https://annan/token"))
+        settings.set_ngp_active("ver")
+        self.assertEqual(settings.ngp_config().authcfg, "verifiering")
 
-    def test_the_settings_dialog_offers_the_search_key_and_tests_it_when_it_is_chosen(self):
-        settings.set_ngp_config(ngp.NgpConfig("ver", ngp.VER_BASE, ngp.VER_TOKEN, "leverans", search_authcfg="konsument"))
-        dialog = SettingsDialog()
-        self.addCleanup(dialog.deleteLater)
-        self.assertEqual(dialog.ngp_search_auth.currentData(), "konsument")
-        self.assertEqual(dialog.ngp_config().search_authcfg, "konsument")
-        asked = []
+    def test_the_search_has_its_own_environment_and_key_and_follows_the_delivery_environment_until_chosen(self):
+        settings.set_ngp_config(ngp.NgpConfig("prod", ngp.PROD_BASE, ngp.PROD_TOKEN, "leverans"))
+        search = settings.ngp_search_config()
+        self.assertEqual((search.environment, search.authcfg, search.search_authcfg), ("prod", "leverans", ""))
+        settings.set_ngp_search("ver", "konsument")
+        search = settings.ngp_search_config()
+        self.assertEqual((search.environment, search.search_authcfg, search.base_url), ("ver", "konsument", ngp.VER_BASE))
 
-        class Fake:
-            def health(self):
-                return "UP"
-
-            def token(self):
-                asked.append("token")
-                return "t"
-
-        dialog._client = lambda config: Fake()
-        dialog._search_client = lambda config: Fake()
-        self.assertTrue(dialog.test_connection())
-        self.assertEqual(asked, ["token", "token"], "både leveransnyckeln och sökningens nyckel prövas")
-        self.assertIn("Nyckeln för sökning fungerar", dialog.ngp_result.text())
+    def test_settings_saved_before_the_split_still_apply_to_the_environment_that_was_chosen(self):
+        store = QgsSettings()
+        store.setValue(settings.KEY_NGP + "environment", "prod")
+        store.setValue(settings.KEY_NGP + "authcfg", "gammal")
+        store.setValue(settings.KEY_NGP + "search_authcfg", "gammal_sok")
+        self.assertEqual(settings.ngp_config().authcfg, "gammal")
+        self.assertEqual(settings.ngp_search_config().search_authcfg, "gammal_sok")
+        self.assertEqual(settings.ngp_environment_config("ver").authcfg, "", "den andra miljön fick ingen nyckel")
 
     def test_an_own_address_is_kept_as_typed(self):
         settings.set_ngp_config(ngp.NgpConfig("egen", " https://min.server/api ", "", "cfg"))
+        settings.set_ngp_active("egen")
         config = settings.ngp_config()
         self.assertEqual((config.environment, config.base_url, config.token_url), ("egen", "https://min.server/api", ""))
 
@@ -629,6 +627,73 @@ class SettingsTests(unittest.TestCase):
             self.assertEqual(settings.auth_configs(), [])
 
 
+class HealthTests(ServerCase):
+    """Är anslutningen aktiv? Svaret är alltid en ``Health``, aldrig ett undantag."""
+
+    def test_a_healthy_service_is_active(self):
+        health = self.new_client().check()
+        self.assertTrue(health.ok)
+        self.assertIn("Aktiv", health.text)
+
+    def test_missing_settings_are_explained_without_calling_the_service(self):
+        health = ngp.NgpClient(ngp.NgpConfig("ver", ngp.VER_BASE, ngp.VER_TOKEN, "")).check()
+        self.assertFalse(health.ok)
+        self.assertIn("autentiseringskonfiguration", health.text)
+
+    def test_a_down_service_and_an_unreachable_one_are_errors(self):
+        self.fake.health = "DOWN"
+        health = self.new_client().check()
+        self.assertFalse(health.ok)
+        self.assertIn("DOWN", health.text)
+
+    def test_a_key_without_producer_rights_is_told_so_after_a_working_login(self):
+        def refuse(method, url, headers, body, authcfg):
+            if url.endswith("/token"):
+                return ngp.Response(200, {}, json.dumps({"access_token": "tok", "expires_in": 300}).encode())
+            return ngp.Response(403, {}, b"{}")
+
+        config = ngp.NgpConfig("ver", ngp.VER_BASE, ngp.VER_TOKEN, "konsument")
+        health = ngp.NgpClient(config, transport=refuse, sleep=no_sleep).check()
+        self.assertFalse(health.ok)
+        self.assertIn("Inloggningen fungerar", health.text)
+        self.assertIn("producent", health.text)
+
+    def test_a_rejected_login_is_an_error_with_the_explanation(self):
+        def reject(method, url, headers, body, authcfg):
+            return ngp.Response(401, {}, b"{}")
+
+        config = ngp.NgpConfig("ver", ngp.VER_BASE, ngp.VER_TOKEN, "fel")
+        health = ngp.NgpClient(config, transport=reject, sleep=no_sleep).check()
+        self.assertFalse(health.ok)
+        self.assertIn("Inloggningen avvisades", health.text)
+
+
+class SearchHealthTests(unittest.TestCase):
+    def client(self, answer, **kw):
+        def transport(method, url, headers, body, authcfg):
+            if url.endswith("/token"):
+                return ngp.Response(200, {}, json.dumps({"access_token": "tok", "expires_in": 300}).encode())
+            return answer if isinstance(answer, ngp.Response) else ngp.Response(200, {}, json.dumps(answer).encode())
+
+        config = ngp.environment_config("prod", "leverans", "konsument")
+        return ngp.NgpSearchClient(config, transport=transport, sleep=no_sleep)
+
+    def test_a_search_that_sees_municipalities_is_active(self):
+        health = self.client({"collections": [{"id": "1494", "title": "x"}, {"id": "0486"}]}).check()
+        self.assertTrue(health.ok)
+        self.assertIn("2 kommuner", health.text)
+
+    def test_a_key_that_sees_nothing_is_an_error_with_a_hint_about_the_subscription(self):
+        health = self.client({"collections": []}).check()
+        self.assertFalse(health.ok)
+        self.assertIn("prenumererar", health.text)
+
+    def test_a_refused_key_gets_the_consumer_hint_and_missing_settings_are_explained(self):
+        self.assertEqual(self.client(ngp.Response(403, {}, b"{}")).check().text, ngp.CONSUMER_HINT)
+        bare = ngp.NgpSearchClient(ngp.environment_config("prod"), transport=lambda *a: None, sleep=no_sleep)
+        self.assertIn("autentiseringskonfiguration", bare.check().text)
+
+
 class SettingsDialogTests(SettingsTests):
     def dialog(self):
         with mock.patch.object(settings, "auth_configs", return_value=[("abc1234", "NGP-nyckel"), ("def5678", "Annan")]):
@@ -636,57 +701,125 @@ class SettingsDialogTests(SettingsTests):
         self.addCleanup(dialog.deleteLater)
         return dialog
 
-    def test_the_section_lists_environments_and_authentication_configurations(self):
-        dialog = self.dialog()
-        self.assertEqual([dialog.ngp_env.itemText(i) for i in range(dialog.ngp_env.count())],
-                         ["Verifiering", "Produktion", "Egen adress"])
-        self.assertEqual([dialog.ngp_auth.itemData(i) for i in range(dialog.ngp_auth.count())], ["", "abc1234", "def5678"])
-        self.assertIn("Grundläggande autentisering", dialog.ngp_note.text())
-        self.assertIn("inte verifierad", dialog.ngp_note.text())
+    def pick(self, combo, data):
+        combo.setCurrentIndex(combo.findData(data))
 
-    def test_choosing_an_environment_fills_the_addresses_and_locks_them(self):
+    def test_the_dialog_has_a_tab_each_for_production_verification_and_search(self):
         dialog = self.dialog()
-        dialog.ngp_env.setCurrentIndex(dialog.ngp_env.findData("prod"))
-        self.assertEqual((dialog.ngp_base.text(), dialog.ngp_token.text()), (ngp.PROD_BASE, ngp.PROD_TOKEN))
-        self.assertTrue(dialog.ngp_base.isReadOnly())
-        dialog.ngp_env.setCurrentIndex(dialog.ngp_env.findData("egen"))
-        self.assertFalse(dialog.ngp_base.isReadOnly() or dialog.ngp_token.isReadOnly())
+        self.assertEqual(dialog.windowTitle(), "Inställning anslutning NGP")
+        self.assertEqual([dialog.tabs.tabText(i) for i in range(dialog.tabs.count())], ["Produktion", "Verifiering", "Sökning"])
+        self.assertEqual([dialog.ngp_env.itemText(i) for i in range(dialog.ngp_env.count())], ["Produktion", "Verifiering"])
+        tab = dialog.delivery["prod"]
+        self.assertEqual([tab.auth.itemData(i) for i in range(tab.auth.count())], ["", "abc1234", "def5678"])
+        self.assertIn("Grundläggande autentisering", tab.note.text())
+        self.assertIn("producent", tab.note.text())
+        self.assertIn("konsument", dialog.search.note.text())
 
-    def test_saving_writes_the_ngp_settings(self):
+    def test_every_tab_starts_with_the_addresses_of_its_environment_and_is_not_yet_checked(self):
         dialog = self.dialog()
-        dialog.ngp_env.setCurrentIndex(dialog.ngp_env.findData("prod"))
-        dialog.ngp_auth.setCurrentIndex(dialog.ngp_auth.findData("def5678"))
+        self.assertEqual((dialog.delivery["prod"].base.text(), dialog.delivery["prod"].token.text()), (ngp.PROD_BASE, ngp.PROD_TOKEN))
+        self.assertEqual((dialog.delivery["ver"].base.text(), dialog.delivery["ver"].token.text()), (ngp.VER_BASE, ngp.VER_TOKEN))
+        for tab in (*dialog.delivery.values(), dialog.search):
+            self.assertIn("Inte kontrollerad", tab.status.text())
+
+    def test_the_standard_addresses_can_be_restored(self):
+        dialog = self.dialog()
+        tab = dialog.delivery["prod"]
+        tab.base.setText("https://fel")
+        tab.token.setText("https://fel/token")
+        tab.reset.click()
+        self.assertEqual((tab.base.text(), tab.token.text()), (ngp.PROD_BASE, ngp.PROD_TOKEN))
+
+    def test_the_search_tab_shows_the_search_address_of_the_chosen_environment(self):
+        dialog = self.dialog()
+        self.pick(dialog.search.env, "prod")
+        self.assertEqual(dialog.search.address.text(), ngp.PROD_SEARCH)
+        self.pick(dialog.search.env, "ver")
+        self.assertEqual(dialog.search.address.text(), ngp.VER_SEARCH)
+
+    def test_saving_writes_the_settings_of_every_environment_the_active_one_and_the_search(self):
+        dialog = self.dialog()
+        self.pick(dialog.delivery["prod"].auth, "abc1234")
+        self.pick(dialog.delivery["ver"].auth, "def5678")
+        dialog.delivery["ver"].token.setText("https://annan/token")
+        self.pick(dialog.ngp_env, "prod")
+        self.pick(dialog.search.env, "prod")
+        self.pick(dialog.search.auth, "abc1234")
         dialog.accept()
         config = settings.ngp_config()
-        self.assertEqual((config.environment, config.authcfg), ("prod", "def5678"))
+        self.assertEqual((config.environment, config.authcfg), ("prod", "abc1234"))
+        ver = settings.ngp_environment_config("ver")
+        self.assertEqual((ver.authcfg, ver.token_url), ("def5678", "https://annan/token"))
+        search = settings.ngp_search_config()
+        self.assertEqual((search.environment, search.search_authcfg), ("prod", "abc1234"))
 
-    def test_the_saved_authentication_configuration_is_selected_when_reopened(self):
-        settings.set_ngp_config(ngp.NgpConfig("ver", ngp.VER_BASE, ngp.VER_TOKEN, "abc1234"))
-        self.assertEqual(self.dialog().ngp_auth.currentData(), "abc1234")
-
-    def test_a_config_from_a_deleted_authentication_entry_is_still_shown(self):
+    def test_the_saved_settings_are_shown_when_reopened(self):
+        settings.set_ngp_config(ngp.NgpConfig("prod", ngp.PROD_BASE, ngp.PROD_TOKEN, "abc1234"))
         settings.set_ngp_config(ngp.NgpConfig("ver", ngp.VER_BASE, ngp.VER_TOKEN, "borttagen"))
-        self.assertEqual(self.dialog().ngp_auth.currentData(), "borttagen")
-
-    def test_the_connection_test_explains_what_is_missing(self):
+        settings.set_ngp_active("prod")
+        settings.set_ngp_search("ver", "def5678")
         dialog = self.dialog()
-        self.assertFalse(dialog.test_connection())
-        self.assertIn("autentiseringskonfiguration", dialog.ngp_result.text())
+        self.assertEqual(dialog.ngp_env.currentData(), "prod")
+        self.assertEqual(dialog.delivery["prod"].auth.currentData(), "abc1234")
+        self.assertEqual(dialog.delivery["ver"].auth.currentData(), "borttagen", "en borttagen konfiguration visas ändå")
+        self.assertEqual((dialog.search.env.currentData(), dialog.search.auth.currentData()), ("ver", "def5678"))
 
-    def test_the_connection_test_reports_success_and_failure(self):
+    def test_an_earlier_own_address_moves_to_the_verification_tab(self):
+        settings.set_ngp_config(ngp.NgpConfig("egen", "https://min.server/api", "", "cfg"))
+        settings.set_ngp_active("egen")
         dialog = self.dialog()
-        dialog.ngp_auth.setCurrentIndex(dialog.ngp_auth.findData("abc1234"))
-        good = mock.Mock()
-        good.health.return_value = "UP"
-        with mock.patch.object(dialog, "_client", return_value=good):
-            self.assertTrue(dialog.test_connection())
-        self.assertIn("Tjänsten är UP och inloggningen fungerar", dialog.ngp_result.text())
-        good.token.assert_called_once()
-        bad = mock.Mock()
-        bad.health.side_effect = ngp.NgpError("Ingen kontakt med servern")
+        self.assertEqual(dialog.ngp_env.currentData(), "ver")
+        self.assertEqual((dialog.delivery["ver"].base.text(), dialog.delivery["ver"].token.text()), ("https://min.server/api", ""))
+
+    def test_checking_a_delivery_tab_shows_the_answer_in_the_tab_and_on_its_label(self):
+        dialog = self.dialog()
+        self.pick(dialog.delivery["prod"].auth, "abc1234")
+        good, bad = mock.Mock(), mock.Mock()
+        good.check.return_value = ngp.Health(True, "Aktiv: tjänsten är UP och inloggningen fungerar.")
+        bad.check.return_value = ngp.Health(False, "Ingen kontakt med servern")
+        with mock.patch.object(dialog, "_client", return_value=good) as client:
+            dialog.delivery["prod"].check.click()
+        self.assertEqual(client.call_args[0][0].environment, "prod", "kontrollen gäller flikens miljö")
+        self.assertIn("Aktiv", dialog.delivery["prod"].status.text())
+        self.assertIn("#1b7f3b", dialog.delivery["prod"].status.text())
+        self.assertIn("Inte kontrollerad", dialog.delivery["ver"].status.text(), "de andra flikarna är orörda")
         with mock.patch.object(dialog, "_client", return_value=bad):
-            self.assertFalse(dialog.test_connection())
-        self.assertIn("Ingen kontakt", dialog.ngp_result.text())
+            dialog.delivery["prod"].check.click()
+        self.assertIn("Ingen kontakt", dialog.delivery["prod"].status.text())
+        self.assertFalse(dialog.delivery["prod"].health.ok)
+
+    def test_checking_the_search_uses_the_search_key_and_the_chosen_environment(self):
+        dialog = self.dialog()
+        self.pick(dialog.search.env, "prod")
+        self.pick(dialog.search.auth, "def5678")
+        fake = mock.Mock()
+        fake.check.return_value = ngp.Health(True, "Aktiv: sökningen svarar och nyckeln ser 290 kommuner.")
+        with mock.patch.object(dialog, "_search_client", return_value=fake) as client:
+            dialog.search.check.click()
+        config = client.call_args[0][0]
+        self.assertEqual((config.environment, config.search_authcfg), ("prod", "def5678"))
+        self.assertIn("290 kommuner", dialog.search.status.text())
+
+    def test_check_all_skips_connections_without_a_key(self):
+        dialog = self.dialog()
+        self.pick(dialog.delivery["ver"].auth, "abc1234")
+        self.pick(dialog.search.env, "prod")
+        asked = []
+
+        class Fake:
+            def __init__(self, config):
+                asked.append(config.environment)
+
+            def check(self):
+                return ngp.Health(True, "Aktiv")
+
+        dialog._client = Fake
+        dialog._search_client = lambda config: Fake(config)
+        dialog.check_all_button.click()
+        self.assertEqual(asked, ["ver"], "bara Verifiering har en nyckel: Produktion och Sökning (utan nyckel i sin miljö) hoppas över")
+        self.pick(dialog.search.env, "ver")
+        dialog.check_all_button.click()
+        self.assertEqual(asked, ["ver", "ver", "ver"], "sökningen i Verifiering kan använda dess leveransnyckel")
 
 
 class DeliveryDialogTests(unittest.TestCase):

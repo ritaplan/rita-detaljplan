@@ -13,11 +13,11 @@ Pluginet har automatiska tester (se [Utveckling](utveckling.md)), men flera dela
   Kräver dessutom producentbehörighet. Att spara leveransen som JSON-fil och skicka den för granskning fungerar oberoende
   av detta. Uppdatering av en redan publicerad plan (ny objektversion) stöds inte.
 - **Kolla i NGP** (kolumnen NGP i databashanteraren) frågar Lantmäteriets Sök-API för detaljplaner
-  (`detaljplan-api-2.2`) med planens objektidentitet. Den är byggd efter specifikationen och testad mot en låtsastransport,
-  **aldrig mot Lantmäteriets riktiga miljö**. Det är inte bekräftat att en konsumentnyckel räcker (eller att samma
-  tokentjänst används), hur NGP anger status (specifikationen ger ingen lista) eller att planer som levererats i
-  Verifieringsmiljön syns i sökindexet. Planer som saknar objektidentitet kan inte frågas, och ett svar är bara ett
-  ögonblick: det sparas inte i planen.
+  (`detaljplan-api-2.2`) med planens objektidentitet och, för planer som inte hittas på id, med kommunens planer
+  (matchning på beteckning, datum för laga kraft och namn). Den är provad mot produktionsmiljön med en konsumentnyckel,
+  men inte mot Verifieringsmiljön, och hur NGP anger status är inte bekräftat (specifikationen ger ingen lista). En träff
+  under annat id är *trolig*, inte säker. Planer som saknar objektidentitet kan inte frågas på id, och ett svar är bara
+  ett ögonblick: det sparas inte i planen.
 - **PostGIS.** Att skapa och öppna planer i en databas och att **checka ut och checka in** är testat mot en
   låtsasdatabas och prövat mot en riktig PostGIS-databas, men inte i alla tänkbara miljöer och upplägg. Prova
   först på en testplan och gör säkerhetskopia av schemat innan du checkar in en viktig plan.

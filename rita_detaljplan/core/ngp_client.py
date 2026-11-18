@@ -367,6 +367,27 @@ class NgpClient:
         return response
 
     # -- API:ets anrop ----------------------------------------------------------------------
+    def check(self) -> Health:
+        """Är anslutningen till leverans-API:et aktiv? Loggar in och ber tjänsten om hälsan. Ger aldrig något undantag: ett fel
+        är ett svar (``Health``) med förklaring."""
+        problems = self.config.problems()
+        if problems:
+            return Health(False, " ".join(problems))
+        try:
+            self.token()
+            response = self._call("GET", "/health", "Hälsokontrollen misslyckades", strict=False)
+        except NgpError as exc:
+            return Health(False, str(exc))
+        if response.status in (401, 403):
+            return Health(False, "Inloggningen fungerar, men nyckeln har inte behörighet till leverans-API:et. Leverans "
+                                 "kräver producentbehörighet: en konsumentnyckel räcker inte.")
+        if response.status not in (200, 503):
+            return Health(False, str(_explain(response, "Hälsokontrollen misslyckades")))
+        status = str((response.json() or {}).get("status", "UNKNOWN"))
+        if response.status == 503 or status.upper() == "DOWN":
+            return Health(False, f"Tjänsten svarar men rapporterar att den är {status}.")
+        return Health(True, f"Aktiv: tjänsten är {status} och inloggningen fungerar.")
+
     def health(self) -> str:
         """Tjänstens hälsostatus (UP, DOWN …). Kräver ingen inloggning."""
         response = self._transport("GET", self._url("/health"), {"Accept": "application/json"}, None, "")
@@ -505,6 +526,13 @@ class PlanHit:
     version: str = ""  # när den senaste versionen blev tillgänglig i NGP
 
 
+@dataclass(frozen=True)
+class Health:
+    """Hur en anslutning mår: ``ok`` är True (aktiv) eller False (fel), ``text`` förklarar vad som sågs."""
+    ok: bool
+    text: str
+
+
 CONSUMER_HINT = ("Behörighet saknas. Nyckeln måste vara kopplad till Sök-API:et för detaljplaner (en konsumentnyckel för "
                  "datamängden Detaljplan i Lantmäteriets API-portal).")
 
@@ -541,6 +569,20 @@ class NgpSearchClient(NgpClient):
                  sleep: Callable[[float], None] = time.sleep, clock: Callable[[], float] = time.monotonic):
         search = replace(config, base_url=config.search_url, authcfg=config.search_authcfg or config.authcfg)
         super().__init__(search, transport, sleep, clock)
+        self._search_problems = config.search_problems()
+
+    def check(self) -> Health:
+        """Är anslutningen till Sök-API:et aktiv? Loggar in och läser vilka kommuner nyckeln ser."""
+        if self._search_problems:
+            return Health(False, " ".join(self._search_problems))
+        try:
+            collections = self.collections()
+        except NgpError as exc:
+            return Health(False, CONSUMER_HINT if exc.status == 403 else str(exc))
+        if not collections:
+            return Health(False, "Inloggningen fungerar, men nyckeln ser inga kommuner. Kontrollera att nyckelns program "
+                                 "prenumererar på API:et för detaljplaner.")
+        return Health(True, f"Aktiv: sökningen svarar och nyckeln ser {len(collections)} kommuner.")
 
     def collections(self) -> dict[str, str]:
         """Datamängderna nyckeln ser: kommunkod -> kommunens namn (en datamängd per kommun som levererat detaljplaner)."""

@@ -270,7 +270,7 @@ ligger kvar tills någon bryter det.
 |---|---|---|
 | **Planens data** | GeoPackage eller PostGIS | Allt som levereras, plus `dp_meta`. |
 | **Projektet** (`.qgz`) | Där du valde | Lagren, stilarna, formulären och relationerna. Markeringar av vilken grupp som är en plan och vilken plan som är aktiv, vilket lager som är vilken tabell, digitaliseringsläget, databasanslutningen, schemat och plan-id:t, och utcheckningens sökväg och nyckel. |
-| **Inställningar** | QGIS användarprofil | Standardreferensskala, inställningar för leverans till NGP (miljö, adresser, namnet på autentiseringskonfigurationen), om tolkningsbestämmelser ska visas och inställningarna för teckenförklaringen. |
+| **Inställningar** | QGIS användarprofil | Standardreferensskala, inställning av anslutningen till NGP (adresser och namnet på autentiseringskonfigurationen för Produktion, Verifiering och Sökning), om tolkningsbestämmelser ska visas och inställningarna för teckenförklaringen. |
 | **Inloggning till NGP** | QGIS autentiseringsdatabas | Nyckel och hemlighet, krypterade av QGIS. Pluginet sparar dem inte själv. |
 | **Planbestämmelsekatalogen** | QGIS profilmapp, `detaljplan_ngp/` | Den senast hämtade katalogen. Saknas den används kopian som följer med pluginet. |
 | **Utcheckade kopior** | QGIS profilmapp, `detaljplan_ngp/checkouts/` | Lokala kopior av utcheckade databasplaner. |
