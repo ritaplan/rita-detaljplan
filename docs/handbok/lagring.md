@@ -178,24 +178,32 @@ vanligt. Skydda den igen när du är klar.
 
 ### Se om planen finns i NGP
 
-Kolumnen **NGP** visar om en plan finns hos Nationella geodataplattformen. Markera planerna (eller markera ingen, så
-gäller det alla synliga) och klicka på **Kolla i NGP**. Pluginet frågar då Lantmäteriets Sök-API för detaljplaner med
-planens objektidentitet, och kolumnen visar till exempel *Finns i NGP: laga kraft* eller *Finns inte i NGP*. Håll
-muspekaren över raden för uppgifterna NGP har: namn, beteckning, status, datum för laga kraft och när den senaste
-versionen blev tillgänglig. Skiljer sig statusen i NGP från planstatusen i databasen står det i kolumnen.
+Kolumnen **NGP** visar med ett moln om en plan finns hos Nationella geodataplattformen. Kontrollen görs av sig själv i
+bakgrunden när databashanteraren öppnas, så du kan arbeta medan molnen dyker upp. Pluginet frågar Lantmäteriets Sök-API
+för detaljplaner med planens objektidentitet:
+
+- **Mörkgrönt moln:** planen finns i NGP med samma id.
+- **Ljusgrönt moln:** planen finns troligen i NGP, men under ett annat id (se nedan).
+- **Rött moln:** planen finns inte i NGP.
+- **Grått moln:** det går inte att säga, till exempel för att planen saknar id, att sökningen inte är inställd eller att
+  NGP inte svarade.
+
+Håll muspekaren över molnet för förklaringen: namn, beteckning, status, datum för laga kraft och när den senaste
+versionen blev tillgänglig. Skiljer sig statusen i NGP från planstatusen i databasen står det där. Kolumnen går att
+sortera. Under listan står en sammanfattning av svaret.
 
 - Det går med en **konsumentnyckel** för datamängden Detaljplan. En kommun som är producent har oftast också den.
   Välj nyckeln under **Rita Detaljplan → Inställning anslutning NGP…**, på fliken *Sökning*. Står nyckeln på
   *samma nyckel som leveransen i den miljön* används leveransnyckeln. Där väljer du också miljön du frågar i, och
   *Kontrollera anslutningen* visar om sökningen är aktiv och hur många kommuner nyckeln ser.
-- Miljön (Verifiering eller Produktion) följer inställningarna och nämns i kolumnen när den inte är Produktion.
+- Miljön (Verifiering eller Produktion) följer inställningarna och nämns i förklaringen när den inte är Produktion.
 - **Planer som ligger under ett annat id** hittas också. Har planen levererats av ett annat program, eller har
   planområdet fått ett nytt id i QGIS, finns den i NGP under ett annat id. Pluginet läser då kommunens planer i NGP och
-  jämför beteckning, datum för laga kraft och namn. Kolumnen visar *Troligen i NGP (annat id)*, och verktygstipset visar
+  jämför beteckning, datum för laga kraft och namn. Molnet är ljusgrönt, och förklaringen visar
   skälen och båda id:n. Beteckning och datum måste stämma (eller datum och nästan samma namn): det är en trolig träff,
   inte en säker.
-- Svaret är det NGP sa vid frågan. Det sparas inte i planen och visas tills du läser om listan med ett nytt val av
-  databas eller stänger dialogen.
+- Svaret är det NGP sa vid frågan. Det sparas inte i planen och visas tills du stänger dialogen. Knappen *Läser om
+  listan över planer* frågar NGP om alla planer på nytt. Planer som kommer till i listan senare kontrolleras också.
 - *Finns i NGP* betyder att planen ligger i NGP:s sökindex, inte säkert att den har vunnit laga kraft: läs statusen.
 
 ### Bryta lås

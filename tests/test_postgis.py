@@ -15,7 +15,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from plan_case import HAVE_QGIS  # noqa: E402
+from plan_case import HAVE_QGIS, pump  # noqa: E402
 
 if HAVE_QGIS:
     from osgeo import ogr
@@ -711,9 +711,11 @@ class OpenDialogTests(PlanCase):
 
     NORR, SODER = "0f0e0d0c-0b0a-4090-8080-070605040302", "1a1b1c1d-2a2b-4c3d-9e4f-505152535455"
 
-    def with_ngp(self, hits, environment="ver", search_authcfg="", others=()):
-        """Databashanteraren med de tre planerna, där NGP-frågan besvaras av ``hits`` (objektidentitet -> ``PlanHit``).
-        Returnerar (dialog, frågor), där frågorna är de id som skickades till NGP."""
+    def with_ngp(self, hits, environment="ver", search_authcfg="", others=(), show=True, background=True):
+        """Databashanteraren med de tre planerna, där NGP-frågan besvaras av ``hits`` (objektidentitet -> ``PlanHit``) och
+        ``others`` (kommunens övriga planer i NGP). Frågan körs direkt i stället för i en bakgrundsuppgift (utom med
+        ``background=False``, då läggs den i ``dialog.queued``). Returnerar (dialog, frågor), där frågorna är de id som
+        skickades till NGP. Kontrollen börjar när dialogen visas (``show``)."""
         from rita_detaljplan.core import ngp_client as ngp
         conn = self.detailed()
         conn.plan_identities["dp_a"] = [["kv_norr", self.NORR], ["kv_soder", self.SODER]]
@@ -732,94 +734,146 @@ class OpenDialogTests(PlanCase):
 
         dialog = self.dialog({"planer": conn})
         dialog._ngp_client = lambda config: Client()
+        dialog.queued = []
+        if background:
+            dialog._run_in_background = lambda work, done: done(None, work())
+        else:
+            dialog._run_in_background = lambda work, done: dialog.queued.append((work, done))
         config = ngp.environment_config(environment, "auth1", search_authcfg)
         patcher = mock.patch("rita_detaljplan.gui.database_manager_dialog.settings.ngp_search_config", return_value=config)
         patcher.start()
         self.addCleanup(patcher.stop)
+        if show:
+            dialog.show()
+            self.addCleanup(dialog.close)
         return dialog, asked
 
-    def ngp_text(self, dialog, plan_id):
-        from rita_detaljplan.gui.database_manager_dialog import COLUMN_FIELDS
+    def ngp_state_of(self, dialog, plan_id):
+        """(art, förklaring) för planen, som den visas i kolumnen NGP: molnet och verktygstipset. Kontrollerar också att
+        tabellen visar det dialogen vet."""
+        from rita_detaljplan.gui.database_manager_dialog import NGP_COLUMN
         for index in range(dialog.model.rowCount()):
-            if dialog.model.item(index, 0).data(ROW_ROLE).plan_id == plan_id:
-                item = dialog.model.item(index, COLUMN_FIELDS.index("ngp"))
-                return item.text(), item.toolTip()
+            row = dialog.model.item(index, 0).data(ROW_ROLE)
+            if row.plan_id == plan_id:
+                item = dialog.model.item(index, NGP_COLUMN)
+                state = dialog._ngp.get(dialog._key(row))
+                if state is None:
+                    self.assertTrue(item.icon().isNull() and not item.toolTip(), "inget moln innan det finns ett svar")
+                    return None
+                self.assertFalse(item.icon().isNull(), "molnet visas")
+                self.assertEqual(item.text(), "", "kolumnen har bara ikonen")
+                self.assertEqual(item.toolTip(), state[1])
+                return state
         self.fail(f"{plan_id} finns inte i listan")
 
-    def test_the_ngp_column_starts_empty_and_the_plans_know_their_ids(self):
-        dialog, _asked = self.with_ngp({})
-        self.assertEqual(self.ngp_text(dialog, "kv_norr"), ("", ""))
+    def test_nothing_is_asked_until_the_list_is_shown_and_the_plans_know_their_ids(self):
+        dialog, asked = self.with_ngp({}, show=False)
+        self.assertEqual(asked, [])
+        self.assertFalse(hasattr(dialog, "check_ngp"), "ingen knapp: kontrollen görs automatiskt")
         rows = {r.plan_id: r for r in dialog._rows}
         self.assertEqual(rows["kv_norr"].objektidentiteter, (self.NORR,))
         self.assertEqual(rows["gamla"].objektidentiteter, (), "ett schema utan identiteter ger ett tomt svar")
+        dialog.show()
+        self.addCleanup(dialog.close)
+        self.assertEqual(asked, [[self.NORR, self.SODER]])
 
-    def test_checking_ngp_asks_about_the_selected_plans_only_and_shows_the_answer(self):
+    def test_opening_the_list_asks_ngp_about_every_plan_and_shows_a_cloud_for_each(self):
         from rita_detaljplan.core import ngp_client as ngp
+        from rita_detaljplan.gui.database_manager_dialog import NGP_NONE, NGP_SAME, NGP_UNKNOWN
         hit = ngp.PlanHit(self.NORR, "Kv Norr", "1-23", "laga kraft", "2026-06-01", "2026-06-01", "2026-06-02T08:00:00Z")
         dialog, asked = self.with_ngp({self.NORR: hit})
-        self.select(dialog, "kv_norr", "kv_soder")
-        dialog.check_ngp.click()
-        self.assertEqual(asked, [[self.NORR, self.SODER]])
-        text, tip = self.ngp_text(dialog, "kv_norr")
-        self.assertTrue(text.startswith("Finns i NGP: laga kraft"), text)
-        self.assertIn("(Verifiering)", text, "Verifieringsmiljön nämns så att den inte tas för produktion")
-        self.assertIn("lokalt: samråd", text, "NGP och databasen är oense om planstatusen")
-        for part in ("Kv Norr", "2026-06-01", "2026-06-02 08:00:00"):
+        self.assertEqual(asked, [[self.NORR, self.SODER]], "en enda fråga för alla planer med id")
+        kind, tip = self.ngp_state_of(dialog, "kv_norr")
+        self.assertEqual(kind, NGP_SAME)
+        self.assertIn("(Verifiering)", tip, "Verifieringsmiljön nämns så att den inte tas för produktion")
+        for part in ("Kv Norr", "2026-06-01", "2026-06-02 08:00:00", "Planstatusen i databasen är samråd"):
             self.assertIn(part, tip)
-        self.assertEqual(self.ngp_text(dialog, "kv_soder")[0], "Finns inte i NGP (Verifiering)")
-        self.assertEqual(self.ngp_text(dialog, "gamla"), ("", ""), "de andra planerna är orörda")
-        self.assertIn("1 finns där", dialog.notice.text())
-        self.assertEqual(self.visible_ids(dialog).count("kv_norr"), 1, "listan lästes inte om")
-
-    def test_without_a_selection_every_visible_plan_is_checked(self):
-        dialog, asked = self.with_ngp({})
-        dialog.table.clearSelection()
-        dialog.check_ngp.click()
-        self.assertEqual(sorted(asked[0]), sorted([self.NORR, self.SODER]), "bara planer med id kan frågas")
-        self.assertEqual(self.ngp_text(dialog, "gamla")[0], "Saknar id")
+        kind, tip = self.ngp_state_of(dialog, "kv_soder")
+        self.assertEqual(kind, NGP_NONE)
+        self.assertIn("hittades inte i NGP", tip)
+        kind, tip = self.ngp_state_of(dialog, "gamla")
+        self.assertEqual(kind, NGP_UNKNOWN)
+        self.assertIn("Saknar id", tip)
+        self.assertIn("1 finns", dialog.notice.text())
 
     def test_a_production_answer_does_not_mention_an_environment(self):
         from rita_detaljplan.core import ngp_client as ngp
-        hit = ngp.PlanHit(self.NORR, status="samråd")
-        dialog, _asked = self.with_ngp({self.NORR: hit}, environment="prod")
-        self.select(dialog, "kv_norr")
-        dialog.check_ngp.click()
-        self.assertEqual(self.ngp_text(dialog, "kv_norr")[0], "Finns i NGP: samråd")
-
-    def test_the_answer_survives_a_reload_of_the_list(self):
-        from rita_detaljplan.core import ngp_client as ngp
         dialog, _asked = self.with_ngp({self.NORR: ngp.PlanHit(self.NORR, status="samråd")}, environment="prod")
-        self.select(dialog, "kv_norr")
-        dialog.check_ngp.click()
-        dialog.reload()
-        self.assertEqual(self.ngp_text(dialog, "kv_norr")[0], "Finns i NGP: samråd")
+        self.assertNotIn("(Produktion)", self.ngp_state_of(dialog, "kv_norr")[1])
+        self.assertNotIn("(Verifiering)", self.ngp_state_of(dialog, "kv_norr")[1])
 
-    def test_missing_settings_are_explained_and_nothing_is_asked(self):
+    def test_a_plan_under_another_id_gets_a_light_green_cloud_with_the_reasons(self):
         from rita_detaljplan.core import ngp_client as ngp
-        dialog, asked = self.with_ngp({})
-        config = ngp.environment_config("ver")  # ingen nyckel vald
-        with mock.patch("rita_detaljplan.gui.database_manager_dialog.settings.ngp_search_config", return_value=config):
-            dialog.check_ngp.click()
-        self.assertEqual(asked, [])
-        self.assertIn("autentiseringskonfiguration", dialog.error.text())
-
-    def test_a_plan_under_another_id_is_found_by_its_designation_and_date(self):
-        from rita_detaljplan.core import ngp_client as ngp
+        from rita_detaljplan.gui.database_manager_dialog import NGP_LIKELY, NGP_NONE
         other = ngp.PlanHit("ffffffff-0000-4000-8000-000000000000", "Kv Norr", "1-23", "laga kraft", "2026-05-02")
         dialog, _asked = self.with_ngp({}, environment="prod", others=[other])
-        self.select(dialog, "kv_norr", "kv_soder")
-        dialog.check_ngp.click()
-        text, tip = self.ngp_text(dialog, "kv_norr")
-        self.assertEqual(text, "Troligen i NGP (annat id): laga kraft")
+        kind, tip = self.ngp_state_of(dialog, "kv_norr")
+        self.assertEqual(kind, NGP_LIKELY)
         for part in (other.objektidentitet, self.NORR, "samma beteckning"):
             self.assertIn(part, tip)
-        self.assertEqual(self.ngp_text(dialog, "kv_soder")[0], "Finns inte i NGP")
+        self.assertEqual(self.ngp_state_of(dialog, "kv_soder")[0], NGP_NONE)
         self.assertIn("1 troligen under ett annat id", dialog.notice.text())
-        self.assertIn("1 inte", dialog.notice.text())
+        self.assertIn("1 finns inte", dialog.notice.text())
 
-    def test_a_failing_search_for_other_ids_does_not_hide_the_exact_answer(self):
+    def test_the_clouds_have_the_agreed_colours(self):
+        from rita_detaljplan.gui import database_manager_dialog as d
+        self.assertEqual((d.NGP_COLOURS[d.NGP_SAME], d.NGP_COLOURS[d.NGP_LIKELY], d.NGP_COLOURS[d.NGP_NONE]),
+                         ("#146c2e", "#7fd18b", "#c62828"), "mörkgrön, ljusgrön, röd")
+        self.assertEqual(len({d.NGP_COLOURS[k] for k in d.NGP_COLOURS}), 4, "också grått för det som inte kunde kontrolleras")
+
+    def test_the_answers_are_kept_over_a_reload_and_only_the_refresh_button_asks_again(self):
+        dialog, asked = self.with_ngp({})
+        dialog.reload()
+        self.assertEqual(len(asked), 1, "samma planer frågas inte om vid en omläsning")
+        dialog.refresh.click()
+        self.assertEqual(len(asked), 2)
+        self.assertEqual(self.ngp_state_of(dialog, "kv_norr")[0], "none")
+
+    def test_missing_search_settings_give_grey_clouds_that_explain_and_nothing_is_asked(self):
         from rita_detaljplan.core import ngp_client as ngp
-        dialog, _asked = self.with_ngp({}, environment="prod")
+        from rita_detaljplan.gui.database_manager_dialog import NGP_UNKNOWN
+        dialog, asked = self.with_ngp({}, show=False)
+        with mock.patch("rita_detaljplan.gui.database_manager_dialog.settings.ngp_search_config",
+                        return_value=ngp.environment_config("ver")):  # ingen nyckel vald
+            dialog.show()
+            self.addCleanup(dialog.close)
+            self.assertEqual(asked, [])
+            kind, tip = self.ngp_state_of(dialog, "kv_norr")
+            self.assertEqual(kind, NGP_UNKNOWN)
+            self.assertIn("autentiseringskonfiguration", tip)
+            self.assertIn("Sökning", tip)
+            self.assertEqual(dialog.error.text(), "", "ingen felruta: kontrollen är inte inställd")
+
+    def test_an_error_from_ngp_gives_grey_clouds_and_a_message(self):
+        from rita_detaljplan.core import ngp_client as ngp
+        from rita_detaljplan.gui.database_manager_dialog import NGP_UNKNOWN
+        dialog, _asked = self.with_ngp({}, show=False)
+
+        class Broken:
+            def find(self, ids):
+                raise ngp.NgpError("Ingen kontakt med api.lantmateriet.se")
+
+        dialog._ngp_client = lambda config: Broken()
+        dialog._run_in_background = lambda work, done: done(*self.run_catching(work))
+        dialog.show()
+        self.addCleanup(dialog.close)
+        kind, tip = self.ngp_state_of(dialog, "kv_norr")
+        self.assertEqual(kind, NGP_UNKNOWN)
+        self.assertIn("Ingen kontakt", tip)
+        self.assertIn("Ingen kontakt", dialog.error.text())
+
+    @staticmethod
+    def run_catching(work):
+        """Som en bakgrundsuppgift: ett undantag blir svaret (undantag, None) i stället för att stoppa."""
+        try:
+            return None, work()
+        except Exception as exc:  # noqa: BLE001
+            return exc, None
+
+    def test_a_failing_search_for_other_ids_still_gives_the_exact_answer_and_says_so(self):
+        from rita_detaljplan.core import ngp_client as ngp
+        from rita_detaljplan.gui.database_manager_dialog import NGP_NONE
+        dialog, _asked = self.with_ngp({}, show=False)
 
         class Client:
             def find(self, ids):
@@ -829,24 +883,43 @@ class OpenDialogTests(PlanCase):
                 raise ngp.NgpError("Anropet avvisades som felaktigt.")
 
         dialog._ngp_client = lambda config: Client()
-        self.select(dialog, "kv_norr")
-        dialog.check_ngp.click()
-        self.assertEqual(self.ngp_text(dialog, "kv_norr")[0], "Finns inte i NGP")
-        self.assertIn("misslyckades", dialog.notice.text())
+        dialog.show()
+        self.addCleanup(dialog.close)
+        kind, tip = self.ngp_state_of(dialog, "kv_norr")
+        self.assertEqual(kind, NGP_NONE)
+        self.assertIn("gäller bara id", tip)
 
-    def test_an_error_from_ngp_is_shown_and_leaves_the_column_alone(self):
+    def test_the_column_sorts_by_the_answer(self):
         from rita_detaljplan.core import ngp_client as ngp
-        dialog, _asked = self.with_ngp({})
+        from rita_detaljplan.gui.database_manager_dialog import NGP_COLUMN
+        dialog, _asked = self.with_ngp({self.SODER: ngp.PlanHit(self.SODER, status="antagen")})
+        dialog.table.sortByColumn(NGP_COLUMN, Qt.SortOrder.AscendingOrder)
+        self.assertEqual(self.visible_ids(dialog), ["kv_soder", "kv_norr", "gamla"], "finns, finns inte, vet inte")
+        dialog.table.sortByColumn(NGP_COLUMN, Qt.SortOrder.DescendingOrder)
+        self.assertEqual(self.visible_ids(dialog), ["gamla", "kv_norr", "kv_soder"])
 
-        class Broken:
-            def find(self, ids):
-                raise ngp.NgpError("Ingen kontakt med api.lantmateriet.se")
+    def test_the_real_background_task_delivers_the_answer_to_the_dialog(self):
+        import time
+        from rita_detaljplan.gui.database_manager_dialog import NGP_NONE
+        dialog, asked = self.with_ngp({}, show=False)
+        del dialog._run_in_background  # den riktiga bakgrundsuppgiften (QgsTask) i stället för den direkta
+        dialog.show()
+        self.addCleanup(dialog.close)
+        deadline = time.time() + 30
+        while dialog._ngp_running and time.time() < deadline:
+            pump(0.05)
+        self.assertFalse(dialog._ngp_running, "svaret kom")
+        self.assertEqual(asked, [[self.NORR, self.SODER]])
+        self.assertEqual(self.ngp_state_of(dialog, "kv_norr")[0], NGP_NONE)
 
-        dialog._ngp_client = lambda config: Broken()
-        self.select(dialog, "kv_norr")
-        dialog.check_ngp.click()
-        self.assertIn("Ingen kontakt", dialog.error.text())
-        self.assertEqual(self.ngp_text(dialog, "kv_norr"), ("", ""))
+    def test_an_answer_that_arrives_after_the_dialog_was_closed_is_ignored(self):
+        dialog, _asked = self.with_ngp({}, background=False)
+        self.assertEqual(len(dialog.queued), 1, "frågan väntar i bakgrunden")
+        self.assertIn("Kontrollerar", self.ngp_state_of(dialog, "kv_norr")[1])
+        dialog.close()
+        work, done = dialog.queued.pop()
+        done(None, work())  # svaret kommer när dialogen redan är stängd
+        self.assertIn("Kontrollerar", self.ngp_state_of(dialog, "kv_norr")[1])
 
     def select(self, dialog, *plan_ids):
         """Väljer planerna (flera med Ctrl, som användaren)."""

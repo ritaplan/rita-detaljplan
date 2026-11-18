@@ -10,8 +10,9 @@ import re
 from pathlib import Path
 from typing import Callable, Optional
 
-from qgis.PyQt.QtCore import QModelIndex, QSize, QSortFilterProxyModel, Qt
-from qgis.PyQt.QtGui import QBrush, QColor, QIcon, QStandardItem, QStandardItemModel
+from qgis.PyQt.QtCore import QModelIndex, QRectF, QSize, QSortFilterProxyModel, Qt
+from qgis.PyQt.QtGui import QBrush, QColor, QIcon, QPainter, QPainterPath, QPixmap, QStandardItem, QStandardItemModel
+from qgis.core import QgsApplication, QgsTask
 from qgis.PyQt.QtWidgets import (QAbstractItemView, QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox,
                                  QFileDialog, QFrame, QHBoxLayout, QHeaderView, QInputDialog, QLabel, QLineEdit, QMenu,
                                  QMessageBox, QTableView, QToolButton, QVBoxLayout)
@@ -51,6 +52,29 @@ COLUMN_FIELDS = tuple(field for _title, field in COLUMNS)
 SYFTE_COLUMN = COLUMN_FIELDS.index("syfte")
 SYFTE_WIDTH = 260
 ROW_ROLE = Qt.ItemDataRole.UserRole
+SORT_ROLE = int(Qt.ItemDataRole.UserRole) + 1  # sorteringsordningen i kolumnen NGP (som har ikoner men ingen text)
+NGP_COLUMN = COLUMN_FIELDS.index("ngp")
+
+# Svaret från NGP för en plan, i den ordning kolumnen sorteras
+NGP_SAME, NGP_LIKELY, NGP_NONE, NGP_UNKNOWN = "same", "likely", "none", "unknown"
+NGP_ORDER = {NGP_SAME: 0, NGP_LIKELY: 1, NGP_NONE: 2, NGP_UNKNOWN: 3}
+NGP_COLOURS = {NGP_SAME: "#146c2e", NGP_LIKELY: "#7fd18b", NGP_NONE: "#c62828", NGP_UNKNOWN: "#a8a8a8"}  # mörkgrön, ljusgrön, röd, grå
+
+
+def cloud_icon(colour: str) -> QIcon:
+    """Ett moln i en färg: planens ställning i NGP (mörkgrön finns, ljusgrön troligen, röd inte, grå vet inte)."""
+    pixmap = QPixmap(32, 32)
+    pixmap.fill(Qt.GlobalColor.transparent)
+    path = QPainterPath()
+    path.setFillRule(Qt.FillRule.WindingFill)  # delarna överlappar: fyll hela molnet, inte bara det som täcks en gång
+    for x, y, w, h in ((2, 14, 12, 12), (8, 6, 15, 15), (17, 12, 13, 13)):
+        path.addEllipse(QRectF(x, y, w, h))
+    path.addRoundedRect(QRectF(8, 17, 17, 9), 4, 4)
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    painter.fillPath(path, QColor(colour))
+    painter.end()
+    return QIcon(pixmap)
 
 
 def natural_key(text: str) -> tuple:
@@ -96,13 +120,16 @@ def protection_text(row: PlanRow) -> str:
     return "Skrivskyddad" if row.protected else ""
 
 
-def ngp_state(row: PlanRow, hits: dict, config: "ngp.NgpConfig", likely: Optional[tuple] = None) -> tuple[str, str]:
-    """Vad databashanteraren visar om planen i kolumnen NGP, och verktygstipset: (text, tips). ``hits`` är svaret från
-    ``NgpSearchClient.find``. Miljön nämns om den inte är Produktion, så att ett fynd i Verifieringsmiljön inte tas för att
-    planen är publicerad på riktigt."""
+def ngp_state(row: PlanRow, hits: dict, config: "ngp.NgpConfig", likely: Optional[tuple] = None,
+              partial: str = "") -> tuple[str, str]:
+    """Vad databashanteraren visar om planen i kolumnen NGP: (art, förklaring) där arten är ``NGP_SAME`` (finns, med samma
+    id), ``NGP_LIKELY`` (finns troligen, under ett annat id), ``NGP_NONE`` (finns inte) eller ``NGP_UNKNOWN`` (kan inte
+    sägas). Förklaringen visas när man håller muspekaren över molnet. ``hits`` är svaret från ``NgpSearchClient.find``,
+    ``partial`` en förklaring till varför sökningen efter ett annat id inte gick att göra. Miljön nämns om den inte är
+    Produktion, så att ett fynd i Verifieringsmiljön inte tas för att planen är publicerad på riktigt."""
     where = "" if config.is_production else f" ({config.title})"
     if not row.objektidentiteter:
-        return "Saknar id", "Planen har inget planområde med objektidentitet, som NGP känner igen planen på."
+        return NGP_UNKNOWN, "Saknar id: planen har inget planområde med objektidentitet, som NGP känner igen planen på."
     hit = next((hits[i.lower()] for i in row.objektidentiteter if i.lower() in hits), None)
     if hit is None and likely:
         other, why = likely
@@ -112,24 +139,20 @@ def ngp_state(row: PlanRow, hits: dict, config: "ngp.NgpConfig", likely: Optiona
                              ("Status i NGP", other.status), ("Laga kraft", other.datum_lagakraft)):
             if value:
                 lines.append(f"{label}: {value}")
-        return "Troligen i NGP (annat id)" + (f": {other.status}" if other.status else "") + where, "\n".join(lines)
+        return NGP_LIKELY, "\n".join(lines)
     if hit is None:
-        return (f"Finns inte i NGP{where}",
-                "Planens id hittades inte i NGP:s sökning. Planen är alltså inte publicerad där, eller så har den inte "
-                "hunnit komma med i sökindexet.")
-    text = "Finns i NGP" + (f": {hit.status}" if hit.status else "")
-    differs = bool(hit.status and row.status and hit.status.casefold() != row.status.casefold())
-    if differs:
-        text += f" (lokalt: {row.status})"
+        text = (f"Planen hittades inte i NGP{where}, varken på id eller på beteckning, namn och datum för laga kraft. "
+                "Den är alltså inte publicerad där, eller har inte hunnit komma med i sökindexet.")
+        return NGP_NONE, text + (f"\n{partial}" if partial else "")
     lines = [f"Planen finns i NGP{where}."]
     for label, value in (("Namn i NGP", hit.namn), ("Beteckning i NGP", hit.beteckning), ("Status i NGP", hit.status),
                          ("Laga kraft", hit.datum_lagakraft), ("Statusen ändrades", hit.datum_statusforandring),
                          ("Senaste versionen i NGP", hit.version.replace("T", " ")[:19])):
         if value:
             lines.append(f"{label}: {value}")
-    if differs:
+    if hit.status and row.status and hit.status.casefold() != row.status.casefold():
         lines.append(f"Planstatusen i databasen är {row.status}: det skiljer sig från NGP.")
-    return text + where, "\n".join(lines)
+    return NGP_SAME, "\n".join(lines)
 
 
 class PlanFilter(QSortFilterProxyModel):
@@ -146,6 +169,9 @@ class PlanFilter(QSortFilterProxyModel):
         self.setSortRole(Qt.ItemDataRole.DisplayRole)
 
     def lessThan(self, left: QModelIndex, right: QModelIndex) -> bool:
+        if left.column() == NGP_COLUMN:  # ikoner utan text: sortera på svaret
+            return (left.data(SORT_ROLE) if left.data(SORT_ROLE) is not None else 9) \
+                < (right.data(SORT_ROLE) if right.data(SORT_ROLE) is not None else 9)
         return natural_key(str(left.data() or "")) < natural_key(str(right.data() or ""))
 
     def set_text(self, text: str) -> None:
@@ -196,7 +222,11 @@ class DatabaseManagerDialog(QDialog):
         self.resize(1180, 620)
         self._connections = connections if connections is not None else storage.postgis_connections()
         self._rows: list[PlanRow] = []
-        self._ngp: dict[tuple[str, str, str], tuple[str, str]] = {}  # (anslutning, schema, plan-id) -> (text, tips)
+        self._ngp: dict[tuple[str, str, str], tuple[str, str]] = {}  # (anslutning, schema, plan-id) -> (art, förklaring)
+        self._ngp_running = False  # en kontroll mot NGP pågår i bakgrunden
+        self._closed = False
+        self._tasks: list = []
+        self._clouds = {kind: cloud_icon(colour) for kind, colour in NGP_COLOURS.items()}
         self.checkout_requested = False
         self.mosaic_requested = False  # användaren valde Planmosaik i stället för att öppna planer
 
@@ -282,10 +312,6 @@ class DatabaseManagerDialog(QDialog):
                                        "Tar bort de valda planerna ur databasen. Det går inte att ångra, men du kan spara en "
                                        "säkerhetskopia först. Planer som är utcheckade eller skrivskyddade kan inte tas bort.")
         self.delete_plans.setStyleSheet("QToolButton:enabled { color: #b3261e; }")
-        self.check_ngp = self._tool("Kolla i NGP", "validate.svg",
-                                    "Frågar Lantmäteriets Sök-API om de valda planerna (alla synliga om ingen är vald) finns "
-                                    "i NGP, och visar status och senaste version i kolumnen NGP. Kräver en nyckel i NGP-"
-                                    "inställningarna.")
         self.break_locks = self._tool("Bryt lås…", "unlock.svg",
                                       "Tar bort utcheckningen av de valda planerna. Den som hade planen utcheckad kan då inte "
                                       "längre checka in sina ändringar.")
@@ -298,8 +324,7 @@ class DatabaseManagerDialog(QDialog):
         self.unprotect_plans.clicked.connect(self._unprotect_plans)
         self.delete_plans.clicked.connect(self._delete_plans)
         self.break_locks.clicked.connect(self._break_locks)
-        self.check_ngp.clicked.connect(self._check_ngp)
-        self.refresh.clicked.connect(lambda _checked=False: self.reload())
+        self.refresh.clicked.connect(self._refresh)
         self.export_geopackage.triggered.connect(lambda _checked=False: self._export_plans(transfer.export_plan, ".gpkg"))
         self.export_json.triggered.connect(lambda _checked=False: self._export_plans(json_transfer.export_delivery, ".json"))
         self.open_readonly.clicked.connect(lambda: self._accept_with(False))
@@ -325,7 +350,6 @@ class DatabaseManagerDialog(QDialog):
         for button in (self.protect_plans, self.unprotect_plans, self.break_locks):
             manage.addWidget(button)
         manage.addWidget(self._separator())
-        manage.addWidget(self.check_ngp)
         manage.addStretch(1)
         manage.addWidget(self.count)
         layout = QVBoxLayout(self)
@@ -406,6 +430,7 @@ class DatabaseManagerDialog(QDialog):
         self.error.setText("\n".join(problems))
         self.notice.clear()
         self._fill()
+        self._start_ngp_check()
 
     def _fill(self) -> None:
         self.table.setSortingEnabled(False)
@@ -417,8 +442,7 @@ class DatabaseManagerDialog(QDialog):
             items = []
             for _title, field in COLUMNS:
                 text = lock_text(row) if field == "utcheckad" else protection_text(row) if field == "skrivskydd" \
-                    else self._ngp.get((row.connection, row.schema, row.plan_id), ("", ""))[0] if field == "ngp" \
-                    else getattr(row, field)
+                    else "" if field == "ngp" else getattr(row, field)
                 item = QStandardItem(text)
                 item.setEditable(False)
                 if field == "genomforandetid":
@@ -433,7 +457,7 @@ class DatabaseManagerDialog(QDialog):
                     item.setForeground(grey)
                 items.append(item)
             items[0].setData(row, ROW_ROLE)
-            items[COLUMN_FIELDS.index("ngp")].setToolTip(self._ngp.get((row.connection, row.schema, row.plan_id), ("", ""))[1])
+            self._set_ngp_item(items[NGP_COLUMN], row)
             if row.lock is not None:
                 items[COLUMN_FIELDS.index("utcheckad")].setToolTip(f"Utcheckad av {row.lock.describe()}")
             if row.protection is not None:
@@ -450,52 +474,102 @@ class DatabaseManagerDialog(QDialog):
     def _ngp_client(self, config: "ngp.NgpConfig") -> "ngp.NgpSearchClient":  # särskilt för att kunna bytas ut i tester
         return ngp.NgpSearchClient(config)
 
-    def _check_ngp(self) -> None:
-        """Frågar NGP om de valda planerna (annars alla synliga) finns där och visar svaret i kolumnen NGP."""
-        rows = self.selected_rows() or [self.model.item(self.proxy.mapToSource(self.proxy.index(i, 0)).row(), 0).data(ROW_ROLE)
-                                        for i in range(self.proxy.rowCount())]
+    @staticmethod
+    def _key(row: PlanRow) -> tuple[str, str, str]:
+        return row.connection, row.schema, row.plan_id
+
+    def _set_ngp_item(self, item: QStandardItem, row: PlanRow) -> None:
+        """Molnet i kolumnen NGP: färgen visar svaret, och förklaringen visas när man håller muspekaren över det."""
+        state = self._ngp.get(self._key(row))
+        if state is None:
+            item.setIcon(QIcon())
+            item.setToolTip("")
+            item.setData(None, SORT_ROLE)
+            return
+        kind, tip = state
+        item.setIcon(self._clouds[kind])
+        item.setToolTip(tip)
+        item.setData(NGP_ORDER[kind], SORT_ROLE)
+
+    def _show_ngp(self) -> None:
+        """Skriver in de senaste svaren från NGP i kolumnen NGP (utan att läsa om listan eller ändra urvalet)."""
+        for index in range(self.model.rowCount()):
+            self._set_ngp_item(self.model.item(index, NGP_COLUMN), self.model.item(index, 0).data(ROW_ROLE))
+        self.table.resizeColumnToContents(NGP_COLUMN)
+
+    def showEvent(self, event) -> None:  # noqa: N802
+        super().showEvent(event)
+        self._start_ngp_check()  # planerna kontrolleras mot NGP så fort listan visas
+
+    def done(self, result) -> None:
+        self._closed = True  # ett svar från NGP som kommer efter att dialogen stängts ska inte skrivas någonstans
+        super().done(result)
+
+    def _refresh(self) -> None:
+        """Läser om listan och frågar NGP om alla planerna på nytt."""
+        self._ngp.clear()
+        self.reload()
+
+    def _ngp_client(self, config: "ngp.NgpConfig") -> "ngp.NgpSearchClient":  # särskilt för att kunna bytas ut i tester
+        return ngp.NgpSearchClient(config)
+
+    def _run_in_background(self, work, done) -> None:
+        """Kör ``work()`` i en bakgrundsuppgift och anropar ``done(exception, result)`` i huvudtråden (kan bytas ut i tester)."""
+        holder = {}
+
+        def finished(exception, result=None):
+            self._tasks = [t for t in self._tasks if t is not holder.get("task")]
+            done(exception, result)
+
+        task = QgsTask.fromFunction("Kontrollerar planerna mot NGP", lambda _task: work(), on_finished=finished)
+        holder["task"] = task
+        self._tasks.append(task)
+        QgsApplication.taskManager().addTask(task)
+
+    def _start_ngp_check(self) -> None:
+        """Frågar NGP om de planer i listan som inte fått något svar än, i bakgrunden. Kräver en nyckel för Sökning i
+        inställningarna. Saknas den får planerna ett grått moln som säger det: kontrollen är inte ett fel."""
+        if self._closed or self._ngp_running or not self.isVisible():
+            return
+        rows = [row for row in self._rows if self._key(row) not in self._ngp]
         if not rows:
             return
         config = settings.ngp_search_config()
         problems = config.search_problems()
-        if problems:
-            self.error.setText("Kan inte fråga NGP: " + " ".join(problems) + " Se NGP-inställningarna.")
-            return
-        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
-        try:
-            hits = self._ngp_client(config).find([i for row in rows for i in row.objektidentiteter])
-        except ngp.NgpError as exc:
-            self.error.setText(str(exc))
-            return
-        finally:
-            QApplication.restoreOverrideCursor()
-        missing = [row for row in rows if row.objektidentiteter and not any(i.lower() in hits for i in row.objektidentiteter)]
-        likely: dict = {}
-        problem = ""
-        if missing:  # inget id stämde: leta efter planen under ett annat id, på beteckning, namn och datum för laga kraft
-            QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
-            try:
-                likely = self._likely_matches(config, missing)
-            except ngp.NgpError as exc:
-                problem = f" Sökningen efter planer under andra id misslyckades: {exc}"
-            finally:
-                QApplication.restoreOverrideCursor()
         for row in rows:
-            key = (row.connection, row.schema, row.plan_id)
-            self._ngp[key] = ngp_state(row, hits, config, likely.get(key))
+            if not row.objektidentiteter:
+                self._ngp[self._key(row)] = ngp_state(row, {}, config)
+            elif problems:
+                self._ngp[self._key(row)] = (NGP_UNKNOWN, "NGP kontrolleras inte: " + " ".join(problems) + " Se Rita "
+                                             "Detaljplan → Inställning anslutning NGP, fliken Sökning.")
+        rows = [row for row in rows if self._key(row) not in self._ngp]
         self._show_ngp()
-        found = sum(1 for row in rows if any(i.lower() in hits for i in row.objektidentiteter))
-        self.error.clear()
-        text = f"Frågade NGP ({config.title}) om {len(rows)} planer: {found} finns där med samma id"
-        if likely:
-            text += f", {len(likely)} troligen under ett annat id"
-        text += f", {len(rows) - found - len(likely)} inte."
-        self.notice.setText(text + problem)
+        if not rows:
+            return
+        for row in rows:
+            self._ngp[self._key(row)] = (NGP_UNKNOWN, "Kontrollerar mot NGP …")
+        self._show_ngp()
+        self._ngp_running = True
+        client = self._ngp_client(config)
+        self._run_in_background(lambda: self._ask_ngp(client, rows),
+                                lambda exception, result: self._ngp_answered(config, rows, exception, result))
 
-    def _likely_matches(self, config, rows) -> dict:
+    def _ask_ngp(self, client, rows) -> tuple:
+        """Frågan till NGP (körs i bakgrunden, rör ingen dialog): först på id, sedan för de som inte hittades på
+        beteckning, namn och datum för laga kraft i kommunens planer. Ger (träffar, troliga träffar, anmärkning)."""
+        hits = client.find([i for row in rows for i in row.objektidentiteter])
+        missing = [row for row in rows if not any(i.lower() in hits for i in row.objektidentiteter)]
+        likely, problem = {}, ""
+        if missing:
+            try:
+                likely = self._likely_matches(client, missing)
+            except ngp.NgpError as exc:
+                problem = f"Sökningen efter planer under andra id misslyckades, så svaret gäller bara id: {exc}"
+        return hits, likely, problem
+
+    def _likely_matches(self, client, rows) -> dict:
         """Planer vars id inte finns i NGP, matchade mot kommunens planer i NGP på beteckning, namn och datum för laga kraft:
         (anslutning, schema, plan) -> (träff i NGP, skälen)."""
-        client = self._ngp_client(config)
         collections = client.collections()
         pools: dict = {}
         found: dict = {}
@@ -507,19 +581,30 @@ class DatabaseManagerDialog(QDialog):
                 pools[code] = client.plans_in(code)
             hit, why = ngp_match.match_plan(row.namn, row.beteckning, row.laga_kraft, pools[code])
             if hit is not None:
-                found[(row.connection, row.schema, row.plan_id)] = (hit, why)
+                found[self._key(row)] = (hit, why)
         return found
 
-    def _show_ngp(self) -> None:
-        """Skriver in det senaste svaret från NGP i kolumnen NGP (utan att läsa om listan eller ändra urvalet)."""
-        column = COLUMN_FIELDS.index("ngp")
-        for index in range(self.model.rowCount()):
-            row = self.model.item(index, 0).data(ROW_ROLE)
-            text, tip = self._ngp.get((row.connection, row.schema, row.plan_id), ("", ""))
-            item = self.model.item(index, column)
-            item.setText(text)
-            item.setToolTip(tip)
-        self.table.resizeColumnToContents(column)
+    def _ngp_answered(self, config, rows, exception, result) -> None:
+        """Svaret från NGP (i huvudtråden): moln i tabellen och en sammanfattning."""
+        self._ngp_running = False
+        if self._closed:
+            return
+        if exception is not None:
+            for row in rows:
+                self._ngp[self._key(row)] = (NGP_UNKNOWN, f"Kunde inte kontrollera mot NGP: {exception}")
+            if not self.error.text():
+                self.error.setText(f"NGP ({config.title}): {exception}")
+        else:
+            hits, likely, problem = result
+            counts = {NGP_SAME: 0, NGP_LIKELY: 0, NGP_NONE: 0}
+            for row in rows:
+                kind, tip = ngp_state(row, hits, config, likely.get(self._key(row)), problem)
+                self._ngp[self._key(row)] = (kind, tip)
+                counts[kind] = counts.get(kind, 0) + 1
+            self.notice.setText(f"NGP ({config.title}): {counts[NGP_SAME]} finns, {counts[NGP_LIKELY]} troligen under ett "
+                                f"annat id, {counts[NGP_NONE]} finns inte.")
+        self._show_ngp()
+        self._start_ngp_check()  # planer som kom till medan frågan pågick
 
     def _fill_filters(self) -> None:
         """Fyller filterlistorna med de värden som finns i databasen (och behåller ett val som fortfarande finns)."""
@@ -805,7 +890,6 @@ class DatabaseManagerDialog(QDialog):
         self.protect_plans.setEnabled(any(not row.protected for row in rows))
         self.unprotect_plans.setEnabled(bool(protected))
         self.break_locks.setEnabled(any(row.locked for row in rows))
-        self.check_ngp.setEnabled(bool(total))
         self.open_checkout.setEnabled(bool(rows) and not taken and not protected)
         if not rows:
             self.hint.setText("Välj en eller flera planer i listan (Ctrl eller Skift för flera).")

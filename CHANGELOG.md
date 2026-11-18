@@ -4,16 +4,18 @@ Formatet följer [Keep a Changelog](https://keepachangelog.com/sv/1.1.0/), versi
 
 ## [Kommande]
 
-- **Kolla i NGP: databashanteraren visar om en plan finns hos Nationella geodataplattformen.** Ny kolumn **NGP** och knapp
-  **Kolla i NGP** (markerade planer, annars alla synliga). Pluginet frågar Lantmäteriets Sök-API för detaljplaner med
-  planens objektidentitet och visar *Finns i NGP: laga kraft*, *Finns inte i NGP* eller *Saknar id*, med namn, status,
-  datum för laga kraft och senaste version i verktygstipset. Skiljer sig statusen i NGP från planens visas det. Det räcker
-  med en konsumentnyckel för datamängden Detaljplan. Provat mot Lantmäteriets produktionsmiljö: sökningen svarar och
-  matchar. Fil för fil: `core/ngp_client.py` (`NgpSearchClient`, `PlanHit`), `core/plan_overview.py`,
-  `gui/database_manager_dialog.py`.
-- **Kolla i NGP hittar planer som ligger under ett annat id.** Har planen levererats av ett annat program, eller har
+- **Databashanteraren visar med ett moln om en plan finns hos Nationella geodataplattformen.** Ny kolumn **NGP**.
+  När databashanteraren öppnas frågar pluginet i bakgrunden Lantmäteriets Sök-API för detaljplaner, så ingen knapp
+  behövs. **Mörkgrönt** moln = finns med samma id, **ljusgrönt** = finns troligen under ett annat id, **rött** = finns inte,
+  **grått** = kan inte sägas (saknar id, sökningen inte inställd, NGP svarade inte). Förklaringen (namn, status, datum för
+  laga kraft, senaste version, skäl till en trolig träff) visas när man håller muspekaren över molnet. Skiljer sig
+  statusen i NGP från planens visas det. Kolumnen går att sortera, och en sammanfattning visas under listan. Svaren
+  gäller tills dialogen stängs; *Läs om listan* frågar om allt. Det räcker med en konsumentnyckel för datamängden
+  Detaljplan. Provat mot Lantmäteriets produktionsmiljö: sökningen svarar och matchar. Fil för fil: `core/ngp_client.py`
+  (`NgpSearchClient`, `PlanHit`), `core/plan_overview.py`, `gui/database_manager_dialog.py`.
+- **Kontrollen mot NGP hittar planer som ligger under ett annat id.** Har planen levererats av ett annat program, eller har
   planområdet fått ett nytt id i QGIS, matchar pluginet den mot kommunens planer i NGP på beteckning, datum för laga kraft
-  och namn (ungefär). Kolumnen visar *Troligen i NGP (annat id)*, och verktygstipset visar skälen och båda id:n. Är två
+  och namn (ungefär). Molnet är ljusgrönt, och förklaringen visar skälen och båda id:n. Är två
   kandidater lika bra gissar pluginet inte. Sökningen ber om GeoJSON (tjänsten gav 406 på vanlig JSON). Ny modul
   `core/ngp_match.py`.
 - **Inställning anslutning NGP: tre flikar och en kontroll som visar om anslutningen är aktiv.** Dialogen heter nu

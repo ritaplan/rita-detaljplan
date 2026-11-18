@@ -12,7 +12,7 @@ Pluginet har automatiska tester (se [Utveckling](utveckling.md)), men flera dela
   verifieringsmiljö**. Adressen till tokentjänsten och mediatypen `application/vnd.lm.detaljplan.v4+json` är antaganden.
   Kräver dessutom producentbehörighet. Att spara leveransen som JSON-fil och skicka den för granskning fungerar oberoende
   av detta. Uppdatering av en redan publicerad plan (ny objektversion) stöds inte.
-- **Kolla i NGP** (kolumnen NGP i databashanteraren) frågar Lantmäteriets Sök-API för detaljplaner
+- **Kontrollen mot NGP** (molnen i kolumnen NGP i databashanteraren, som görs automatiskt när den öppnas) frågar Lantmäteriets Sök-API för detaljplaner
   (`detaljplan-api-2.2`) med planens objektidentitet och, för planer som inte hittas på id, med kommunens planer
   (matchning på beteckning, datum för laga kraft och namn). Den är provad mot produktionsmiljön med en konsumentnyckel,
   men inte mot Verifieringsmiljön, och hur NGP anger status är inte bekräftat (specifikationen ger ingen lista). En träff
