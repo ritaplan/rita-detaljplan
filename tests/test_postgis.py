@@ -711,7 +711,7 @@ class OpenDialogTests(PlanCase):
 
     NORR, SODER = "0f0e0d0c-0b0a-4090-8080-070605040302", "1a1b1c1d-2a2b-4c3d-9e4f-505152535455"
 
-    def with_ngp(self, hits, environment="ver", search_authcfg=""):
+    def with_ngp(self, hits, environment="ver", search_authcfg="", others=()):
         """Databashanteraren med de tre planerna, där NGP-frågan besvaras av ``hits`` (objektidentitet -> ``PlanHit``).
         Returnerar (dialog, frågor), där frågorna är de id som skickades till NGP."""
         from rita_detaljplan.core import ngp_client as ngp
@@ -724,9 +724,11 @@ class OpenDialogTests(PlanCase):
                 asked.append(list(ids))
                 return {i: hits[i] for i in ids if i in hits}
 
-            def probe(self):
-                from rita_detaljplan.core import ngp_client
-                return ngp_client.SearchProbe(1, 5, ngp_client.PlanHit("ffffffff-0000-4000-8000-000000000000", "Annan plan"), True)
+            def collections(self):
+                return {"0486": "Eskilstuna kommun"}
+
+            def plans_in(self, code):
+                return list(others) if code == "0486" else []
 
         dialog = self.dialog({"planer": conn})
         dialog._ngp_client = lambda config: Client()
@@ -801,13 +803,36 @@ class OpenDialogTests(PlanCase):
         self.assertEqual(asked, [])
         self.assertIn("autentiseringskonfiguration", dialog.error.text())
 
-    def test_when_nothing_is_found_the_notice_says_whether_the_key_sees_other_plans(self):
-        dialog, _asked = self.with_ngp({})
+    def test_a_plan_under_another_id_is_found_by_its_designation_and_date(self):
+        from rita_detaljplan.core import ngp_client as ngp
+        other = ngp.PlanHit("ffffffff-0000-4000-8000-000000000000", "Kv Norr", "1-23", "laga kraft", "2026-05-02")
+        dialog, _asked = self.with_ngp({}, environment="prod", others=[other])
+        self.select(dialog, "kv_norr", "kv_soder")
+        dialog.check_ngp.click()
+        text, tip = self.ngp_text(dialog, "kv_norr")
+        self.assertEqual(text, "Troligen i NGP (annat id): laga kraft")
+        for part in (other.objektidentitet, self.NORR, "samma beteckning"):
+            self.assertIn(part, tip)
+        self.assertEqual(self.ngp_text(dialog, "kv_soder")[0], "Finns inte i NGP")
+        self.assertIn("1 troligen under ett annat id", dialog.notice.text())
+        self.assertIn("1 inte", dialog.notice.text())
+
+    def test_a_failing_search_for_other_ids_does_not_hide_the_exact_answer(self):
+        from rita_detaljplan.core import ngp_client as ngp
+        dialog, _asked = self.with_ngp({}, environment="prod")
+
+        class Client:
+            def find(self, ids):
+                return {}
+
+            def collections(self):
+                raise ngp.NgpError("Anropet avvisades som felaktigt.")
+
+        dialog._ngp_client = lambda config: Client()
         self.select(dialog, "kv_norr")
         dialog.check_ngp.click()
-        self.assertIn("0 finns där", dialog.notice.text())
-        self.assertIn("Annan plan", dialog.notice.text())
-        self.assertIn("inte levererade", dialog.notice.text())
+        self.assertEqual(self.ngp_text(dialog, "kv_norr")[0], "Finns inte i NGP")
+        self.assertIn("misslyckades", dialog.notice.text())
 
     def test_an_error_from_ngp_is_shown_and_leaves_the_column_alone(self):
         from rita_detaljplan.core import ngp_client as ngp

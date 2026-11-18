@@ -327,21 +327,37 @@ class SearchTests(unittest.TestCase):
         self.assertTrue(accept.startswith("application/geo+json"), accept)
         self.assertEqual(calls[-1][2]["Content-Type"], "application/json")
 
-    def test_the_probe_shows_what_the_key_sees_when_asked_without_ids(self):
-        client, calls = self.client([dict(search_answer(HIT_ID), numberMatched=42), search_answer(HIT_ID)])
-        probe = client.probe()
-        self.assertEqual((probe.returned, probe.matched, probe.ids_work), (1, 42, True))
-        self.assertEqual(probe.sample.objektidentitet, HIT_ID)
-        self.assertEqual(calls[-2][3], {"limit": 1})
-        self.assertEqual(calls[-1][3], {"ids": [HIT_ID], "limit": 1})
+    def test_the_collections_are_the_municipalities_the_key_sees(self):
+        answer = {"collections": [
+            {"id": "1494", "providers": [{"name": "Lidköpings kommun", "roles": ["producer"], "kod": "1494"}]},
+            {"id": "2882", "description": "Geodatakatalog med detaljplan för Österhamns kommun"},
+            {"title": "utan id"}]}
+        client, calls = self.client([answer])
+        self.assertEqual(client.collections(),
+                         {"1494": "Lidköpings kommun", "2882": "Geodatakatalog med detaljplan för Österhamns kommun"})
+        self.assertEqual((calls[-1][0], calls[-1][1]), ("GET", ngp.VER_SEARCH + "/collections"))
 
-    def test_the_probe_reports_when_the_key_sees_nothing_or_the_id_query_misses(self):
-        client, _calls = self.client([search_answer()])
-        probe = client.probe()
-        self.assertEqual((probe.returned, probe.sample, probe.ids_work), (0, None, False))
-        client, _calls = self.client([dict(search_answer(HIT_ID), context={"matched": 7}), search_answer()])
-        probe = client.probe()
-        self.assertEqual((probe.matched, probe.ids_work), (7, False))
+    def test_the_plans_of_a_municipality_are_read_page_by_page_until_a_short_page(self):
+        first = search_answer("00000000-0000-4000-8000-000000000001", "00000000-0000-4000-8000-000000000002")
+        second = search_answer("00000000-0000-4000-8000-000000000003")
+        client, calls = self.client([first, second])
+        plans = client.plans_in("1494", page_size=2)
+        self.assertEqual([p.objektidentitet for p in plans], ["00000000-0000-4000-8000-00000000000%d" % n for n in (1, 2, 3)])
+        self.assertEqual(calls[-2][3]["collections"], ["1494"])
+        self.assertEqual(calls[-2][3]["query"], {"feature.typ": {"eq": "detaljplan"}})
+        self.assertTrue(calls[-1][1].endswith("/search?afterId=00000000-0000-4000-8000-000000000002"), calls[-1][1])
+
+    def test_the_municipality_is_read_without_the_filter_when_the_service_refuses_it(self):
+        client, calls = self.client([ngp.Response(400, {}, b"{}"), search_answer(HIT_ID)])
+        self.assertEqual([p.objektidentitet for p in client.plans_in("1494")], [HIT_ID])
+        self.assertNotIn("query", calls[-1][3])
+
+    def test_features_without_the_plans_own_data_are_left_out_of_a_municipality(self):
+        other = {"type": "Feature", "id": "11111111-1111-4111-8111-111111111111", "properties": {"datetime": "2026-01-01"}}
+        answer = search_answer(HIT_ID)
+        answer["features"].append(other)
+        client, _calls = self.client([answer])
+        self.assertEqual([p.objektidentitet for p in client.plans_in("1494")], [HIT_ID])
 
     def test_a_plan_that_is_not_in_ngp_is_missing_from_the_answer(self):
         client, _calls = self.client([search_answer()])

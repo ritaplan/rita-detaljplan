@@ -43,6 +43,8 @@ PROD_SEARCH = "https://api.lantmateriet.se/distribution/geodatakatalog" + SEARCH
 SEARCH_CHUNK = 100  # så många planer i en fråga
 # Sök-API:et svarar med GeoJSON (OGC API Features/STAC) och ger 406 på ``Accept: application/json``
 SEARCH_ACCEPT = "application/geo+json, application/json;q=0.8"
+PAGE_SIZE = 2000  # planer per sida när en hel kommun läses (tjänsten tillåter högst 10 000)
+MAX_PAGES = 25
 TIMEOUT_MS = 60000
 STATUSES = ("registrerad", "mottagen", "validerad", "valideringsfel", "publicerad", "fel")
 DONE = ("validerad", "valideringsfel", "publicerad", "fel")  # när klienten slutar vänta
@@ -503,15 +505,6 @@ class PlanHit:
     version: str = ""  # när den senaste versionen blev tillgänglig i NGP
 
 
-@dataclass(frozen=True)
-class SearchProbe:
-    """Vad Sök-API:et ger för nyckeln när man inte frågar efter något särskilt: används för att förklara varför inga planer hittades."""
-    returned: int  # planer i svaret på en fråga utan id (högst en efterfrågas)
-    matched: Optional[int] = None  # så många planer tjänsten säger att nyckeln ser, om den uppger det
-    sample: Optional[PlanHit] = None  # en av dem
-    ids_work: bool = False  # hittas exempelplanen när man frågar efter just dess id?
-
-
 CONSUMER_HINT = ("Behörighet saknas. Nyckeln måste vara kopplad till Sök-API:et för detaljplaner (en konsumentnyckel för "
                  "datamängden Detaljplan i Lantmäteriets API-portal).")
 
@@ -549,18 +542,43 @@ class NgpSearchClient(NgpClient):
         search = replace(config, base_url=config.search_url, authcfg=config.search_authcfg or config.authcfg)
         super().__init__(search, transport, sleep, clock)
 
-    def probe(self) -> SearchProbe:
-        """Frågar utan id för att se om nyckeln alls ser några planer, och om frågan med id hittar en av dem."""
-        response = self._call("POST", "/search", "Kunde inte söka i NGP", body=json.dumps({"limit": 1}).encode(),
-                              accept=SEARCH_ACCEPT)
+    def collections(self) -> dict[str, str]:
+        """Datamängderna nyckeln ser: kommunkod -> kommunens namn (en datamängd per kommun som levererat detaljplaner)."""
+        response = self._call("GET", "/collections", "Kunde inte läsa datamängderna i NGP")
         data = response.json()
-        hits = parse_hits(data)
-        context = data.get("context") if isinstance(data, dict) and isinstance(data.get("context"), dict) else {}
-        matched = data.get("numberMatched") if isinstance(data, dict) else None
-        matched = context.get("matched") if matched is None else matched
-        sample = hits[0] if hits else None
-        works = bool(sample) and sample.objektidentitet in self.find([sample.objektidentitet])
-        return SearchProbe(len(hits), matched if isinstance(matched, int) else None, sample, works)
+        found = {}
+        for collection in data.get("collections", []) if isinstance(data, dict) else []:
+            if not isinstance(collection, dict) or not collection.get("id"):
+                continue
+            providers = collection.get("providers") if isinstance(collection.get("providers"), list) else []
+            name = next((_text(p.get("name")) for p in providers if isinstance(p, dict) and _text(p.get("name"))), "")
+            found[_text(collection["id"])] = name or _text(collection.get("title")) or _text(collection.get("description"))
+        return found
+
+    def plans_in(self, collection: str, page_size: int = PAGE_SIZE) -> list[PlanHit]:
+        """Alla detaljplaner i en kommuns datamängd (de som har planens uppgifter), sida för sida."""
+        plans: list[PlanHit] = []
+        query: Optional[dict] = {"feature.typ": {"eq": "detaljplan"}}
+        after = ""
+        for _page in range(MAX_PAGES):
+            body = {"collections": [collection], "limit": page_size}
+            if query:
+                body["query"] = query
+            path = "/search" + (f"?afterId={after}" if after else "")
+            try:
+                response = self._call("POST", path, "Kunde inte söka i NGP", body=json.dumps(body).encode(),
+                                      accept=SEARCH_ACCEPT)
+            except NgpError as exc:
+                if exc.status == 400 and query:  # filtret godtogs inte: hämta allt och sortera själva
+                    query = None
+                    continue
+                raise
+            hits = parse_hits(response.json())
+            plans.extend(hit for hit in hits if hit.namn or hit.beteckning or hit.datum_lagakraft)
+            if len(hits) < page_size:
+                break
+            after = hits[-1].objektidentitet
+        return plans
 
     def find(self, identities) -> dict[str, PlanHit]:
         """De av planerna (objektidentiteter) som finns i NGP, med objektidentiteten i gemener som nyckel. Ogiltiga id hoppas över."""

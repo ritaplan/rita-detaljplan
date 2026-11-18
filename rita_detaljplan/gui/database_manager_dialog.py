@@ -19,6 +19,7 @@ from qgis.PyQt.QtWidgets import (QAbstractItemView, QApplication, QCheckBox, QCo
 from .. import json_transfer
 from ..core import checkout, plan_overview, settings, storage, transfer
 from ..core import ngp_client as ngp
+from ..core import ngp_match
 from ..core.plan_overview import PlanRow
 from .copy_plan_dialog import CopyPlanDialog
 from .import_plan_dialog import JSON, ImportPlanDialog
@@ -95,21 +96,7 @@ def protection_text(row: PlanRow) -> str:
     return "Skrivskyddad" if row.protected else ""
 
 
-def ngp_explanation(probe: "ngp.SearchProbe") -> str:
-    """Förklarar varför ingen plan hittades, utifrån vad Sök-API:et ger för nyckeln när man inte frågar efter något särskilt."""
-    if not probe.sample:
-        return ("Sök-API:et gav inga planer alls för nyckeln, inte ens utan id: nyckeln ser inga detaljplaner "
-                "(kontrollera att den är prenumerant på detaljplans-API:et och att miljön är rätt).")
-    seen = f" ({probe.matched} planer syns för nyckeln)" if probe.matched is not None else ""
-    example = probe.sample.objektidentitet + (f" – {probe.sample.namn}" if probe.sample.namn else "")
-    if not probe.ids_work:
-        return (f"Sök-API:et ser planer{seen}, till exempel {example}, men frågan med id hittade inte ens den: "
-                "frågan med id fungerar troligen inte som pluginet antar.")
-    return (f"Sök-API:et fungerar och ser planer{seen}, till exempel {example}, men ingen med de här planernas "
-            "objektidentiteter: planerna är troligen inte levererade till NGP, eller har andra id där.")
-
-
-def ngp_state(row: PlanRow, hits: dict, config: "ngp.NgpConfig") -> tuple[str, str]:
+def ngp_state(row: PlanRow, hits: dict, config: "ngp.NgpConfig", likely: Optional[tuple] = None) -> tuple[str, str]:
     """Vad databashanteraren visar om planen i kolumnen NGP, och verktygstipset: (text, tips). ``hits`` är svaret från
     ``NgpSearchClient.find``. Miljön nämns om den inte är Produktion, så att ett fynd i Verifieringsmiljön inte tas för att
     planen är publicerad på riktigt."""
@@ -117,6 +104,15 @@ def ngp_state(row: PlanRow, hits: dict, config: "ngp.NgpConfig") -> tuple[str, s
     if not row.objektidentiteter:
         return "Saknar id", "Planen har inget planområde med objektidentitet, som NGP känner igen planen på."
     hit = next((hits[i.lower()] for i in row.objektidentiteter if i.lower() in hits), None)
+    if hit is None and likely:
+        other, why = likely
+        lines = [f"Planen finns troligen i NGP{where}, men under ett annat id än databasens: {why}.",
+                 f"Id i NGP: {other.objektidentitet}", f"Id i databasen: {', '.join(row.objektidentiteter)}"]
+        for label, value in (("Namn i NGP", other.namn), ("Beteckning i NGP", other.beteckning),
+                             ("Status i NGP", other.status), ("Laga kraft", other.datum_lagakraft)):
+            if value:
+                lines.append(f"{label}: {value}")
+        return "Troligen i NGP (annat id)" + (f": {other.status}" if other.status else "") + where, "\n".join(lines)
     if hit is None:
         return (f"Finns inte i NGP{where}",
                 "Planens id hittades inte i NGP:s sökning. Planen är alltså inte publicerad där, eller så har den inte "
@@ -473,25 +469,46 @@ class DatabaseManagerDialog(QDialog):
             return
         finally:
             QApplication.restoreOverrideCursor()
+        missing = [row for row in rows if row.objektidentiteter and not any(i.lower() in hits for i in row.objektidentiteter)]
+        likely: dict = {}
+        problem = ""
+        if missing:  # inget id stämde: leta efter planen under ett annat id, på beteckning, namn och datum för laga kraft
+            QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+            try:
+                likely = self._likely_matches(config, missing)
+            except ngp.NgpError as exc:
+                problem = f" Sökningen efter planer under andra id misslyckades: {exc}"
+            finally:
+                QApplication.restoreOverrideCursor()
         for row in rows:
-            self._ngp[(row.connection, row.schema, row.plan_id)] = ngp_state(row, hits, config)
+            key = (row.connection, row.schema, row.plan_id)
+            self._ngp[key] = ngp_state(row, hits, config, likely.get(key))
         self._show_ngp()
         found = sum(1 for row in rows if any(i.lower() in hits for i in row.objektidentiteter))
         self.error.clear()
-        text = f"Frågade NGP ({config.title}) om {len(rows)} planer: {found} finns där, {len(rows) - found} inte."
-        if not hits and any(row.objektidentiteter for row in rows):
-            text += " " + self._ngp_explanation(config)
-        self.notice.setText(text)
+        text = f"Frågade NGP ({config.title}) om {len(rows)} planer: {found} finns där med samma id"
+        if likely:
+            text += f", {len(likely)} troligen under ett annat id"
+        text += f", {len(rows) - found - len(likely)} inte."
+        self.notice.setText(text + problem)
 
-    def _ngp_explanation(self, config) -> str:
-        """Varför inga planer hittades: en extra fråga utan id visar om nyckeln alls ser några planer."""
-        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
-        try:
-            return ngp_explanation(self._ngp_client(config).probe())
-        except ngp.NgpError as exc:
-            return f"(Kontrollfrågan utan id misslyckades: {exc})"
-        finally:
-            QApplication.restoreOverrideCursor()
+    def _likely_matches(self, config, rows) -> dict:
+        """Planer vars id inte finns i NGP, matchade mot kommunens planer i NGP på beteckning, namn och datum för laga kraft:
+        (anslutning, schema, plan) -> (träff i NGP, skälen)."""
+        client = self._ngp_client(config)
+        collections = client.collections()
+        pools: dict = {}
+        found: dict = {}
+        for row in rows:
+            code = ngp_match.collection_for(row.kommun, collections)
+            if code is None:
+                continue
+            if code not in pools:
+                pools[code] = client.plans_in(code)
+            hit, why = ngp_match.match_plan(row.namn, row.beteckning, row.laga_kraft, pools[code])
+            if hit is not None:
+                found[(row.connection, row.schema, row.plan_id)] = (hit, why)
+        return found
 
     def _show_ngp(self) -> None:
         """Skriver in det senaste svaret från NGP i kolumnen NGP (utan att läsa om listan eller ändra urvalet)."""
