@@ -327,6 +327,22 @@ class SearchTests(unittest.TestCase):
         self.assertTrue(accept.startswith("application/geo+json"), accept)
         self.assertEqual(calls[-1][2]["Content-Type"], "application/json")
 
+    def test_the_probe_shows_what_the_key_sees_when_asked_without_ids(self):
+        client, calls = self.client([dict(search_answer(HIT_ID), numberMatched=42), search_answer(HIT_ID)])
+        probe = client.probe()
+        self.assertEqual((probe.returned, probe.matched, probe.ids_work), (1, 42, True))
+        self.assertEqual(probe.sample.objektidentitet, HIT_ID)
+        self.assertEqual(calls[-2][3], {"limit": 1})
+        self.assertEqual(calls[-1][3], {"ids": [HIT_ID], "limit": 1})
+
+    def test_the_probe_reports_when_the_key_sees_nothing_or_the_id_query_misses(self):
+        client, _calls = self.client([search_answer()])
+        probe = client.probe()
+        self.assertEqual((probe.returned, probe.sample, probe.ids_work), (0, None, False))
+        client, _calls = self.client([dict(search_answer(HIT_ID), context={"matched": 7}), search_answer()])
+        probe = client.probe()
+        self.assertEqual((probe.matched, probe.ids_work), (7, False))
+
     def test_a_plan_that_is_not_in_ngp_is_missing_from_the_answer(self):
         client, _calls = self.client([search_answer()])
         self.assertEqual(client.find([HIT_ID]), {})

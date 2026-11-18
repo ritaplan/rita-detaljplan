@@ -724,6 +724,10 @@ class OpenDialogTests(PlanCase):
                 asked.append(list(ids))
                 return {i: hits[i] for i in ids if i in hits}
 
+            def probe(self):
+                from rita_detaljplan.core import ngp_client
+                return ngp_client.SearchProbe(1, 5, ngp_client.PlanHit("ffffffff-0000-4000-8000-000000000000", "Annan plan"), True)
+
         dialog = self.dialog({"planer": conn})
         dialog._ngp_client = lambda config: Client()
         config = ngp.environment_config(environment, "auth1", search_authcfg)
@@ -796,6 +800,14 @@ class OpenDialogTests(PlanCase):
             dialog.check_ngp.click()
         self.assertEqual(asked, [])
         self.assertIn("autentiseringskonfiguration", dialog.error.text())
+
+    def test_when_nothing_is_found_the_notice_says_whether_the_key_sees_other_plans(self):
+        dialog, _asked = self.with_ngp({})
+        self.select(dialog, "kv_norr")
+        dialog.check_ngp.click()
+        self.assertIn("0 finns där", dialog.notice.text())
+        self.assertIn("Annan plan", dialog.notice.text())
+        self.assertIn("inte levererade", dialog.notice.text())
 
     def test_an_error_from_ngp_is_shown_and_leaves_the_column_alone(self):
         from rita_detaljplan.core import ngp_client as ngp

@@ -503,6 +503,15 @@ class PlanHit:
     version: str = ""  # när den senaste versionen blev tillgänglig i NGP
 
 
+@dataclass(frozen=True)
+class SearchProbe:
+    """Vad Sök-API:et ger för nyckeln när man inte frågar efter något särskilt: används för att förklara varför inga planer hittades."""
+    returned: int  # planer i svaret på en fråga utan id (högst en efterfrågas)
+    matched: Optional[int] = None  # så många planer tjänsten säger att nyckeln ser, om den uppger det
+    sample: Optional[PlanHit] = None  # en av dem
+    ids_work: bool = False  # hittas exempelplanen när man frågar efter just dess id?
+
+
 CONSUMER_HINT = ("Behörighet saknas. Nyckeln måste vara kopplad till Sök-API:et för detaljplaner (en konsumentnyckel för "
                  "datamängden Detaljplan i Lantmäteriets API-portal).")
 
@@ -539,6 +548,19 @@ class NgpSearchClient(NgpClient):
                  sleep: Callable[[float], None] = time.sleep, clock: Callable[[], float] = time.monotonic):
         search = replace(config, base_url=config.search_url, authcfg=config.search_authcfg or config.authcfg)
         super().__init__(search, transport, sleep, clock)
+
+    def probe(self) -> SearchProbe:
+        """Frågar utan id för att se om nyckeln alls ser några planer, och om frågan med id hittar en av dem."""
+        response = self._call("POST", "/search", "Kunde inte söka i NGP", body=json.dumps({"limit": 1}).encode(),
+                              accept=SEARCH_ACCEPT)
+        data = response.json()
+        hits = parse_hits(data)
+        context = data.get("context") if isinstance(data, dict) and isinstance(data.get("context"), dict) else {}
+        matched = data.get("numberMatched") if isinstance(data, dict) else None
+        matched = context.get("matched") if matched is None else matched
+        sample = hits[0] if hits else None
+        works = bool(sample) and sample.objektidentitet in self.find([sample.objektidentitet])
+        return SearchProbe(len(hits), matched if isinstance(matched, int) else None, sample, works)
 
     def find(self, identities) -> dict[str, PlanHit]:
         """De av planerna (objektidentiteter) som finns i NGP, med objektidentiteten i gemener som nyckel. Ogiltiga id hoppas över."""

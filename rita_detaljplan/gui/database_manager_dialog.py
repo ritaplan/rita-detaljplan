@@ -95,6 +95,20 @@ def protection_text(row: PlanRow) -> str:
     return "Skrivskyddad" if row.protected else ""
 
 
+def ngp_explanation(probe: "ngp.SearchProbe") -> str:
+    """Förklarar varför ingen plan hittades, utifrån vad Sök-API:et ger för nyckeln när man inte frågar efter något särskilt."""
+    if not probe.sample:
+        return ("Sök-API:et gav inga planer alls för nyckeln, inte ens utan id: nyckeln ser inga detaljplaner "
+                "(kontrollera att den är prenumerant på detaljplans-API:et och att miljön är rätt).")
+    seen = f" ({probe.matched} planer syns för nyckeln)" if probe.matched is not None else ""
+    example = probe.sample.objektidentitet + (f" – {probe.sample.namn}" if probe.sample.namn else "")
+    if not probe.ids_work:
+        return (f"Sök-API:et ser planer{seen}, till exempel {example}, men frågan med id hittade inte ens den: "
+                "frågan med id fungerar troligen inte som pluginet antar.")
+    return (f"Sök-API:et fungerar och ser planer{seen}, till exempel {example}, men ingen med de här planernas "
+            "objektidentiteter: planerna är troligen inte levererade till NGP, eller har andra id där.")
+
+
 def ngp_state(row: PlanRow, hits: dict, config: "ngp.NgpConfig") -> tuple[str, str]:
     """Vad databashanteraren visar om planen i kolumnen NGP, och verktygstipset: (text, tips). ``hits`` är svaret från
     ``NgpSearchClient.find``. Miljön nämns om den inte är Produktion, så att ett fynd i Verifieringsmiljön inte tas för att
@@ -464,7 +478,20 @@ class DatabaseManagerDialog(QDialog):
         self._show_ngp()
         found = sum(1 for row in rows if any(i.lower() in hits for i in row.objektidentiteter))
         self.error.clear()
-        self.notice.setText(f"Frågade NGP ({config.title}) om {len(rows)} planer: {found} finns där, {len(rows) - found} inte.")
+        text = f"Frågade NGP ({config.title}) om {len(rows)} planer: {found} finns där, {len(rows) - found} inte."
+        if not hits and any(row.objektidentiteter for row in rows):
+            text += " " + self._ngp_explanation(config)
+        self.notice.setText(text)
+
+    def _ngp_explanation(self, config) -> str:
+        """Varför inga planer hittades: en extra fråga utan id visar om nyckeln alls ser några planer."""
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        try:
+            return ngp_explanation(self._ngp_client(config).probe())
+        except ngp.NgpError as exc:
+            return f"(Kontrollfrågan utan id misslyckades: {exc})"
+        finally:
+            QApplication.restoreOverrideCursor()
 
     def _show_ngp(self) -> None:
         """Skriver in det senaste svaret från NGP i kolumnen NGP (utan att läsa om listan eller ändra urvalet)."""
