@@ -2,7 +2,7 @@
 
 Formatet följer [Keep a Changelog](https://keepachangelog.com/sv/1.1.0/), versionsnumren [Semantic Versioning](https://semver.org/lang/sv/).
 
-## [Kommande]
+## [0.1.89] – databashanteraren visar om planerna finns i NGP, ny inställningsdialog
 
 - **Databashanteraren visar med ett moln om en plan finns hos Nationella geodataplattformen.** Ny kolumn **NGP**.
   När databashanteraren öppnas frågar pluginet i bakgrunden Lantmäteriets Sök-API för detaljplaner, så ingen knapp
