@@ -41,6 +41,8 @@ SEARCH_PATH = "/sokning/v1/detaljplan/v2"
 VER_SEARCH = "https://api-ver.lantmateriet.se/distribution/geodatakatalog" + SEARCH_PATH
 PROD_SEARCH = "https://api.lantmateriet.se/distribution/geodatakatalog" + SEARCH_PATH
 SEARCH_CHUNK = 100  # så många planer i en fråga
+# Sök-API:et svarar med GeoJSON (OGC API Features/STAC) och ger 406 på ``Accept: application/json``
+SEARCH_ACCEPT = "application/geo+json, application/json;q=0.8"
 TIMEOUT_MS = 60000
 STATUSES = ("registrerad", "mottagen", "validerad", "valideringsfel", "publicerad", "fel")
 DONE = ("validerad", "valideringsfel", "publicerad", "fel")  # när klienten slutar vänta
@@ -344,8 +346,9 @@ class NgpClient:
         return self._token
 
     def _call(self, method: str, path: str, action: str, *, body: Optional[bytes] = None,
-              content_type: str = "application/json", ok: tuple = (200,), strict: bool = True) -> Response:
-        headers = {"Accept": "application/json"}
+              content_type: str = "application/json", ok: tuple = (200,), strict: bool = True,
+              accept: str = "application/json") -> Response:
+        headers = {"Accept": accept}
         if body is not None:
             headers["Content-Type"] = content_type
         for attempt in (1, 2):
@@ -545,7 +548,7 @@ class NgpSearchClient(NgpClient):
             chunk = unique[start:start + SEARCH_CHUNK]
             body = json.dumps({"ids": chunk, "limit": len(chunk)}).encode()
             try:
-                response = self._call("POST", "/search", "Kunde inte söka i NGP", body=body)
+                response = self._call("POST", "/search", "Kunde inte söka i NGP", body=body, accept=SEARCH_ACCEPT)
             except NgpError as exc:
                 if exc.status == 403:
                     raise NgpError(CONSUMER_HINT, 403) from exc

@@ -320,6 +320,13 @@ class SearchTests(unittest.TestCase):
         self.assertEqual(body, {"ids": [HIT_ID], "limit": 1})
         self.assertEqual(headers["Authorization"], "Bearer tok")
 
+    def test_the_search_asks_for_geojson_because_the_service_refuses_plain_json_with_406(self):
+        client, calls = self.client([search_answer(HIT_ID)])
+        client.find([HIT_ID])
+        accept = calls[-1][2]["Accept"]
+        self.assertTrue(accept.startswith("application/geo+json"), accept)
+        self.assertEqual(calls[-1][2]["Content-Type"], "application/json")
+
     def test_a_plan_that_is_not_in_ngp_is_missing_from_the_answer(self):
         client, _calls = self.client([search_answer()])
         self.assertEqual(client.find([HIT_ID]), {})
