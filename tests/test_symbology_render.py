@@ -499,6 +499,15 @@ class LabelTests(RenderCase):
         self.assertEqual(expression.evaluate(context), "e₁ a₁₂ R", expression.evalErrorString())
         self.assertEqual(f["beteckning"], "e1 a12 R", "lagrad beteckning är oförändrad")
 
+    def test_a_slope_ratio_keeps_plain_digits_but_other_designations_are_still_subscripted(self):
+        from qgis.core import QgsExpression, QgsExpressionContext, QgsExpressionContextUtils
+        layer = self.layers["egenskap_yta"]
+        f = self.add("egenskap_yta", INSIDE, beteckning="e1 1:20 a12 1:2,5")
+        context = QgsExpressionContext(QgsExpressionContextUtils.globalProjectLayerScopes(layer))
+        context.setFeature(f)
+        expression = QgsExpression(self.settings("egenskap_yta").fieldName)
+        self.assertEqual(expression.evaluate(context), "e₁ 1:20 a₁₂ 1:2,5", expression.evalErrorString())
+
     def test_a_missing_designation_gives_an_empty_label(self):
         from qgis.core import QgsExpression, QgsExpressionContext, QgsExpressionContextUtils
         f = self.add("egenskap_yta", INSIDE)

@@ -280,6 +280,20 @@ class LegendLayoutTests(LayoutCase):
         self.assertEqual(len([i for i in self.layout.items() if isinstance(i, QgsLayoutItemPolyline)]),
                          len(lines) + extra)
 
+    def test_a_slope_is_an_arrow_with_the_ratio_above_it_and_no_subscript_digits(self):
+        slope = prop_row("Största lutning är 1:20. (Pilen pekar uppåt)", "1:20", symbol="Största/minsta lutning")
+        rows = [slope, prop_row("Marken får inte förses med byggnad.", "e1")]
+        entries = {e.code: e for s in lg.property_sections(rows) for e in s.entries}
+        self.assertEqual((entries["1:20"].swatch, entries["1:20"].symbol), (lg.ARROW, "Största/minsta lutning"))
+        self.assertIn("e₁", entries, "andra beteckningar har fortfarande nedsänkta siffror")
+        self.legend(rows=rows)
+        self.assertIn("1:20", self.texts(), "lutningsförhållandet står ovanför pilen")
+        self.assertFalse([t for t in self.texts() if "₁:" in t or ":₂" in t])
+        arrows = [i for i in self.layout.items() if isinstance(i, QgsLayoutItemPolyline)
+                  and i.endMarker() == QgsLayoutItemPolyline.MarkerMode.ArrowHead]
+        self.assertEqual(len(arrows), 1, "en pil för den ena lutningen")
+        self.assertTrue(any("Största lutning är 1:20" in t for t in self.texts()), "och bestämmelsens text intill")
+
     def test_utfart_and_stangsel_also_draw_the_boundary_line_they_sit_on(self):
         # stilbibliotekets symbol för utfart/stängsel har bara punkter (inget eget linjeskikt) – gränslinjen
         # punkterna normalt ligger på (en användningsgräns) ritas separat under, så det syns vad de markerar.

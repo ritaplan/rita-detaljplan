@@ -9,9 +9,12 @@ Formatet följer [Keep a Changelog](https://keepachangelog.com/sv/1.1.0/), versi
   text, lika lång som texten, med lutningen som text ovanför (*1:20*, *1:2,5*). Riktningen väljs med textverktyget: vrid
   texten, så pekar pilen åt det håll texten vrids mot (vågrätt åt höger som standard), och texten står alltid rättvänd.
   Pilen följer med när texten flyttas. Det är fortfarande en yta i planen (katalogen och NGP anger yta, inte linje), och
-  riktningen sparas som textens vinkel. Äldre projekt ritas om automatiskt när de öppnas. Bestämmelser som lagts på före
-  denna version saknar texten ovanför pilen tills bestämmelsen läggs på igen. Fil för fil: `core/rows.py`
-  (`slope_label`), `core/symbology.py` (`_slope_arrow_layer`, `has_slope_arrow`), `core/project.py`.
+  riktningen sparas som textens vinkel. **Teckenförklaringen** visar bestämmelsen som en pil med lutningsförhållandet
+  ovanför. Lutningen ritas utan nedsänkta siffror (*1:20*, inte *₁:₂₀*, som gav konstigt placerade punkter): bara
+  beteckningar som *e1* har nedsänkta siffror. Äldre projekt ritas om automatiskt när de öppnas. Bestämmelser som lagts på
+  före denna version saknar texten ovanför pilen tills bestämmelsen läggs på igen. Fil för fil: `core/rows.py`
+  (`slope_label`), `core/symbology.py` (`_slope_arrow_layer`, `has_slope_arrow`, `_SUBSCRIPT_EXPRESSION`), `core/legend.py`
+  och `core/legend_layout.py` (`ARROW`), `core/project.py`.
 
 ## [0.1.89] – databashanteraren visar om planerna finns i NGP, ny inställningsdialog
 

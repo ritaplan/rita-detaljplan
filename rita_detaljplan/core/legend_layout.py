@@ -16,7 +16,7 @@ from typing import Optional
 from qgis.core import (Qgis, QgsFillSymbol, QgsLayoutItemGroup, QgsLayoutItemLabel, QgsLayoutItemPicture, QgsLayoutItemPolyline,
                        QgsLayoutItemShape, QgsLayoutPoint, QgsLayoutSize, QgsLineSymbol, QgsPointPatternFillSymbolLayer, QgsStyle, QgsTextFormat)
 from qgis.PyQt.QtCore import QPointF, Qt
-from qgis.PyQt.QtGui import QFont, QFontMetricsF, QPolygonF
+from qgis.PyQt.QtGui import QColor, QFont, QFontMetricsF, QPolygonF
 
 from . import legend as lg
 from . import symbology
@@ -232,7 +232,7 @@ class LegendLayout:
                         factor=fg)
                 for entry in group.entries:
                     plain = entry.swatch == lg.NONE and not entry.code  # bara text: börjar längst till vänster
-                    own_text_x = line_text_x if entry.swatch == lg.LINE else text_x
+                    own_text_x = line_text_x if entry.swatch in (lg.LINE, lg.ARROW) else text_x
                     wrap_w = column_w - (0.0 if plain else own_text_x)
                     lines = m.wrap(entry.text, BODY * k, wrap_w)
                     height = max(swatch_h if entry.swatch != lg.NONE else 0.0, len(lines) * line_h(BODY)) + st.entry_gap * k
@@ -303,6 +303,18 @@ def _line(layout, x0, y0, x1, y1, symbol) -> QgsLayoutItemPolyline:
     line = QgsLayoutItemPolyline(QPolygonF([QPointF(x0, y0), QPointF(x1, y1)]), layout)
     line.setSymbol(symbol)
     layout.addLayoutItem(line)
+    return line
+
+
+def _arrow(layout, x0, y, x1, head_mm: float, width_mm: float = 0.25) -> QgsLayoutItemPolyline:
+    """En vågrät pil från ``x0`` till ``x1`` (spetsen till höger): lutningspilen i teckenförklaringen."""
+    line = _line(layout, x0, y, x1, y, QgsLineSymbol.createSimple({"color": "0,0,0", "width": str(width_mm),
+                                                                   "capstyle": "flat"}))
+    line.setEndMarker(QgsLayoutItemPolyline.MarkerMode.ArrowHead)
+    line.setArrowHeadWidth(head_mm)
+    line.setArrowHeadFillColor(QColor(0, 0, 0))
+    line.setArrowHeadStrokeColor(QColor(0, 0, 0))
+    line.setArrowHeadStrokeWidth(0.0)
     return line
 
 
@@ -442,6 +454,13 @@ def _draw_legend(layout, plan: LegendPlan, x0: float, y0: float, style: QgsStyle
                 # i stället för lösryckta punkter i teckenförklaringen.
                 _line(layout, code_x, y_mid, code_x + line_w, y_mid, _line_symbol("Användningsgräns", style))
             _line(layout, code_x, y_mid, code_x + line_w, y_mid, _line_symbol(entry.symbol, style))
+        elif entry.swatch == lg.ARROW:
+            # lutningspilen med lutningsförhållandet ovanför, som på plankartan (BFS 2020:6, 7.2)
+            _arrow(layout, code_x, y + swatch_h * 0.84, code_x + line_w, 0.9 * k + 0.4)
+            if entry.code:
+                created.append(_label(layout, entry.code, code_x, y, line_w, swatch_h * 0.74, body * k * 1.05,
+                                      align=Qt.AlignmentFlag.AlignHCenter, valign=Qt.AlignmentFlag.AlignBottom,
+                                      family=st.font))
         elif entry.code:
             created.append(_label(layout, entry.code, code_x, y, placed.text_x, swatch_h, body * k * 1.1, family=st.font))
         plain = entry.swatch == lg.NONE and not entry.code

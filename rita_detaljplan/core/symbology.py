@@ -296,9 +296,11 @@ def _hatched(color: tuple[int, int, int], background: tuple[int, int, int] | Non
 
 SUBSCRIPT_DIGITS = "₀₁₂₃₄₅₆₇₈₉"
 # Siffror i beteckningar ritas nedsänkta (e₁, R₂). Lagrat värde (e1) ändras inte, bara visningen.
+# Ett ord med kolon är ett lutningsförhållande (1:20): det ritas som det står, utan nedsänkta siffror.
 _SUBSCRIPT_EXPRESSION = (
-    "array_to_string(array_foreach(string_to_array(coalesce(\"beteckning\", ''), ''), "
-    f"if(@element >= '0' and @element <= '9', substr('{SUBSCRIPT_DIGITS}', to_int(@element) + 1, 1), @element)), '')")
+    "array_to_string(array_foreach(string_to_array(coalesce(\"beteckning\", ''), ' '), "
+    "if(@element LIKE '%:%', @element, replace(@element, "
+    f"array({', '.join(repr(d) for d in '0123456789')}), array({', '.join(repr(d) for d in SUBSCRIPT_DIGITS)})))), ' ')")
 
 
 # Egenskapspunkter för markens höjd visar höjden ("+31,8"): den får inte nedsänkta siffror som en beteckning (e₁)

@@ -35,7 +35,7 @@ PROPERTY_TITLES = {"Allmän plats": "EGENSKAPSBESTÄMMELSER FÖR ALLMÄN PLATS",
                    "Vattenområde": "EGENSKAPSBESTÄMMELSER FÖR VATTENOMRÅDE"}
 GENERAL_TITLE = "EGENSKAPSBESTÄMMELSER FÖR PLANOMRÅDET"
 LINE_SYMBOLS = symbology.LINE_SYMBOLS + symbology.OUTLINE_SYMBOLS  # visas som en linje i förklaringen
-FILL, PATTERN, LINE, NONE = "fill", "pattern", "line", "none"
+FILL, PATTERN, LINE, ARROW, NONE = "fill", "pattern", "line", "arrow", "none"
 
 
 def subscript(text: str) -> str:
@@ -48,7 +48,7 @@ class Entry:
     """En rad i teckenförklaringen: ruta eller linje med en beteckning och en text."""
     code: str  # beteckning med nedsänkta siffror ("R₁"), eller tom
     text: str
-    swatch: str  # FILL | PATTERN | LINE | NONE
+    swatch: str  # FILL | PATTERN | LINE | ARROW (lutningspil, koden ritas ovanför) | NONE
     color: Optional[tuple] = None  # RGB för FILL
     symbol: Optional[str] = None  # stilbibliotekets symbol för PATTERN och LINE
 
@@ -111,9 +111,9 @@ def _merge_heights(rows: list[dict]) -> list[dict]:
 
 
 def _code(row: dict) -> str:
-    """Beteckningen som den visas: nedsänkta siffror (e₁), utom för höjder ("+0,0")."""
+    """Beteckningen som den visas: nedsänkta siffror (e₁), utom för höjder ("+0,0") och lutningar ("1:20")."""
     label = row.get("beteckning") or ""
-    return label if _is_height(row) else subscript(label)
+    return label if _is_height(row) or ":" in label else subscript(label)
 
 
 def boundary_section(has_uses: bool = True, has_properties: bool = False, has_secondary: bool = False) -> Section:
@@ -146,6 +146,8 @@ def _swatch(row: dict) -> tuple[str, Optional[str]]:
     name = symbology.SYMBOL_ALIAS.get(row.get("symbol") or "", row.get("symbol") or "")
     if not name:
         return NONE, None
+    if name == symbology.SLOPE_SYMBOL:
+        return ARROW, name
     if name in symbology.AREA_SYMBOLS or row.get("symbol") in symbology.AREA_SYMBOLS:
         return PATTERN, name
     if name in LINE_SYMBOLS:
