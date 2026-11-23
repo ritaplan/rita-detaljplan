@@ -280,6 +280,16 @@ class LegendLayoutTests(LayoutCase):
         self.assertEqual(len([i for i in self.layout.items() if isinstance(i, QgsLayoutItemPolyline)]),
                          len(lines) + extra)
 
+    def test_the_legend_text_of_a_slope_shows_the_chosen_unit(self):
+        slope = prop_row("Största lutning är [lutning1:decimaltal]:[lutning2:decimaltal]. (Pilen pekar uppåt)", "1:20",
+                         symbol="Största/minsta lutning",
+                         bestammelsevarde='[{"datatyp": "decimaltal", "variabelvarde": "1", "beskrivning": "lutning1", '
+                                          '"vardetyp": "max", "enhet": "meter"}, {"datatyp": "decimaltal", '
+                                          '"variabelvarde": "20", "beskrivning": "lutning2", "vardetyp": "max", '
+                                          '"enhet": "meter"}]')
+        texts = [e.text for s in lg.property_sections([slope]) for e in s.entries]
+        self.assertEqual(texts, ["Största lutning är 1:20 (meter). (Pilen pekar uppåt)"])
+
     def test_a_slope_is_an_arrow_with_the_ratio_above_it_and_no_subscript_digits(self):
         slope = prop_row("Största lutning är 1:20. (Pilen pekar uppåt)", "1:20", symbol="Största/minsta lutning")
         rows = [slope, prop_row("Marken får inte förses med byggnad.", "e1")]

@@ -187,10 +187,46 @@ def display_text(row: dict) -> str:
     return cat.render(text, filled)
 
 
+def display_text_with_units(row: dict) -> str:
+    """Som ``display_text``, men med den valda enheten efter tal som katalogens text inte själv ger någon enhet för, i
+    klartext för den som läser en teckenförklaring eller en lista: "Största lutning är 4:5 (meter). (Pilen pekar uppåt)".
+    Enheten finns i bestämmelsens värden och levereras, men inte i formuleringen, som måste vara katalogens exakta text
+    (DP-0022), så den här texten används bara för visning. De flesta formuleringar har enheten i texten ("… 12 meter"):
+    de blir oförändrade. Ett förhållande (a:b) med samma enhet på båda talen får enheten en gång, efter det sista talet.
+    Enheten "antal" visas inte."""
+    text = row.get("bestammelseformulering") or ""
+    try:
+        stored = json.loads(row.get("bestammelsevarde") or "[]")
+    except json.JSONDecodeError:
+        stored = []
+    by_name = {item.get("beskrivning"): item for item in stored if isinstance(item, dict)}
+    variables = cat.parse_variables(text)
+    positions, cursor = [], 0
+    for var in variables:
+        start = text.find(var.token, cursor)
+        positions.append((start, start + len(var.token)))
+        cursor = start + len(var.token)
+    units = []  # enheten att visa efter varje variabel, eller None
+    for var in variables:
+        item = by_name.get(var.name) or {}
+        unit = item.get("enhet") if item.get("datatyp") == "decimaltal" else None
+        units.append(unit if unit and unit != "antal" and cat.guess_unit(text, var) is None else None)
+    for i in range(len(variables) - 1):  # ett förhållande (a:b) med samma enhet: bara efter det sista talet
+        if units[i] and units[i] == units[i + 1] and text[positions[i][1]:positions[i + 1][0]] == ":":
+            units[i] = None
+    filled = {}
+    for var, unit in zip(variables, units):
+        item = by_name.get(var.name)
+        if item is not None:
+            value = str(item.get("variabelvarde", ""))
+            filled[var.token] = f"{value} ({unit})" if unit and value else value
+    return cat.render(text, filled)
+
+
 def describe(row: dict) -> str:
     """Kort text till listor: "R1 – Motorsportbana". Har bestämmelsen en höjd står den sist: "G – Garage (−6,0 till 0,0 m)"."""
     label = (row.get("beteckning") or "").strip()
-    text = display_text(row)
+    text = display_text_with_units(row)
     extent = vertical.extent_of(row)
     if extent.limited:
         text += f" ({extent.text()})"

@@ -281,6 +281,48 @@ class SlopeArrows(unittest.TestCase):
         self.assertEqual((summary["beteckning"], summary["symbol"]), ("1:50", rows.SLOPE_SYMBOL))
 
 
+class UnitsInDisplayTexts(unittest.TestCase):
+    """Enheten visas i teckenförklaringen och i listorna när katalogens text inte själv har någon (lutning)."""
+
+    @staticmethod
+    def stored(e, values):
+        return rows.build_row(e, values)
+
+    def test_a_slope_shows_its_unit_once_after_the_ratio(self):
+        e = slope()
+        row = self.stored(e, [bm.VariableValue(e.variables[0], "4", "max", "meter"),
+                              bm.VariableValue(e.variables[1], "5", "max", "meter")])
+        self.assertEqual(rows.display_text_with_units(row), "Största lutning är 4:5 (meter). (Pilen pekar uppåt)")
+        self.assertEqual(rows.display_text(row), "Största lutning är 4:5. (Pilen pekar uppåt)", "texten som levereras är oförändrad")
+
+    def test_different_units_on_the_two_numbers_are_both_shown(self):
+        e = slope(minimum=True)
+        row = self.stored(e, [bm.VariableValue(e.variables[0], "4", "min", "meter"),
+                              bm.VariableValue(e.variables[1], "20", "min", "procent")])
+        self.assertEqual(rows.display_text_with_units(row), "Minsta lutning är 4 (meter):20 (procent). (Pilen pekar uppåt)")
+
+    def test_the_unit_antal_is_not_shown(self):
+        e = slope()
+        row = self.stored(e, slope_values(e, "1", "20"))  # slope_values anger enheten "antal"
+        self.assertEqual(rows.display_text_with_units(row), rows.display_text(row))
+
+    def test_a_text_that_already_has_the_unit_is_unchanged(self):
+        e = height("Kvartersmark")
+        row = rows.build_row(e, [bm.VariableValue(e.variables[0], "31,8", "exakt", "meter")])
+        self.assertEqual(rows.display_text_with_units(row), rows.display_text(row))
+
+    def test_a_row_without_stored_values_is_shown_as_before(self):
+        row = {"bestammelseformulering": "Största lutning är [lutning1:decimaltal]:[lutning2:decimaltal].",
+               "bestammelsevarde": None}
+        self.assertEqual(rows.display_text_with_units(row), rows.display_text(row))
+
+    def test_the_lists_show_the_unit(self):
+        e = slope()
+        row = self.stored(e, [bm.VariableValue(e.variables[0], "1", "max", "meter"),
+                              bm.VariableValue(e.variables[1], "20", "max", "meter")])
+        self.assertEqual(rows.describe(row), "1:20 – Största lutning är 1:20 (meter). (Pilen pekar uppåt)")
+
+
 class HeightPoints(unittest.TestCase):
     """Ärende 1: egenskapspunkter för markens höjd visar höjden på plankartan, som "+31,8"."""
 

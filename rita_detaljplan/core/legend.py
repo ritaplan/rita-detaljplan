@@ -178,7 +178,7 @@ def property_sections(rows: list[dict], catalog: Optional[cat.Catalog] = None) -
             entries = []
             for row in items:
                 kind, symbol = _swatch(row)
-                entries.append(Entry(_code(row), row.get("_text") or rows_module.display_text(row), kind,
+                entries.append(Entry(_code(row), row.get("_text") or rows_module.display_text_with_units(row), kind,
                                      symbol=symbol))
             groups.append(Group(category or None, entries))
         sections.append(Section(title, groups))

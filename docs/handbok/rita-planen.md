@@ -93,6 +93,9 @@ marken stiger uppåt. Bestämmelsen läggs på en yta som vilken annan egenskap 
    det håll texten vrids mot, och texten står alltid rättvänd ovanför pilen, också när pilen pekar åt vänster.
 4. Flytta texten dit du vill ha pilen: pilen följer med.
 
+Enheten du väljer för talen (oftast *meter*) levereras till NGP och visas i teckenförklaringen och i listorna
+(*Största lutning är 1:20 (meter).*), men inte på kartan, där pilen bara visar förhållandet.
+
 Ytan är fortfarande en yta i planen (så som katalogen och NGP anger bestämmelsen), pilen är bara hur den visas på
 plankartan. Pilens riktning sparas som textens vinkel och följer därför inte med till NGP.
 

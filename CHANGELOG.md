@@ -15,6 +15,13 @@ Formatet följer [Keep a Changelog](https://keepachangelog.com/sv/1.1.0/), versi
   före denna version saknar texten ovanför pilen tills bestämmelsen läggs på igen. Fil för fil: `core/rows.py`
   (`slope_label`), `core/symbology.py` (`_slope_arrow_layer`, `has_slope_arrow`, `_SUBSCRIPT_EXPRESSION`), `core/legend.py`
   och `core/legend_layout.py` (`ARROW`), `core/project.py`.
+- **Enheten visas i teckenförklaringen och i listorna när katalogens text inte har någon.** Lutningens formulering
+  (*Största lutning är 4:5.*) säger inte om talen är meter eller något annat, trots att enheten väljs och levereras. Nu
+  står den med: *Största lutning är 4:5 (meter). (Pilen pekar uppåt)*, i teckenförklaringen, i bestämmelselistorna och i
+  listan med motiv. Ett förhållande med samma enhet på båda talen får enheten en gång. Den levererade formuleringen är
+  oförändrad (den måste vara katalogens exakta text), och pilen på kartan visar bara förhållandet. Bestämmelser som
+  redan har enheten i texten (*12 meter*) ändras inte. Fil för fil: `core/rows.py` (`display_text_with_units`),
+  `core/legend.py`, `controller.py`.
 
 ## [0.1.89] – databashanteraren visar om planerna finns i NGP, ny inställningsdialog
 

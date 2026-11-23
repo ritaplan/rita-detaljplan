@@ -1437,7 +1437,7 @@ class PlanController(QObject):
         for row in assignments.read_rows(self.project):
             key = rows.identity(row)
             item = found.setdefault(key, {
-                "key": key, "text": rows.display_text(row), "label": row.get("beteckning") or "",
+                "key": key, "text": rows.display_text_with_units(row), "label": row.get("beteckning") or "",
                 "kind": row.get("tabell"), "areas": 0, "motiv": "",
                 "technical": row.get("bestammelseformulering") == cat.TECHNICAL_FORMULATION})
             item["areas"] += 1
