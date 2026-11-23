@@ -12,9 +12,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from plan_case import HAVE_QGIS, INSIDE, LEFT, LINE_INSIDE, PLAN, RIGHT, PlanCase  # noqa: E402
 
 if HAVE_QGIS:
-    from qgis.core import (QgsCoordinateReferenceSystem, QgsLayoutExporter, QgsLayoutItemMap, QgsLayoutSize,
+    from qgis.core import (QgsCoordinateReferenceSystem, QgsExpression, QgsFillSymbol, QgsLayoutExporter, QgsLayoutItemMap, QgsLayoutSize,
                           QgsMapRendererParallelJob, QgsMapSettings, QgsPrintLayout, QgsProject, QgsRectangle,
-                          QgsRenderContext, QgsSimpleLineSymbolLayer, QgsUnitTypes)
+                          QgsRenderContext, QgsSimpleLineSymbolLayer, QgsSingleSymbolRenderer, QgsUnitTypes)
     from qgis.PyQt.QtCore import QEventLoop, QPointF, QSize, QTimer
     from qgis.PyQt.QtGui import QColor, QImage, QPainter, QPolygonF
     from rita_detaljplan.core import catalog as cat
@@ -327,6 +327,92 @@ class RotationRenderTests(RenderCase):
 
 
 @unittest.skipUnless(HAVE_QGIS, "QGIS Python behövs")
+class SlopeArrowTests(RenderCase):
+    """Största och minsta lutning ritas som en pil under ytans text, åt det håll textens vinkel (``label_rot``) anger."""
+    AREA = "MultiPolygon(((0 0, 100 0, 100 100, 0 100, 0 0)))"
+    SIZE_PX = 400
+
+    def drawn(self, symbol="Största/minsta lutning", rotation=None, **attrs):
+        """De mörka bildpunkterna i ytans mitt (kanterna ligger utanför fönstret), utan texten."""
+        for table in list(self.layers):
+            layer = self.layers[table]
+            if layer.isEditable():
+                layer.selectAll()
+                layer.deleteSelectedFeatures()
+        self.add("detaljplan", "MultiPolygon(((-20 -20, 120 -20, 120 120, -20 120, -20 -20)))")
+        self.add("egenskap_yta", self.AREA, beteckning="1:20", symbol=symbol, bestammelser=1, label_rot=rotation, **attrs)
+        restyle(QgsProject.instance(), 1000)
+        self.layers["egenskap_yta"].setLabelsEnabled(False)  # bara pilen: testmiljön har inga typsnitt, texten blir block
+        settings = QgsMapSettings()
+        settings.setLayers(self.in_map_order(["detaljplan", "egenskap_yta"]))
+        settings.setDestinationCrs(QgsCoordinateReferenceSystem("EPSG:3006"))
+        settings.setExtent(QgsRectangle(-10, -10, 110, 110))
+        settings.setOutputSize(QSize(self.SIZE_PX, self.SIZE_PX))
+        settings.setBackgroundColor(QColor(255, 255, 255))
+        job = QgsMapRendererParallelJob(settings)
+        loop = QEventLoop()
+        job.finished.connect(loop.quit)
+        QTimer.singleShot(20000, loop.quit)
+        job.start()
+        loop.exec()
+        self.assertFalse(job.isActive(), "renderingen blev inte klar")
+        image = job.renderedImage()
+        lo, hi = int(self.SIZE_PX * 0.2), int(self.SIZE_PX * 0.8)
+        return [(x, y) for x in range(lo, hi) for y in range(lo, hi) if image.pixelColor(x, y).red() < 200]  # tunn linje: delvis täckta bildpunkter räknas
+
+    @staticmethod
+    def head_side(points, axis):
+        """Åt vilket håll pilspetsen sitter: den ände av pilen där det finns flest mörka bildpunkter (spetsen är bredare än
+        skaftet). ``axis`` 0 = vågrät, 1 = lodrät. Returnerar -1 (minst koordinat) eller 1 (störst)."""
+        values = sorted(p[axis] for p in points)
+        low, high = values[0], values[-1]
+        span = max(1, high - low)
+        near_low = sum(1 for v in values if v - low < span * 0.2)
+        near_high = sum(1 for v in values if high - v < span * 0.2)
+        return -1 if near_low > near_high else 1
+
+    def test_an_area_with_the_slope_symbol_gets_an_arrow_and_other_areas_do_not(self):
+        self.assertGreater(len(self.drawn()), 50, "pilen ritas")
+        self.assertEqual(len(self.drawn(symbol="Fastighetsindelning")), 0, "andra ytor får ingen pil")
+        self.assertEqual(len(self.drawn(symbol=None)), 0)
+
+    def test_the_arrow_points_right_when_the_text_has_not_been_turned(self):
+        points = self.drawn()
+        xs, ys = [p[0] for p in points], [p[1] for p in points]
+        self.assertGreater(max(xs) - min(xs), 4 * (max(ys) - min(ys)), "pilen är vågrät")
+        self.assertEqual(self.head_side(points, 0), 1, "spetsen sitter till höger")
+
+    def test_the_arrow_follows_the_angle_of_the_text_in_all_four_directions(self):
+        right, down, left, up = (self.drawn(rotation=a) for a in (None, 90.0, 180.0, 270.0))
+        self.assertEqual(self.head_side(right, 0), 1)
+        self.assertEqual(self.head_side(left, 0), -1, "180 grader: åt vänster")
+        self.assertEqual(self.head_side(down, 1), 1, "90 grader medurs: nedåt (bildens y växer nedåt)")
+        self.assertEqual(self.head_side(up, 1), -1, "270 grader: uppåt")
+        for points in (down, up):
+            xs, ys = [p[0] for p in points], [p[1] for p in points]
+            self.assertGreater(max(ys) - min(ys), 4 * (max(xs) - min(xs)), "pilen är lodrät")
+
+    def test_the_arrow_is_under_the_text_and_the_text_is_never_upside_down(self):
+        # Texten står rätt för varje riktning: en pil åt vänster har ändå texten rättvänd ovanför sig.
+        from rita_detaljplan.core import symbology
+        angle = symbology._slope_text_angle()
+        for given, shown in ((None, 0), (0, 0), (45, 45), (90, -90), (180, 0), (225, 45), (270, -90), (315, 315)):
+            expression = QgsExpression(angle.replace('"label_rot"', str(given) if given is not None else "NULL"))
+            result = expression.evaluate()
+            self.assertAlmostEqual((result + 360) % 360, shown % 360, msg=f"{given}")
+
+    def test_a_project_saved_without_the_arrow_is_redrawn_when_opened(self):
+        from rita_detaljplan.core import symbology
+        layer = self.layers["egenskap_yta"]
+        self.assertTrue(symbology.has_slope_arrow(layer, "egenskap_yta"))
+        layer.setRenderer(QgsSingleSymbolRenderer(QgsFillSymbol.createSimple({"color": "0,0,0,0"})))
+        self.assertFalse(symbology.has_slope_arrow(layer, "egenskap_yta"), "en äldre renderare saknar pilen")
+        self.assertTrue(upgrade_symbology(QgsProject.instance()), "projektet ritas om")
+        self.assertTrue(symbology.has_slope_arrow(self.layers["egenskap_yta"], "egenskap_yta"))
+        self.assertFalse(upgrade_symbology(QgsProject.instance()), "och ritas inte om igen")
+
+
+@unittest.skipUnless(HAVE_QGIS, "QGIS Python behövs")
 class FixedLabelPositionTests(RenderCase):
     """Texterna står på samma ställe oavsett vilken del av kartan som syns."""
     USE = "MultiPolygon(((0 0, 100 0, 100 40, 40 40, 40 100, 0 100, 0 0)))"  # L-formad: placeringen har något att välja på
@@ -515,7 +601,8 @@ class LabelTests(RenderCase):
             symbol = category.symbol()
             self.keep.append(symbol)
             found.append([layer for layer in symbol.symbolLayers()
-                          if isinstance(layer, QgsGeometryGeneratorSymbolLayer) and "label_x" in layer.geometryExpression()])
+                          if isinstance(layer, QgsGeometryGeneratorSymbolLayer) and "label_x" in layer.geometryExpression()
+                          and "Största/minsta lutning" not in layer.geometryExpression()])  # pilen är inte en ledlinje
         return found
 
     def test_a_leader_line_is_a_thin_line_layer_that_appears_only_when_the_text_is_outside_its_area(self):

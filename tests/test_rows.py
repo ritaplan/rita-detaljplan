@@ -230,6 +230,57 @@ def height(form, over=True):
                 if e.anvandningsform == form and e.formulering.startswith(start))
 
 
+def slope(minimum=False, allmän_plats=False):
+    """Bestämmelsen för största (eller minsta) lutning, ur katalogen som följer med pluginet."""
+    kind = "Minsta" if minimum else "Största"
+    use = "Allmän plats" if allmän_plats else "Kvartersmark"
+    return next(e for e in BUNDLED.entries if e.symbol == rows.SLOPE_SYMBOL and e.formulering.startswith(kind)
+                and e.anvandningsform == use)
+
+
+def slope_values(e, first, second):
+    return [bm.VariableValue(e.variables[0], first, "max", "antal"), bm.VariableValue(e.variables[1], second, "max", "antal")]
+
+
+class SlopeArrows(unittest.TestCase):
+    """Största och minsta lutning ritas som en pil med lutningsförhållandet ovanför (BFS 2020:6, 7.2 och 7.13)."""
+
+    def test_the_catalog_has_four_slope_provisions_and_all_are_areas_with_the_arrow_symbol(self):
+        found = [e for e in BUNDLED.entries if e.symbol == rows.SLOPE_SYMBOL]
+        self.assertEqual(len(found), 4, "största och minsta, i kvartersmark och allmän plats")
+        self.assertTrue(all(e.layer_name == "egenskap_yta" for e in found), "en yta, inte en linje (katalogen anger yta/volym)")
+
+    def test_the_label_is_the_ratio_with_a_decimal_comma(self):
+        e = slope()
+        self.assertEqual(rows.slope_label(e, slope_values(e, "1", "20")), "1:20")
+        self.assertEqual(rows.slope_label(e, slope_values(e, "1", "2,5")), "1:2,5")
+        self.assertEqual(rows.slope_label(e, slope_values(e, "1", "2.5")), "1:2,5")
+
+    def test_it_is_the_same_for_minimum_and_for_public_land(self):
+        for minimum in (False, True):
+            for public in (False, True):
+                e = slope(minimum, public)
+                self.assertEqual(rows.slope_label(e, slope_values(e, "1", "15")), "1:15")
+
+    def test_without_both_values_there_is_no_label(self):
+        e = slope()
+        self.assertIsNone(rows.slope_label(e, slope_values(e, "1", "")))
+        self.assertIsNone(rows.slope_label(e, slope_values(e, "", "20")))
+        self.assertIsNone(rows.slope_label(e, slope_values(e, "1", "abc")))
+        self.assertIsNone(rows.slope_label(entry(UTNYTT), filled(entry(UTNYTT))), "bara för lutning")
+
+    def test_the_row_gets_the_ratio_as_its_label_and_no_index(self):
+        e = slope()
+        built = rows.build_row(e, slope_values(e, "1", "20"))
+        self.assertEqual((built["beteckning"], built["beteckningsindex"], built["tabell"], built["symbol"]),
+                         ("1:20", None, "egenskap_yta", rows.SLOPE_SYMBOL))
+
+    def test_the_area_shows_the_ratio_and_carries_the_symbol(self):
+        e = slope(minimum=True)
+        summary = rows.summarize([rows.build_row(e, slope_values(e, "1", "50"))])
+        self.assertEqual((summary["beteckning"], summary["symbol"]), ("1:50", rows.SLOPE_SYMBOL))
+
+
 class HeightPoints(unittest.TestCase):
     """Ärende 1: egenskapspunkter för markens höjd visar höjden på plankartan, som "+31,8"."""
 

@@ -81,6 +81,21 @@ och du tar bort den som vanligt med Delete. Under nollplanet visas höjden med m
 
 <!-- BILD: egenskapspunkt.png | En egenskapspunkt med höjden +31,8 på kvartersmark -->
 
+### Största och minsta lutning
+
+Bestämmelserna **Största lutning** och **Minsta lutning** (på kvartersmark och allmän plats) ritas som i Boverkets
+allmänna råd (BFS 2020:6): en **pil** med lutningsförhållandet ovanför, till exempel *1:20*. Pilen pekar åt det håll
+marken stiger uppåt. Bestämmelsen läggs på en yta som vilken annan egenskap som helst, med lutningen som två tal.
+
+1. Markera ytan och välj bestämmelsen med **Planbestämmelser**. Fyll i de två talen (1 och 20 ger *1:20*).
+2. Pilen ritas under ytans text, vågrätt åt höger.
+3. Välj pilens riktning med textverktyget: **vrid texten** (punkt 5 under verktyget **Text** längre ner). Pilen pekar åt
+   det håll texten vrids mot, och texten står alltid rättvänd ovanför pilen, också när pilen pekar åt vänster.
+4. Flytta texten dit du vill ha pilen: pilen följer med.
+
+Ytan är fortfarande en yta i planen (så som katalogen och NGP anger bestämmelsen), pilen är bara hur den visas på
+plankartan. Pilens riktning sparas som textens vinkel och följer därför inte med till NGP.
+
 ### Hur gränserna ritas
 
 Där linjer sammanfaller ritas bara den högsta i hierarkin: planområdesgräns före användningsgräns före

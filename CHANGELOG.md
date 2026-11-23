@@ -2,6 +2,17 @@
 
 Formatet följer [Keep a Changelog](https://keepachangelog.com/sv/1.1.0/), versionsnumren [Semantic Versioning](https://semver.org/lang/sv/).
 
+## [Kommande]
+
+- **Största och minsta lutning ritas som en pil med lutningsförhållandet ovanför.** Bestämmelserna hade ingen symbol på
+  kartan, så ingenting syntes. Nu ritas pilen som i Boverkets allmänna råd (BFS 2020:6, 7.2 och 7.13): en pil under ytans
+  text, lika lång som texten, med lutningen som text ovanför (*1:20*, *1:2,5*). Riktningen väljs med textverktyget: vrid
+  texten, så pekar pilen åt det håll texten vrids mot (vågrätt åt höger som standard), och texten står alltid rättvänd.
+  Pilen följer med när texten flyttas. Det är fortfarande en yta i planen (katalogen och NGP anger yta, inte linje), och
+  riktningen sparas som textens vinkel. Äldre projekt ritas om automatiskt när de öppnas. Bestämmelser som lagts på före
+  denna version saknar texten ovanför pilen tills bestämmelsen läggs på igen. Fil för fil: `core/rows.py`
+  (`slope_label`), `core/symbology.py` (`_slope_arrow_layer`, `has_slope_arrow`), `core/project.py`.
+
 ## [0.1.89] – databashanteraren visar om planerna finns i NGP, ny inställningsdialog
 
 - **Databashanteraren visar med ett moln om en plan finns hos Nationella geodataplattformen.** Ny kolumn **NGP**.

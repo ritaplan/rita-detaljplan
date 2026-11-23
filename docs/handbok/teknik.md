@@ -311,6 +311,9 @@ Beteckningen på en yta byggs av ytans bestämmelser:
   värden, får samma siffra överallt. En annan bestämmelse får nästa lediga siffra.
 - Markens höjd i en punkt har ingen beteckning i katalogen. Där är beteckningen själva höjden, med tecken och
   decimalkomma (`+31,8`, `-2,5`). I teckenförklaringen slås alla höjder ihop till en rad (`+0,0`).
+- Största och minsta lutning har ingen beteckning i katalogen heller. Där är beteckningen lutningsförhållandet, med
+  decimalkomma (`1:20`, `1:2,5`), och bestämmelsen ritas som en pil under ytans text (symbolen *Största/minsta lutning*,
+  `symbology._slope_arrow_layer`). Pilens riktning är textens vinkel (`label_rot`); texten vrids själv så att den står rätt.
 
 ## Symbologin
 

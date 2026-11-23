@@ -53,6 +53,21 @@ def label_for(entry: cat.CatalogEntry, index: Optional[int], text: Optional[str]
 HEIGHT_SYMBOL = "Höjd över nollplanet"  # katalogens symbol för markens höjd över (eller under) nollplanet i en punkt
 
 
+SLOPE_SYMBOL = "Största/minsta lutning"  # katalogens symbol för största och minsta lutning (en pil med lutningsförhållandet)
+
+
+def slope_label(entry: cat.CatalogEntry, values: Iterable[bm.VariableValue]) -> Optional[str]:
+    """Beteckningen för största eller minsta lutning, som på plankartan: lutningsförhållandet med decimalkomma ("1:20",
+    "1:2,5"). Katalogen har ingen beteckning för de bestämmelserna, det är värdet som visas, och det ritas ovanför pilen
+    (BFS 2020:6, 7.2 och 7.13). None för andra bestämmelser, eller om värdena inte är ifyllda."""
+    if entry.symbol != SLOPE_SYMBOL:
+        return None
+    numbers = [bm.normalize_decimal(v.value) for v in values if v.variable.datatype == "decimaltal"]
+    if len(numbers) < 2 or not all(numbers[:2]):
+        return None
+    return ":".join(number.replace(".", ",") for number in numbers[:2])
+
+
 def height_label(entry: cat.CatalogEntry, values: Iterable[bm.VariableValue]) -> Optional[str]:
     """Beteckningen för markens höjd i en punkt, som på plankartan: höjden med tecken och decimalkomma ("+31,8"; under
     nollplanet "-2,5"). Katalogen har ingen beteckning för de bestämmelserna, det är värdet som visas. None för andra
@@ -126,7 +141,7 @@ def build_row(entry: cat.CatalogEntry, values: list[bm.VariableValue], motiv: Op
                      and base(r.get("beteckning"), r.get("beteckningsindex")) == wanted), None)
         index = same["beteckningsindex"] if same else next_index(rows, entry, label)
     return {**attributes, "tabell": entry.layer_name,
-            "beteckning": label_for(entry, index, label) or height_label(entry, values) or None,
+            "beteckning": label_for(entry, index, label) or height_label(entry, values) or slope_label(entry, values) or None,
             "beteckningsindex": index}
 
 

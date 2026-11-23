@@ -29,6 +29,7 @@ from qgis.core import (
     QgsGeometryGeneratorSymbolLayer,
     QgsLinePatternFillSymbolLayer,
     QgsLineSymbol,
+    QgsMarkerLineSymbolLayer,
     QgsMarkerSymbol,
     QgsPalLayerSettings,
     QgsPointPatternFillSymbolLayer,
@@ -41,6 +42,7 @@ from qgis.core import (
     QgsSingleSymbolRenderer,
     QgsStyle,
     QgsSymbolLayer,
+    QgsTemplatedLineSymbolLayerBase,
     QgsTextFormat,
     QgsVectorLayer,
     QgsVectorLayerSimpleLabeling,
@@ -342,7 +344,8 @@ def _rotate_by_field(settings: QgsPalLayerSettings) -> None:
     ``label_rot`` är tomt när den inte roterats. Gäller ytornas texter (en linjes text följer linjen, en punkts text står
     alltid intill punkten)."""
     props = settings.dataDefinedProperties()
-    props.setProperty(QgsPalLayerSettings.Property.LabelRotation, QgsProperty.fromField("label_rot"))
+    props.setProperty(QgsPalLayerSettings.Property.LabelRotation, QgsProperty.fromExpression(
+        f'CASE WHEN {_has_symbol(SLOPE_SYMBOL)} THEN {_slope_text_angle()} ELSE "label_rot" END'))
     settings.setDataDefinedProperties(props)
 
 
@@ -357,6 +360,63 @@ def _wrap_by_width(settings: QgsPalLayerSettings, size: float, fit_area: bool = 
         f'CASE WHEN "label_w" IS NOT NULL THEN max(1, floor("label_w" / {per_char})) ELSE {otherwise} END'))
     settings.setDataDefinedProperties(props)
     settings.useMaxLineLengthForAutoWrap = True
+
+
+SLOPE_SYMBOL = "Största/minsta lutning"  # se rows.SLOPE_SYMBOL
+SLOPE_ARROW_MIN_MM = 7.0  # pilens minsta längd (mm på papper i referensskalan); den är annars lika lång som texten
+SLOPE_ARROW_GAP_MM = 0.6  # luft mellan texten och pilen
+SLOPE_ARROW_LINE_MM = 0.25
+SLOPE_ARROW_HEAD_MM = 1.8
+
+
+def _slope_text_angle() -> str:
+    """Textens vinkel (grader medurs) för en yta med lutningspil: den lagrade vinkeln, men aldrig upp och ned. Pilen pekar åt
+    det håll vinkeln anger, så en pil som pekar åt vänster (180 grader) har ändå texten rättvänd ovanför sig."""
+    return ("CASE WHEN coalesce(\"label_rot\", 0) >= 90 AND coalesce(\"label_rot\", 0) < 270 "
+            "THEN \"label_rot\" - 180 ELSE coalesce(\"label_rot\", 0) END")
+
+
+def _slope_arrow_geometry(size: float, minimum: float, gap: float) -> str:
+    """Lutningspilen som linje (ett uttryck för en geometrigenerator): under ytans text, lika lång som texten (minst
+    ``minimum``) och riktad åt det håll textens vinkel (``label_rot``) anger, vågrätt åt höger när den inte vridits. Tom för
+    ytor utan symbolen. Pilen ligger på det håll som marken stiger uppåt (BFS 2020:6, 7.2 och 7.13). ``size``, ``minimum``
+    och ``gap`` är i kartans enheter."""
+    centre = (f'make_point(coalesce("label_x", x({_AREA_ANCHOR})), coalesce("label_y", y({_AREA_ANCHOR})))')
+    length = f"max({minimum}, length(coalesce(\"beteckning\", '')) * {size * CHAR_WIDTH})"
+    below = f"{size * TEXT_HEIGHT} + {gap}"  # från textens mitt till pilen
+    return (f"CASE WHEN {_has_symbol(SLOPE_SYMBOL)} THEN "
+            f"with_variable('c', {centre}, "
+            f"with_variable('t', radians(coalesce(\"label_rot\", 0)), "  # pilens riktning
+            f"with_variable('f', radians({_slope_text_angle()}), "  # textens vinkel
+            f"with_variable('m', make_point(x(@c) - sin(@f) * ({below}), y(@c) - cos(@f) * ({below})), "
+            f"with_variable('h', {length} / 2, "
+            "make_line(make_point(x(@m) - cos(@t) * @h, y(@m) + sin(@t) * @h), "
+            "make_point(x(@m) + cos(@t) * @h, y(@m) - sin(@t) * @h))))))) "
+            f"ELSE {_EMPTY} END")
+
+
+def _slope_arrow_layer(reference_scale: float, size_mm: float):
+    """Lutningspilen (se ``_slope_arrow_geometry``): en tunn svart linje med en fylld pilspets i änden."""
+    per_mm = reference_scale / 1000.0
+    generator = QgsGeometryGeneratorSymbolLayer.create({
+        "geometryModifier": _slope_arrow_geometry(size_mm * per_mm, SLOPE_ARROW_MIN_MM * per_mm,
+                                                  SLOPE_ARROW_GAP_MM * per_mm),
+        "SymbolType": "Line"})
+    shaft = QgsSimpleLineSymbolLayer(QColor(0, 0, 0))
+    shaft.setWidth(SLOPE_ARROW_LINE_MM)
+    shaft.setPenCapStyle(Qt.PenCapStyle.FlatCap)
+    head = QgsMarkerLineSymbolLayer()
+    head.setPlacements(QgsTemplatedLineSymbolLayerBase.Placement.LastVertex)
+    head.setRotateSymbols(True)
+    marker = QgsMarkerSymbol.createSimple({"name": "triangle", "color": "0,0,0", "outline_style": "no",
+                                           "size": str(SLOPE_ARROW_HEAD_MM), "angle": "90"})
+    head.setSubSymbol(marker)
+    arrow = QgsLineSymbol()
+    arrow.deleteSymbolLayer(0)
+    arrow.appendSymbolLayer(shaft)
+    arrow.appendSymbolLayer(head)
+    generator.setSubSymbol(arrow)
+    return generator
 
 
 LEADER_INSET_MM = 3.5  # hur långt in i ytan ledlinjen slutar (mm på papper i referensskalan)
@@ -528,6 +588,16 @@ def has_fragile_dashes(renderer) -> bool:
     return renderer is not None and any(fragile(symbol) for symbol in renderer.symbols(QgsRenderContext()))
 
 
+def has_slope_arrow(layer: QgsVectorLayer, table: str) -> bool:
+    """Om egenskapsytornas renderare ritar lutningspilen (ett projekt som sparats av en äldre version ritade ingen pil för
+    största och minsta lutning; se ``_slope_arrow_layer``)."""
+    renderer = layer.renderer() if table == "egenskap_yta" else None
+    if renderer is None:
+        return True
+    return any(isinstance(symbol_layer, QgsGeometryGeneratorSymbolLayer) and SLOPE_SYMBOL in symbol_layer.geometryExpression()
+               for symbol in renderer.symbols(QgsRenderContext()) for symbol_layer in symbol.symbolLayers())
+
+
 def has_current_symbol_class(layer: QgsVectorLayer, table: str) -> bool:
     """Om egenskapslagrets renderare klassar objekten på alla deras symboler (ett projekt som sparats med en äldre version
     klassade på ett enda värde, så en yta med både fastighetsindelning och korsmark visade bara den ena)."""
@@ -625,7 +695,8 @@ def style_property_area(layer: QgsVectorLayer, style: QgsStyle, layers: dict[str
         return [_generated_outline(style, "Egenskapsgräns", _for_kind(expression, False)),
                 _generated_outline(style, "Sekundär egenskapsgräns", _for_kind(expression, True)),
                 *(_generated_outline(style, name, _for_division(expression)) for name in OUTLINE_SYMBOLS),
-                _leader_layer(reference_scale, PROPERTY_TEXT_MM)]
+                _leader_layer(reference_scale, PROPERTY_TEXT_MM),
+                _slope_arrow_layer(reference_scale, PROPERTY_TEXT_MM)]
 
     categories = []
     for name in AREA_SYMBOLS:
