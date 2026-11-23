@@ -2,7 +2,7 @@
 
 Formatet följer [Keep a Changelog](https://keepachangelog.com/sv/1.1.0/), versionsnumren [Semantic Versioning](https://semver.org/lang/sv/).
 
-## [Kommande]
+## [0.1.90] – lutningspil för största och minsta lutning
 
 - **Största och minsta lutning ritas som en pil med lutningsförhållandet ovanför.** Bestämmelserna hade ingen symbol på
   kartan, så ingenting syntes. Nu ritas pilen som i Boverkets allmänna råd (BFS 2020:6, 7.2 och 7.13): en pil under ytans
