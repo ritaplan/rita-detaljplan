@@ -9,6 +9,7 @@ from qgis.gui import QgsMapLayerComboBox
 from qgis.PyQt.QtWidgets import (QCheckBox, QDialog, QDialogButtonBox, QFormLayout, QHBoxLayout, QLabel, QPushButton,
                                  QVBoxLayout)
 
+from .richtext import plain
 
 INTRO = ("Geometrierna kopieras till Hjälplager, utan attribut: ytor, linjer och punkter var för sig. Ge dem sedan "
          "en bestämmelse med Planbestämmelser, så blir de planobjekt (hjälppunkter kan inte få bestämmelser). "
@@ -45,7 +46,7 @@ class ImportDialog(QDialog):
         row.addWidget(self.add_source)
         self.selected_only = QCheckBox("Bara markerade objekt")
         self.selected_only.toggled.connect(lambda *_: self._update())
-        self.summary = QLabel()
+        self.summary = plain(QLabel())
         self.summary.setWordWrap(True)
 
         form = QFormLayout()

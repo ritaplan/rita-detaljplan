@@ -18,7 +18,7 @@ from ..pbkarna import plankarta as pk
 
 from . import session as ss
 from . import theme
-from .widgets import Card, MapView, ParagraphText, Pill, TagChip, box, button, frame, label, restyle
+from .widgets import Card, MapView, ParagraphText, Pill, TagChip, box, button, frame, label, restyle, tip_text
 
 # exemplet kv. Lärkan ligger i repots mapp exempel/ (skapas med tools/skapa_exempel.py); det följer inte med zip-filen
 EXEMPEL = Path(__file__).resolve().parents[3] / "exempel"
@@ -499,7 +499,7 @@ class TagPage(QWidget):
             item = QListWidgetItem(_dot_icon(QColor(theme.status_color(status))),
                                    ("   " * (len(section.path) - 1)) + section.path[-1])
             item.setData(Qt.ItemDataRole.UserRole, n)
-            item.setToolTip(" › ".join(section.path) + f"\n{ss.STATUS_TEXT[status]}")
+            item.setToolTip(tip_text(" › ".join(section.path) + f"\n{ss.STATUS_TEXT[status]}"))
             item.setSizeHint(QSize(0, 30))
             self.outline.addItem(item)
             if n == self.selected:
@@ -943,7 +943,7 @@ class MotivPage(QWidget):
             item = QListWidgetItem(f"{provision.label or '–'}\t{short(provision.text, 60)}\n\t{state}"
                                    + (f" · {len(provision.refs)} ytor" if len(provision.refs) > 1 else ""))
             item.setData(Qt.ItemDataRole.UserRole, n)
-            item.setToolTip(provision_name(provision))
+            item.setToolTip(tip_text(provision_name(provision)))
             if not count and not provision.technical:
                 item.setForeground(QColor(theme.C["warn"]))
             if provision.key == selected_key and selected_key is not None:

@@ -15,6 +15,7 @@ from qgis.PyQt.QtWidgets import (QCheckBox, QDialog, QDialogButtonBox, QFileDial
 from ..controller import PlanController
 from ..core import archive, export_ngp, geopackage, kommuner
 from .about_dialog import metadata
+from .richtext import plain
 
 DOCUMENT_FILTER = "Dokument (*.pdf *.docx *.odt);;Alla filer (*)"
 EDITING_TEXT = ("Planen redigeras just nu. Spara och avsluta redigeringen först, annars kommer inte det du ritat sedan "
@@ -115,7 +116,7 @@ class ArchiveDialog(QDialog):
                        "PDF/A och kontrollerade med en PDF/A-validerare.")
         intro.setWordWrap(True)
         values = controller.plan_values()
-        self.plan_label = QLabel(f"Plan: {values.get('namn') or 'utan namn'}")
+        self.plan_label = plain(QLabel(f"Plan: {values.get('namn') or 'utan namn'}"))
 
         self.folder = QLineEdit(str(Path(QgsProject.instance().homePath() or Path.home())))
         self.folder.textChanged.connect(self._update)
@@ -163,7 +164,7 @@ class ArchiveDialog(QDialog):
         performer_row.addWidget(QLabel("Utförd av:"))
         performer_row.addWidget(self.performer, 1)
 
-        self.hint = QLabel("")
+        self.hint = plain(QLabel(""))
         self.hint.setWordWrap(True)
         self.buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         self.ok = self.buttons.button(QDialogButtonBox.StandardButton.Ok)

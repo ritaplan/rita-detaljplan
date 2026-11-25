@@ -11,8 +11,9 @@ Leveransen sker i fyra steg (se specifikationen):
 Detaljplanen levereras som ett domänobjekt: förändringens objektidentitet är planens objektidentitet och filen är hela
 ``FeatureCollection`` från ``export_ngp`` (plan + bestämmelser).
 
-**Overifierat mot NGP.** Klienten följer specifikationen och är testad mot en låtsasserver, men har inte körts mot
-Lantmäteriets verifieringsmiljö (det kräver producentbehörighet). Uppgifter som specifikationen inte anger är
+**Leveransen är overifierad mot NGP.** Klienten följer specifikationen och är testad mot en låtsasserver, men har inte
+körts mot Lantmäteriets verifieringsmiljö (det kräver producentbehörighet). Sökningen (``NgpSearchClient``) är provad mot
+produktionsmiljön. Uppgifter som specifikationen inte anger är
 antaganden och kan ändras i inställningarna: adressen till tokentjänsten (OAuth 2, ``client_credentials``, nyckel och
 hemlighet som Basic-autentisering) och mediatypen v4 (specifikationens lista nämner bara v1–v3).
 
@@ -563,7 +564,8 @@ class NgpSearchClient(NgpClient):
     konsumentnyckel för datamängden Detaljplan. Använder samma inloggning som leveransen (``token_url``), med
     ``search_authcfg`` om den är vald, annars ``authcfg``.
 
-    **Overifierat mot NGP**, som leveransen: följer specifikationen (detaljplan-api-2.2) och är testat mot en låtsasserver."""
+    Följer specifikationen (detaljplan-api-2.2), är testad mot en låtsasserver och provad mot produktionsmiljön med en
+    konsumentnyckel (2026-11-18), men inte mot verifieringsmiljön."""
 
     def __init__(self, config: NgpConfig, transport: Optional[Transport] = None,
                  sleep: Callable[[float], None] = time.sleep, clock: Callable[[], float] = time.monotonic):

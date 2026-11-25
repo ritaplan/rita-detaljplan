@@ -9,9 +9,9 @@ Pluginet har automatiska tester (se [Utveckling](utveckling.md)), men flera dela
 
 - **Leverans till NGP.** Uppladdningen via Lantmäteriets Uppdatering-API är byggd efter specifikationen
   (`spec/uppdatering-api-1.1.yaml`) och testad mot en låtsasserver, men **aldrig mot Lantmäteriets riktiga
-  verifieringsmiljö**. Adressen till tokentjänsten och mediatypen `application/vnd.lm.detaljplan.v4+json` är antaganden.
-  Kräver dessutom producentbehörighet. Att spara leveransen som JSON-fil och skicka den för granskning fungerar oberoende
-  av detta. Uppdatering av en redan publicerad plan (ny objektversion) stöds inte.
+  verifieringsmiljö**. Mediatypen `application/vnd.lm.detaljplan.v4+json` är ett antagande, och tokentjänstens adress har
+  bara fungerat för sökningen (se nedan), inte provats för leverans. Kräver dessutom producentbehörighet. Att spara
+  leveransen som JSON-fil och skicka den för granskning fungerar oberoende av detta. Uppdatering av en redan publicerad plan (ny objektversion) stöds inte.
 - **Kontrollen mot NGP** (molnen i kolumnen NGP i databashanteraren, som görs automatiskt när den öppnas) frågar Lantmäteriets Sök-API för detaljplaner
   (`detaljplan-api-2.2`) med planens objektidentitet och, för planer som inte hittas på id, med kommunens planer
   (matchning på beteckning, datum för laga kraft och namn). Den är provad mot produktionsmiljön med en konsumentnyckel,
@@ -64,7 +64,8 @@ Pluginet har automatiska tester (se [Utveckling](utveckling.md)), men flera dela
 - **De nya lagren i äldre planer.** Hjälpytor och hjälppunkter (schema 9) och egenskapspunkter (schema 10) läggs till när
   en äldre plan öppnas med *Öppna detaljplan (GeoPackage)…*. Öppnar du ett äldre projekt (.qgz) direkt saknar det de nya
   lagren tills planen öppnats på det sättet; knappen för att rita egenskapspunkter är då grå och säger det.
-  Uppgraderingen av ett PostGIS-schema är skriven men inte provad mot en riktig databas, som resten av PostGIS-delen.
+  Uppgraderingen av ett PostGIS-schema har automatiska tester mot en låtsasdatabas: gör en säkerhetskopia av schemat
+  innan en viktig databas uppgraderas.
 
 - **Tagga planbeskrivning söker av sig själv bara motiv under rubriker med temat *Motiv till detaljplanens regleringar*.**
   Motiv som står utspridda under andra teman (till exempel under varje användning i beskrivningen av planen) hittas inte
@@ -84,15 +85,16 @@ Pluginet har automatiska tester (se [Utveckling](utveckling.md)), men flera dela
   att föra över motiven till Rita Detaljplan finns inte utanför QGIS, eftersom pluginet ännu inte kan läsa den
   utbytesfil programmet kan skriva.
 
-- Endast 2D. Volymgeometri (kropp) stöds inte än.
 - Endast användnings- och egenskapsbestämmelser stöds (inga pågående bestämmelser i katalogen är administrativa).
-- Lägesmetodens variant är en gemensam lista; koppling variant ↔ metod valideras först i steg 3.
+- Lägesbestämningsmetodens varianter ligger i en gemensam lista: pluginet kontrollerar inte att varianten hör till den
+  valda metoden.
 - Bestämmelsevärden lagras som JSON-text i fältet `bestammelsevarde`; ändra dem via bestämmelseväljaren.
-- Multipart-geometrier lagras som Multi* i GeoPackage men NGP godkänner inte multigeometrier; exporten (steg 4)
-  delar upp dem. Se [ngp-regler.md](ngp-regler.md) för alla regler som valideringen ska följa.
+- En yta, linje eller punkt i flera delar går att ha i planen, men NGP tar inte emot multigeometrier i en detaljplan
+  (reglerna DP-0004 och DP-0018). Exporten skriver därför en geometri per del i samma detaljplan eller bestämmelse. Se
+  [ngp-regler.md](ngp-regler.md) för reglerna som kontrollen och exporten följer.
 - Objekt som läggs till på annat sätt än med ritverktygen (t.ex. inklistrade) kontrolleras mot hierarkin på samma sätt.
 - Flyttar man en egenskap efter att den ritats varnas man om att den inte längre ligger på en användning, men den
-  tas inte bort automatiskt (däremot tas egenskaper bort när användningen de ligger på tas bort). Flyttas en användning eller ett planområde beskärs användningen respektive varnas man. Den fullständiga kontrollen görs i valideringen (steg 3).
+  tas inte bort automatiskt (däremot tas egenskaper bort när användningen de ligger på tas bort). Flyttas en användning eller ett planområde beskärs användningen respektive varnas man. Den fullständiga kontrollen görs när du kontrollerar planen.
 - **Flera planer kan vara laddade samtidigt, men bara en är aktiv åt gången.** Ny detaljplan/Öppna/Importera lägger
   till planen bredvid en ev. redan laddad plan och gör den nya aktiv; pluginets verktyg (rita, tilldela, kontrollera,
   leverera) jobbar bara mot den aktiva. Är fler än en laddad frågar pennan vilken som ska redigeras (byter aktiv

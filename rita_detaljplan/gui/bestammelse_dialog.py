@@ -30,7 +30,7 @@ from ..core import bestammelse as bm
 from ..core import catalog as cat
 from ..core import codelists as cl
 from ..core import model, rows
-from .richtext import esc
+from .richtext import as_text, esc, plain
 from .variable_form import LABEL_PLACEHOLDER, LABEL_TIP
 
 COLUMNS = ("Kod", "Bestämmelse", "Typ", "Användningsform", "Kategori")
@@ -112,7 +112,7 @@ class BestammelseDialog(QDialog):
         self.info.setMinimumHeight(110)
         self.values_box = QGroupBox("Värden")
         self.values_layout = QFormLayout(self.values_box)
-        self.preview = QLabel()
+        self.preview = plain(QLabel())
         self.preview.setWordWrap(True)
         self.preview.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         self.chk_custom = QCheckBox("Anpassa formuleringen")
@@ -120,10 +120,10 @@ class BestammelseDialog(QDialog):
         self.formulation_edit = QPlainTextEdit()
         self.formulation_edit.setMaximumHeight(60)
         self.formulation_edit.setVisible(False)
-        self.deviation = QLabel()
+        self.deviation = plain(QLabel())
         self.deviation.setWordWrap(True)
         self.deviation.setStyleSheet(_WARNING_STYLE)
-        self.problems = QLabel()
+        self.problems = plain(QLabel())
         self.problems.setWordWrap(True)
         self.problems.setStyleSheet(_ERROR_STYLE)
         source = QLabel(f"{cat.ATTRIBUTION}, release {catalog.release_name}")
@@ -199,7 +199,7 @@ class BestammelseDialog(QDialog):
             cells = (entry.kod, entry.formulering, entry.typ, entry.anvandningsform, entry.kategori)
             for column, text in enumerate(cells):
                 item = QTableWidgetItem(text)
-                item.setToolTip(text)
+                item.setToolTip(as_text(text))
                 if column == 0:
                     item.setData(Qt.ItemDataRole.UserRole, entry.id)
                 self.table.setItem(row, column, item)

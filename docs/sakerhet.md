@@ -4,18 +4,16 @@ Det här dokumentet är till för dig som ska bedöma om Rita Detaljplan kan anv
 kommuns IT-säkerhetsfunktion. Det beskriver vad pluginet gör, vilka data som rör sig vart, vad som är granskat och vad
 som inte är det. Rapportera säkerhetsbrister enligt [SECURITY.md](../SECURITY.md).
 
-**Omfattning:** version 0.1.75. Första genomgången gjordes för 0.1.44 (2026-10-02). Den uppdaterades 2026-11-03 för
-0.1.75: sökningarna nedan kördes om över hela koden, och filhanteringen i det som tillkommit sedan 0.1.44
-(taggningsprogrammet `planbeskrivning/`, arkivpaketet `core/archive.py`) lästes igenom.
+**Omfattning:** version 0.1.92. Första genomgången gjordes för 0.1.44 (2026-10-02) och en ny för 0.1.75 (2026-11-03).
+Den 2026-11-25 gicks det igenom som tillkommit sedan dess: sökningarna nedan kördes om över hela koden, och koden för
+sökningen mot NGP, databashanteraren (import, export, kopiering, borttagning, skrivskydd och planmosaik), lagrens
+adresser och visningen av text ur databasen och filer lästes igenom. Genomgången hittade fynd 10–12, som är åtgärdade i
+0.1.92. Annat som tillkommit (bland annat topologipanelen, textverktyget och lutningspilen) har inte lästs särskilt, men
+omfattas av sökningarna.
 
-**Version 0.1.76 är inte genomgången på nytt.** Den lägger till att taggningsprogrammet kan läsa en JSON-leverans som
-plankarta (filen läses med Pythons `json`, tolkas bara som text och tal och ger ett felmeddelande om den är felaktig;
-ett test täcker lista högst upp, id som listor och för djup nästling), och ett gränssnitt (`planbeskrivning/pbweb/`) för
-webbsidan ritaplan.xyz/tagga.html som pluginet självt inte använder. Webbsidan ingår inte i pluginet och omfattas inte av
-det här dokumentet: den kör programmets kod i webbläsaren med Pyodide, som hämtas från cdn.jsdelivr.net (laddarfilen är
+Webbsidan [ritaplan.xyz/tagga.html](https://ritaplan.xyz/tagga.html) ingår inte i pluginet och omfattas inte av det här
+dokumentet: den kör taggningsprogrammets kod i webbläsaren med Pyodide, som hämtas från cdn.jsdelivr.net (laddarfilen är
 låst med en kontrollsumma, de övriga delarna inte), och skickar inga filer vidare.
-
-**Version 0.1.77 är inte heller genomgången på nytt.** Den lägger till en översikt över planerna i en databas (`core/plan_overview.py`), som läser planernas uppgifter med `SELECT`-frågor där scheman och tabeller citeras med samma hjälpfunktioner som resten av lagringen (`quote` och `literal`); schemanamnen kommer ur databasen. Inga nya filer läses eller skrivs och inga nya beroenden tillkommer. Genvägarna (`gui/plan_toolbar.py`) och statusradsspärren (`gui/statusbar_guard.py`) ändrar bara QGIS gränssnitt. Felsökningsskriptet `tools/felsok_omritning.py` ingår inte i zip-filen.
 
 ## Läs det här först: vad dokumentet är och inte är
 
@@ -34,12 +32,12 @@ låst med en kontrollsumma, de övriga delarna inte), och skickar inga filer vid
 
 | Fråga | Svar |
 | --- | --- |
-| Skickas data ut från datorn? | Bara när användaren själv väljer det: hämta Boverkets planbestämmelsekatalog, eller leverera en plan till Lantmäteriet (eller en adress användaren skrivit in). Ingen telemetri, inga analysverktyg, inga uppdateringskontroller i pluginet. |
+| Skickas data ut från datorn? | När användaren väljer det: hämta Boverkets planbestämmelsekatalog, leverera en plan till Lantmäteriet (eller en adress användaren skrivit in) eller kontrollera anslutningen. **Automatiskt i ett fall:** har användaren ställt in en nyckel för NGP frågar databashanteraren, när den öppnas, Lantmäteriets Sök-API om planerna finns där. Då skickas planernas objektidentiteter och kommunkoder. Ingen telemetri, inga analysverktyg, inga uppdateringskontroller i pluginet. |
 | Vilka rättigheter behövs? | Inga särskilda. Pluginet körs i QGIS med den inloggade användarens rättigheter. Det installerar inget och ändrar inga systeminställningar. Det startar inga program, förutom att webbläsaren eller filhanteraren öppnas när användaren klickar på en länk (hemsidan, en sparad fil eller mapp). |
 | Körs kod som hämtats utifrån? | Nej. Koden använder inte `eval`, `exec`, `subprocess`, `pickle` eller liknande. |
 | Vilka beroenden finns? | Bara QGIS (med dess Python, Qt och GDAL). Se materiallistan (SBOM) som följer med varje release. |
 | Var lagras lösenord och nycklar? | I QGIS autentiseringsdatabas, aldrig av pluginet. Databaslösenord hanteras av QGIS egna anslutningar. |
-| Finns personuppgifter? | Inga i pluginet. Vid utcheckning från PostGIS lagras användarnamn och datornamn i planens metadata (fynd 2). Planbeskrivningens text kan i sig innehålla personuppgifter, men den stannar på användarens dator. |
+| Finns personuppgifter? | Inga i pluginet. Vid utcheckning och skrivskydd i PostGIS lagras användarnamn och datornamn i planens metadata (fynd 2). Planbeskrivningens text kan i sig innehålla personuppgifter, men den stannar på användarens dator. |
 | Hur kommer pluginet till användaren? | Som zip-fil från GitHub Releases eller via en pluginkälla som pekar på GitHub. Zip-filen byggs reproducerbart, och en kontrollsumma och en materiallista följer med varje release. |
 | Är koden granskad? | Av underhållaren med AI-stöd, och automatiskt med CodeQL. **Inte** av en oberoende part. Ingen certifiering finns. |
 | Vem svarar vid en sårbarhet? | Underhållaren, via GitHubs privata rapportering (se [SECURITY.md](../SECURITY.md)). Målet är ett första svar inom 14 dagar. Det är en enskild person på fritiden. |
@@ -50,10 +48,10 @@ låst med en kontrollsumma, de övriga delarna inte), och skickar inga filer vid
 | --- | --- |
 | Körning av kod från indata (`eval`, `exec`, `subprocess`, `pickle`) | Förekommer inte i pluginets kod |
 | Beroenden utanför QGIS och Pythons standardbibliotek | Inga i QGIS. Det fristående taggningsprogrammet kan valfritt köras med PySide6 (se [Beroenden](#beroenden)) |
-| Nätverksmål | Tre: Boverket, Lantmäteriet (verifiering/produktion) och en adress som användaren själv anger |
+| Nätverksmål | Boverket, Lantmäteriet (leverans, sökning och inloggning; verifiering och produktion) och adresser som användaren själv anger. Dessutom användarens egna databaser, via QGIS anslutningar |
 | Hemligheter | Sparas inte av pluginet, utan i QGIS autentiseringsdatabas |
 | Databasåtkomst | Via QGIS sparade anslutningar, med användarens egna databasrättigheter |
-| Öppna fynd | 4 informativa (fynd 2–5) och 2 nya informativa (fynd 7–8). Två låga fynd är åtgärdade: fynd 1 i 0.1.44 och fynd 6 i 0.1.75 |
+| Öppna fynd | 6 informativa (fynd 2–5, 7 och 8). Åtgärdade: fynd 9 (medel) i 0.1.86, fynd 1, 6, 10 och 11 (låga) och fynd 12 (information) |
 | Distribution | Osignerade zip-filer med kontrollsumma och materiallista, och en pluginkälla som pekar på GitHub (se [Leveranskedja](#leveranskedja-och-distribution)) |
 
 ## Vad pluginet är och vilka rättigheter det har
@@ -62,7 +60,7 @@ Pluginet är ett Python-plugin i QGIS (QGIS 4.0 eller senare). Det körs i QGIS 
 den inloggade användaren**. QGIS har ingen sandlåda för plugin, så detta gäller varje QGIS-plugin, oavsett hur det är
 skrivet. Pluginet gör inget vid installation utom att QGIS importerar modulen; ingen kod körs från installationsskript.
 
-Omfång: cirka 21 000 rader Python under `rita_detaljplan/` (utan tester), varav ungefär en femtedel är taggningen av
+Omfång: cirka 26 000 rader Python under `rita_detaljplan/` (utan tester), varav ungefär en sjättedel är taggningen av
 planbeskrivningen (`planbeskrivning/`) som också kan köras som ett fristående program utanför QGIS.
 
 ## Dataflöden
@@ -72,12 +70,15 @@ planbeskrivningen (`planbeskrivning/`) som också kan köras som ett fristående
 | Planbestämmelsekatalogen | Boverkets öppna API (`api.boverket.se`) | Cache i användarens QGIS-profil | Bara när användaren väljer *Uppdatera planbestämmelsekatalogen*. Via QGIS nätverksstack |
 | Planleverans (JSON) | Lokal plan | Lantmäteriets API (`api-ver.` eller `api.lantmateriet.se`), eller en adress användaren anger | Bara när användaren väljer *Leverera*. Via QGIS nätverksstack, https |
 | Planleverans (fil) | Lokal plan | En JSON-fil som användaren pekar ut | Skrivs av användaren själv |
-| Importerad leverans | JSON-fil som användaren väljer | Ny lokal plan | Läses som JSON, tolkas av `core/import_ngp.py` |
+| Importerad leverans | JSON-fil som användaren väljer | Ny plan, lokalt eller i en databas | Läses som JSON, tolkas av `core/import_ngp.py` |
+| Fråga om planerna finns i NGP | Planernas objektidentiteter och, för dem som inte hittas på id, kommunkoden | Lantmäteriets Sök-API (`api.` eller `api-ver.lantmateriet.se`) och tokentjänsten | Automatiskt när databashanteraren öppnas eller listan läses om, om en nyckel är inställd. Namn och beteckning skickas inte: matchningen görs på den egna datorn. Via QGIS nätverksstack, https (`core/ngp_client.py`, `core/ngp_match.py`) |
+| Kontroll av anslutningen | Nyckeln | Tokentjänsten och API:ets hälsoadress eller datamängder | Bara när användaren klickar *Kontrollera anslutningen* |
+| Databashanteraren | Planer i PostGIS, eller en fil användaren väljer | Databasen, eller GeoPackage- och JSON-filer i en mapp användaren väljer | Import, export, kopiering och borttagning (`core/transfer.py`, `json_transfer.py`). Före borttagning föreslås en säkerhetskopia |
 | Plandata | Lokal GeoPackage eller PostGIS-schema | QGIS lager | GDAL/SQLite respektive QGIS PostgreSQL-leverantör |
 | Taggning av planbeskrivningen | Word-fil, plankarta (`.qgz`) och GeoPackage som användaren väljer | Ny Word-fil som användaren sparar (originalet ändras inte) | Läses lokalt med Pythons `zipfile`, `xml.etree` och `sqlite3` (skrivskyddat). Inget nätverk. Se fynd 6 och 7 |
 | Arkivpaket | Filer som användaren väljer | En ny mapp med kopior, PREMIS-metadata och scheman | Skrivs lokalt av `core/archive.py`. Originalen rörs inte. Kontroll av ett paket (`verify_package`) räknar bara om kontrollsummor och läser inte utanför paketmappen |
 
-Nätverksanrop finns bara i `core/ngp_client.py` och `core/catalog_store.py`. Pythons `urllib` används enbart för att tolka
+Pluginets egna nätverksanrop finns bara i `core/ngp_client.py` och `core/catalog_store.py`. Pythons `urllib` används enbart för att tolka
 och kontrollera adresser (`urllib.parse`), inte för att hämta något. Pluginet skickar ingen telemetri, och det finns
 inga andra nätverksmål i koden.
 
@@ -91,11 +92,10 @@ inga andra nätverksmål i koden.
 - **Databaslösenord** hanteras av QGIS egna PostgreSQL-anslutningar. Pluginet frågar aldrig efter lösenord och väljer en
   befintlig anslutning ur QGIS lista.
 - **Projektfiler (.qgz)** får av pluginet anslutningens *namn*, schema, plan-id, ett utcheckningslås (slumpmässig
-  token) och, efter en leverans, mottagningens och planens id hos Lantmäteriet samt miljöns namn. Pluginet lägger inga
-  lösenord eller nycklar i projektet. Hur en PostgreSQL-lagerkälla lagrar inloggning i projektfilen styrs av QGIS, inte
-  av pluginet: använd en autentiseringskonfiguration. Leveransinställningarna (adresser, vald autentisering) ligger i
-  användarens profil, inte i projektet, så en delad projektfil kan inte styra om inloggningsuppgifterna till en annan
-  adress. Se fynd 5.
+  token) och, efter en leverans, mottagningens och planens id hos Lantmäteriet samt miljöns namn. Sedan 0.1.86
+  innehåller lagrens adresser **inget databaslösenord** (fynd 9). En hänvisning till QGIS krypterade inloggning
+  (`authcfg`) står kvar. Leveransinställningarna (adresser, vald autentisering) ligger i användarens profil, inte i
+  projektet, så en delad projektfil kan inte styra om inloggningsuppgifterna till en annan adress. Se fynd 5.
 - Adresser till API:et och tokentjänsten måste börja med `https://`. Bara `http://` mot `localhost` och `127.0.0.1`
   tillåts (för tester). Omdirigeringar följs inte vid leverans.
 - QGIS egna inställningar för proxy och certifikat gäller, så TLS-kontrollen är QGIS standard. Pluginet stänger aldrig av
@@ -109,14 +109,17 @@ Pluginet skriver:
 - en lokal arbetskopia (GeoPackage) vid utcheckning från PostGIS,
 - katalogcachen `planbestammelsekatalog.json` i QGIS-profilen (skrivs först till en `.tmp`-fil och byter sedan namn),
 - leveransfilen som användaren själv väljer att spara,
+- exporterade planer och säkerhetskopior från databashanteraren (en befintlig fil skrivs aldrig över), och tillfälliga
+  filer i operativsystemets temporärmapp under kopiering, import och export,
 - en taggad Word-fil, en CSV-översikt och en utbytesfil från taggningsprogrammet, på den plats användaren väljer
   (originalfilen skrivs inte över),
 - arkivpaket (en ny mapp med kopior och metadata) under en mapp användaren väljer,
 - inställningar via `QgsSettings` (det fristående taggningsprogrammet använder Qts `QSettings` under namnet *Planbeskrivning*).
 
-Pluginet raderar filer i två situationer: den lokala arbetskopian när en plan checkas in eller utcheckningen hävs
-(`core/checkout.py`), och en halvfärdig arkivpaketmapp som pluginet självt just skapade när bygget av paketet
-misslyckades (`core/archive.py`). Det raderar aldrig filer som användaren valt.
+Pluginet raderar bara filer det självt har skapat: den lokala arbetskopian när en plan checkas in eller utcheckningen
+hävs (`core/checkout.py`), en halvfärdig exportfil när en export misslyckas (`core/transfer.py`), tillfälliga filer, och
+en halvfärdig arkivpaketmapp när bygget av paketet misslyckades (`core/archive.py`). Det raderar aldrig filer som
+användaren valt.
 
 ## Databaser
 
@@ -126,20 +129,23 @@ egen modell, inte från indata.
 **PostGIS** nås med QGIS anslutningsobjekt (`executeSql`). SQL byggs som text, eftersom gränssnittet inte har bundna
 parametrar. Skydden är:
 
-- identifierare (schema, plan-id) valideras mot `^[a-z][a-z0-9_]{0,62}$` och citeras med dubbla citattecken
-  (`quote()`), och schemat får inte vara `public`, `information_schema` eller börja med `pg_`,
+- identifierare (schema, plan-id) som pluginet skapar valideras mot `^[a-z][a-z0-9_]{0,62}$`, och schemat får inte
+  vara `public`, `information_schema` eller börja med `pg_`. Namn som **läses** ur databasen valideras inte, utan
+  citeras i SQL (`quote()`) och görs ofarliga när de blir filnamn (`storage.file_name`, fynd 10),
 - textvärden skrivs som SQL-literaler med fördubblade enkla citattecken (`literal()`),
 - tal skrivs via `int()` och `float()`,
-- ett dollarcitat i incheckningsblocket väljs så att det inte förekommer i innehållet.
+- dollarcitatet i `DO`-blocken (utcheckning, skrivskydd, incheckning och borttagning) väljs så att det inte förekommer
+  i innehållet (`storage.do_block`).
 
 Det här är korrekt förutsatt att databasen har `standard_conforming_strings = on` (förvalt sedan PostgreSQL 9.1). Se fynd 3.
 
 Pluginet kör `DROP SCHEMA ... CASCADE` bara för att städa bort ett schema som just skapades i samma anrop och där
-skapandet misslyckades halvvägs. Det rör aldrig ett schema som fanns innan.
+skapandet misslyckades halvvägs. Det rör aldrig ett schema som fanns innan. Databashanterarens *Ta bort plan* tar bort
+de valda planernas rader i en transaktion, efter en bekräftelse, och inte om planen är utcheckad eller skrivskyddad.
 
 **Behörighet:** pluginet har ingen egen åtkomstkontroll. Vem som kan läsa och ändra planer avgörs helt av
-databasrollen i QGIS-anslutningen. Utcheckningens lås (se fynd 2) är en samarbetsmekanism för att undvika samtidig
-redigering, inte en säkerhetsfunktion.
+databasrollen i QGIS-anslutningen. Utcheckningens lås (se fynd 2) och skrivskyddet är samarbetsmekanismer för att
+undvika samtidig redigering och ändringar av misstag, inte säkerhetsfunktioner.
 
 ## Beroenden
 
@@ -173,16 +179,17 @@ Testerna kräver bara QGIS och Pythons `unittest`.
   beroenden, samt OpenSSF Scorecard. Dependabot håller de fastlåsta versionerna av dessa verktyg uppdaterade. Testsviten
   (`tests/`) kräver QGIS 4 och körs inte på GitHub utan lokalt före varje release.
 - Pluginkällan (`plugins.xml`) läses från `main` på GitHub. Den som kan skriva till repot kan alltså få kod installerad hos
-  alla som uppdaterar via pluginkällan. Skyddet är kontot på GitHub. Läget 2026-11-03 (kontrollerat via GitHubs API): en regel för `main` stoppar radering och tvångspush, GitHubs
+  alla som uppdaterar via pluginkällan. Skyddet är kontot på GitHub. Läget 2026-11-25 (kontrollerat via GitHubs API): en regel för `main` stoppar radering och tvångspush, GitHubs
   hemlighetsskanning och Dependabot-varningar är på, privat rapportering av sårbarheter är på och organisationen kräver
   tvåfaktorsinloggning. Regeln kräver varken pull request eller gröna kontroller, eftersom underhållaren pushar direkt till
-  `main`. Push-skyddet, som stoppar en push som innehåller en hemlighet, är påslaget (2026-11-03). Samma inställningar gäller
+  `main`. Push-skyddet, som stoppar en push som innehåller en hemlighet, är påslaget. Samma inställningar gäller
   organisationens övriga repon, bland annat integrationen för Origo, [rita-detaljplan-origomap](https://github.com/ritaplan/rita-detaljplan-origomap).
 - Pluginet är **inte** publicerat i QGIS officiella pluginarkiv och har därför inte genomgått dess granskning.
 
 ## Fynd
 
-Allvarlighetsgrad: *låg* = kan missbrukas men med liten effekt, *information* = bra att känna till, ingen åtgärd krävs.
+Allvarlighetsgrad: *medel* = kan ge någon annan tillgång de inte ska ha, *låg* = kan missbrukas men med liten effekt,
+*information* = bra att känna till, ingen åtgärd krävs.
 
 ### 1. Ofiltrerad text i dialogrutornas rika text (låg, åtgärdad i 0.1.44)
 
@@ -192,16 +199,18 @@ Text från Boverkets katalog (`bestammelse_dialog.py`), planens namn och API-adr
 
 *Effekt:* En manipulerad katalogpost (om Boverkets API eller anslutningen dit skulle vara komprometterad) eller ett
 planamn med HTML kan ändra hur texten i en dialogruta ser ut, till exempel dölja eller förvränga bekräftelsetexten vid
-leverans. Qts rika text kör inga skript och hämtar inga fjärrresurser, så ingen kod kan köras den vägen.
+leverans. Qts rika text kör inga skript. Den kan däremot läsa in bildfiler som texten pekar på; här stod tidigare att
+inga fjärrresurser hämtas, vilket inte stämmer för filsökvägar (se fynd 11).
 *Åtgärd:* texten kodas nu med `html.escape` (`gui/richtext.py`) innan den läggs in i dessa dialogrutor, och det finns
 tester för det. Qt:s `QLabel` tolkar som standard även text som ser ut som HTML (automatiskt textformat). Alla
 andra textfält har inte gåtts igenom ett och ett, så det kan finnas fler ställen med samma beteende och samma låga effekt.
 
-### 2. Låset avslöjar användarnamn och datornamn (information)
+### 2. Låset och skrivskyddet avslöjar användarnamn och datornamn (information)
 
 Vid utcheckning från PostGIS skrivs operativsystemets användarnamn och datorns namn (`getpass.getuser()`,
-`platform.node()`) i planens metadatatabell, så att andra kan se vem som har planen. Det syns för alla som kan läsa
-schemat. Räkna det som personuppgift i er bedömning.
+`platform.node()`) i planens metadatatabell, så att andra kan se vem som har planen. Detsamma gäller den som
+skrivskyddar en plan, tillsammans med det skäl som skrivits. Det syns för alla som kan läsa schemat. Räkna det som
+personuppgift i er bedömning.
 
 ### 3. SQL byggs som text (information)
 
@@ -210,10 +219,10 @@ enhetstester för `quote()` och `literal()`, men inget test med avsiktligt illas
 
 ### 4. Egen API-adress (information)
 
-I inställningarna kan användaren välja *Egen adress* i stället för Lantmäteriets miljöer. Nyckel och hemlighet från den
-valda autentiseringskonfigurationen skickas då till den tokentjänst som användaren själv har skrivit in. Det är avsiktligt
-(för test och andra miljöer) men innebär att en vilseledd användare kan skicka sina uppgifter till fel adress. Adressen
-måste vara `https://`.
+I inställningarna går adresserna till API:et och tokentjänsten att ändra, för Produktion och Verifiering var för sig.
+Nyckel och hemlighet från den valda autentiseringskonfigurationen skickas då till den tokentjänst som användaren själv
+har skrivit in. Det är avsiktligt (för test och andra miljöer) men innebär att en vilseledd användare kan skicka sina
+uppgifter till fel adress. Adressen måste vara `https://`, och knappen *Standardadresser* återställer Lantmäteriets.
 
 ### 5. Leveransmottagning lagras i projektfilen (information)
 
@@ -253,6 +262,38 @@ men finns i samma paket och körs bara om någon startar `python -m rita_detaljp
 då av användaren och hålls uppdaterat av den som installerade det. Ett eventuellt skydd mot sårbarheter i PySide6 ligger
 utanför det här dokumentet.
 
+### 9. Databaslösenordet sparades i projektfilen (medel, åtgärdad i 0.1.86)
+
+Lagrens adresser innehöll användarnamn och lösenord i klartext och sparades i projektfilen (`.qgz`). Alla som fick
+filen kunde läsa lösenordet till databasen.
+*Åtgärd:* adresserna innehåller inget lösenord sedan 0.1.86 (`storage.layer_address`).
+**Projektfiler som sparats med en äldre version har fortfarande lösenordet:** spara om dem och byt lösenord på
+databaskontot.
+
+### 10. Namn ur databasen kunde styra var en fil skrevs (låg, åtgärdad i 0.1.92)
+
+Vid export och säkerhetskopiering i databashanteraren blev planens id ur databasen filnamn utan kontroll, och vid
+utcheckning ersattes bara snedstreck framåt. Den som kunde skriva i databasen kunde lägga in ett id som
+`..\..\namn`, så att filen hamnade utanför den valda mappen hos den som sedan exporterade. Befintliga filer skrevs
+inte över, och filerna var planfiler (`.gpkg` eller `.json`). Bekräftat med prov.
+*Åtgärd:* `storage.file_name` ersätter tecken som byter mapp. Test: `tests/test_untrusted_text.py`.
+
+### 11. Text ur databasen och filer kunde tolkas som formaterad text (låg, åtgärdad i 0.1.92)
+
+Verktygstips, etiketter, meddelanderutor och meddelandefältet visade bland annat skälet till ett skrivskydd,
+användarnamn och planernas syfte utan att kontrollera innehållet. Text som såg ut som HTML tolkades, och en bild som
+den pekade på lästes in (bekräftat med en lokal fil). På Windows kan en sådan sökväg sannolikt även peka på en server i
+nätverket och då avslöja inloggningsuppgifter (inte provat). Kräver skrivrätt i databasen eller att användaren öppnar en
+fil från någon annan. Ingen kod kunde köras.
+*Åtgärd:* sådan text visas som ren text eller kodas (`gui/richtext.py`). Test: `tests/test_untrusted_text.py`. Alla
+ställen där text visas har gåtts igenom genom sökning, men det kan finnas fler med samma beteende och låga effekt.
+
+### 12. Fast dollarcitat i SQL-block (information, åtgärdad i 0.1.92)
+
+Tecknen `$dp$` i ett skäl till skrivskydd eller i ett plan-id avslutade SQL-blocket för tidigt, så att åtgärden
+misslyckades med ett fel. Vid granskningen hittades inget sätt att få databasen att köra något annat den vägen.
+*Åtgärd:* citatet väljs så att det inte förekommer i innehållet.
+
 ## Det som inte omfattas
 
 - Ingen dynamisk analys, ingen fuzzning och inget penetrationstest. (Fynd 6 hittades genom att läsa koden och bekräftades
@@ -271,16 +312,17 @@ utanför det här dokumentet.
    `core/storage.py`, `core/checkout.py`, `core/catalog_store.py` och `core/settings.py`. Det är där nätverk,
    inloggning och databas finns. Fortsätt med filläsarna (`planbeskrivning/pbkarna/`, `core/archive.py`), som tolkar filer
    från andra (fynd 6 och 7).
-2. **Installera en fast, granskad version** centralt (zip-filen), och använd inte den öppna pluginkällan i
+2. **Använder ni PostGIS och har projektfiler sparade före 0.1.86:** spara om dem och byt lösenord (fynd 9).
+3. **Installera en fast, granskad version** centralt (zip-filen), och använd inte den öppna pluginkällan i
    produktionsmiljön. Jämför filens innehåll med taggen i repot innan den godkänns.
-3. **Börja i Lantmäteriets verifieringsmiljö** (`api-ver`), inte i produktion, och kontrollera leveransen där först.
-4. **Begränsa databasrollen** som används i PostGIS-anslutningen till det schema och de tabeller som behövs, eftersom
+4. **Börja i Lantmäteriets verifieringsmiljö** (`api-ver`), inte i produktion, och kontrollera leveransen där först.
+5. **Begränsa databasrollen** som används i PostGIS-anslutningen till det schema och de tabeller som behövs, eftersom
    pluginet inte har någon egen behörighetskontroll.
-5. **Bestäm vem som äger underhållet.** En enskild frivillig underhållare är en verksamhetsrisk. Ett kommunalt samarbete
+6. **Bestäm vem som äger underhållet.** En enskild frivillig underhållare är en verksamhetsrisk. Ett kommunalt samarbete
    eller en organisation som tar över repot minskar den.
-6. **Skydda GitHub-kontot** med tvåfaktorsinloggning om ni använder repot som källa, och överväg en egen kopia (fork)
+7. **Skydda GitHub-kontot** med tvåfaktorsinloggning om ni använder repot som källa, och överväg en egen kopia (fork)
    som ni själva kontrollerar.
-7. **Läs in materiallistan** (`.sbom.cdx.json`) i ert eget verktyg för sårbarhetsbevakning, så att QGIS-versionen som
+8. **Läs in materiallistan** (`.sbom.cdx.json`) i ert eget verktyg för sårbarhetsbevakning, så att QGIS-versionen som
    pluginet körs i följs upp tillsammans med övriga program.
 
 ## Så kan du verifiera uppgifterna

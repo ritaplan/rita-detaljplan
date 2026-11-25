@@ -29,6 +29,7 @@ from .gui.layout_legend import LayoutLegendTool
 from .gui.mosaic_dialog import MosaicDialog
 from .gui.plan_info_dialog import PlanInfoDialog
 from .gui.plan_toolbar import PlanToolBar
+from .gui.richtext import plain
 from .gui.database_manager_dialog import DatabaseManagerDialog
 from .gui.settings_dialog import SettingsDialog
 from .gui.statusbar_guard import StatusBarHeightGuard
@@ -255,7 +256,7 @@ class DetaljplanPlugin:
         except archive.ArchiveError as exc:
             self._warn(str(exc))
             return
-        box = QMessageBox(self.iface.mainWindow())
+        box = plain(QMessageBox(self.iface.mainWindow()))
         box.setWindowTitle("Kontrollera arkivpaket")
         box.setIcon(QMessageBox.Icon.Information if report.clean else QMessageBox.Icon.Warning)
         box.setText("Arkivpaketet är oförändrat." if report.clean else "Arkivpaketet skiljer sig från hur det skapades.")

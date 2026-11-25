@@ -9,7 +9,7 @@ from qgis.PyQt.QtWidgets import (QDialog, QDialogButtonBox, QHBoxLayout, QLabel,
                                  QPushButton, QVBoxLayout)
 
 from ..core.ngp_client import Delivery, NgpConfig, NgpError
-from .richtext import esc
+from .richtext import esc, plain
 
 MARKS = {"FAILURE": "✘", "ERROR": "✘", "WARNING": "▲", "SKIPPED": "•", "OK": "✔"}
 COLORS = {"FAILURE": QColor(179, 38, 30), "ERROR": QColor(179, 38, 30), "WARNING": QColor(176, 110, 0),
@@ -50,13 +50,13 @@ class DeliveryDialog(QDialog):
         self.setMinimumSize(560, 420)
         self.delivery = delivery
         self._refresh = refresh
-        self.status = QLabel()
+        self.status = plain(QLabel())
         self.status.setWordWrap(True)
         self.status.setStyleSheet("font-weight: bold;")
-        self.info = QLabel(f"Miljö: {environment}. Mottagning: {delivery.mottagningsid}")
+        self.info = plain(QLabel(f"Miljö: {environment}. Mottagning: {delivery.mottagningsid}"))
         self.info.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         self.info.setEnabled(False)
-        self.summary = QLabel()
+        self.summary = plain(QLabel())
         self.summary.setWordWrap(True)
         self.list = QListWidget()
         self.list.setWordWrap(True)

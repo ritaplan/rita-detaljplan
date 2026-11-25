@@ -42,21 +42,27 @@ gärna fel under [Issues](https://github.com/ritaplan/rita-detaljplan/issues).
   eller yta med höjdvärde, så att till exempel ett garage under en gård kan ligga över samma mark.
 - **Symbologi enligt Boverkets föreskrifter** med färger, mönster, gränser och etiketter, dimensionerade för vald
   referensskala.
-- **Kontrollerar planen** mot Lantmäteriets regler (fel, varningar och sådant som återstår) och visar var i kartan.
+- **Importerar:** en leverans (JSON) i Lantmäteriets format blir en ny plan, och geometrier från DWG/DXF, Shape,
+  GeoPackage och andra källor kopieras in som hjälplager.
+- **Kontrollerar planen** mot Lantmäteriets regler (fel, varningar och sådant som återstår) och visar var i kartan. En
+  **topologikontroll** föreslår rättningar av brytpunkter, glapp och tomma ytor.
 - **Levererar till NGP** via Uppdatering-API:et, eller sparar leveransen som JSON-fil.
 - **Taggar planbeskrivningen** (Word) enligt Boverkets föreskrifter BFS 2020:8 och Lantmäteriets Planbeskrivning 2.0:
   tema, grupp och undergrupp för varje avsnitt, motiv kopplade till planens bestämmelser, kontroll av det obligatoriska
   innehållet och en leverans- och granskningskopia av dokumentet. Knappen *Tagga planbeskrivning* öppnar programmet, som
   också finns som [webbsida utan QGIS](https://ritaplan.xyz/tagga.html). Originalet ändras aldrig.
 - **Skapar detaljplanens teckenförklaring** i QGIS layoutläge (rubriker, färgrutor, mönster, genomförandetid), med
-  inställningar för teckensnitt, storlekar och avstånd, och en **exempellayout för plankartan** (karta, norrpil,
-  skalstock och titelruta på A2) att utgå från.
+  inställningar för teckensnitt, storlekar och avstånd, och **exempellayouter för plankartan** (karta, norrpil,
+  skalstock och titelruta, A1–A4) att utgå från. **Exportera PDF** sparar plankartan som vektor-PDF och kontrollerar filen.
 - **Förbereder för arkivering:** *Skapa arkivpaket* samlar planen (GeoPackage och leveransfil), plankartan och
   planbeskrivningen i en mapp med bevarandemetadata enligt Boverkets specifikation för långtidsbevarande (PREMIS), med
   kontrollsummor, och *Kontrollera arkivpaket* visar om något ändrats sedan dess. Plankarta och planbeskrivning lägger
   du med som färdiga PDF/A-filer; pluginet gör inte PDF/A.
 - **Lagrar planen** i en lokal GeoPackage eller i ett PostGIS-schema, med **utcheckning och incheckning** (lås och
   lokal kopia) så att ritandet går snabbt även mot en databas.
+- **Databashanteraren** visar planerna i databasen: öppna, importera, exportera, kopiera, ta bort och **skrivskydda**
+  planer, och se med en molnikon om de finns i NGP.
+- **Planmosaik:** alla planer i ett schema som en gemensam karta.
 
 ## Installera
 

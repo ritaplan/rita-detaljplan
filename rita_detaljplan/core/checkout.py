@@ -34,7 +34,7 @@ from qgis.PyQt.QtCore import QDate, QDateTime
 from . import geopackage, model, storage
 from .project import DB_SCOPE, find_layer
 from .protection import PROTECT_KEY, Protection
-from .storage import PostgisError, PostgisStorage, literal, quote
+from .storage import PostgisError, PostgisStorage, do_block, literal, quote
 
 SCOPE = DB_SCOPE
 LOCK_KEY = "checkout"
@@ -139,12 +139,12 @@ def acquire_lock(plan: PostgisStorage) -> Lock:
     lock = new_lock()
     meta = _meta_table(plan.schema)
     plan_literal = literal(plan.plan_id)
-    plan._sql(f"DO $dp$ BEGIN LOCK TABLE {meta} IN EXCLUSIVE MODE; "
-              f"IF NOT EXISTS (SELECT 1 FROM {meta} WHERE \"plan\" = {plan_literal} "
-              f"AND \"key\" IN ({literal(LOCK_KEY)}, {literal(PROTECT_KEY)})) THEN "
-              f"INSERT INTO {meta} (\"plan\", \"key\", \"value\") VALUES "
-              f"({plan_literal}, {literal(LOCK_KEY)}, {literal(lock.to_json())}); "
-              f"END IF; END $dp$")
+    plan._sql(do_block(f"LOCK TABLE {meta} IN EXCLUSIVE MODE; "
+                       f"IF NOT EXISTS (SELECT 1 FROM {meta} WHERE \"plan\" = {plan_literal} "
+                       f"AND \"key\" IN ({literal(LOCK_KEY)}, {literal(PROTECT_KEY)})) THEN "
+                       f"INSERT INTO {meta} (\"plan\", \"key\", \"value\") VALUES "
+                       f"({plan_literal}, {literal(LOCK_KEY)}, {literal(lock.to_json())}); "
+                       f"END IF;"))
     current = read_lock(plan)
     if current is None or current.token != lock.token:
         if current is None:  # inget lås fick plats: planen är skrivskyddad
@@ -187,13 +187,13 @@ def protect(plan: PostgisStorage, reason: str = "") -> Protection:
     meta = _meta_table(plan.schema)
     plan_literal = literal(plan.plan_id)
     try:
-        plan._sql(f"DO $dp$ BEGIN LOCK TABLE {meta} IN EXCLUSIVE MODE; "
-                  f"IF EXISTS (SELECT 1 FROM {meta} WHERE \"plan\" = {plan_literal} AND \"key\" = {literal(LOCK_KEY)}) THEN "
-                  f"RAISE EXCEPTION 'Planen är utcheckad och kan inte skrivskyddas. Checka in den eller bryt låset först.'; "
-                  f"END IF; "
-                  f"IF NOT EXISTS (SELECT 1 FROM {meta} WHERE \"plan\" = {plan_literal} AND \"key\" = {literal(PROTECT_KEY)}) "
-                  f"THEN INSERT INTO {meta} (\"plan\", \"key\", \"value\") VALUES "
-                  f"({plan_literal}, {literal(PROTECT_KEY)}, {literal(protection.to_json())}); END IF; END $dp$")
+        plan._sql(do_block(f"LOCK TABLE {meta} IN EXCLUSIVE MODE; "
+                           f"IF EXISTS (SELECT 1 FROM {meta} WHERE \"plan\" = {plan_literal} AND \"key\" = {literal(LOCK_KEY)}) THEN "
+                           f"RAISE EXCEPTION 'Planen är utcheckad och kan inte skrivskyddas. Checka in den eller bryt låset först.'; "
+                           f"END IF; "
+                           f"IF NOT EXISTS (SELECT 1 FROM {meta} WHERE \"plan\" = {plan_literal} AND \"key\" = {literal(PROTECT_KEY)}) "
+                           f"THEN INSERT INTO {meta} (\"plan\", \"key\", \"value\") VALUES "
+                           f"({plan_literal}, {literal(PROTECT_KEY)}, {literal(protection.to_json())}); END IF;"))
     except PostgisError as exc:
         raise CheckoutError(str(exc)) from exc
     return read_protection(plan) or protection
@@ -264,8 +264,8 @@ def checkouts_dir() -> Path:
 
 
 def copy_path(plan: PostgisStorage, lock: Lock, directory: Optional[Path] = None) -> Path:
-    return (directory or checkouts_dir()) / \
-        f"{plan.connection_name}_{plan.schema}_{plan.plan_id}_{lock.token[:8]}.gpkg".replace("/", "_")
+    name = storage.file_name(f"{plan.connection_name}_{plan.schema}_{plan.plan_id}_{lock.token[:8]}")
+    return (directory or checkouts_dir()) / f"{name}.gpkg"
 
 
 # -- lager: peka om mellan databasen och den lokala kopian ------------------------------------------------------
@@ -521,12 +521,7 @@ def checkin_sql(schema: str, plan_id: str, epsg: int, token: str,
                 values.append("(" + ", ".join(cells) + ")")
             parts.append(f"INSERT INTO {table} ({column_list}) VALUES {', '.join(values)};")
     parts.append(f"DELETE FROM {meta} WHERE \"plan\" = {plan_literal} AND \"key\" = {literal(LOCK_KEY)};")
-    body = " ".join(parts)
-    tag, n = "dp", 0
-    while f"${tag}$" in body:  # dollarcitatet får inte förekomma i innehållet
-        n += 1
-        tag = f"dp{n}"
-    return f"DO ${tag}$ BEGIN {body} END ${tag}$"
+    return do_block(" ".join(parts))
 
 
 def check_in(project: QgsProject) -> tuple[Path, bool]:

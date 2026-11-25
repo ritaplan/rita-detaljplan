@@ -22,7 +22,7 @@ from ..controller import PlanController
 from ..core.ngp_client import NgpConfig
 from .delivery_dialog import confirmation_text
 from .plan_switcher import build_plan_switcher
-from .richtext import esc
+from .richtext import esc, plain
 
 ICONS = Path(__file__).resolve().parent.parent / "icons"
 UPLOAD, FILE, ARCHIVE = "upload", "file", "archive"
@@ -157,7 +157,7 @@ class NgpDialog(QDialog):
         self.upload_info = QLabel()
         self.upload_info.setWordWrap(True)
         self.upload_info.setTextFormat(Qt.TextFormat.RichText)
-        self.problems = QLabel()
+        self.problems = plain(QLabel())
         self.problems.setWordWrap(True)
         self.problems.setStyleSheet("color: #b3261e;")
         self.btn_settings = QPushButton("Inställningar…")

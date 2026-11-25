@@ -33,6 +33,7 @@ from .bestammelse_dialog import BestammelseDialog
 from .height_dialog import HeightDialog
 from .quality_panel import QualityDialog
 from .regulates_dialog import RegulatesPlanDialog
+from .richtext import as_text, plain
 from .variable_form import VariableForm
 
 _ERROR_STYLE = "color: #b00020;"
@@ -163,10 +164,10 @@ class AssignDialog(QDialog):
         for view in (self.entry_combo.view(), completer.popup()):
             view.setMinimumWidth(POPUP_WIDTH)
         self.variables = VariableForm()
-        self.filter_note = QLabel()
+        self.filter_note = plain(QLabel())
         self.filter_note.setWordWrap(True)
         self.filter_note.setEnabled(False)
-        self.info = QLabel()
+        self.info = plain(QLabel())
         self.info.setWordWrap(True)
         self.info.setEnabled(False)
         self.btn_add = QPushButton("Lägg till")
@@ -193,10 +194,10 @@ class AssignDialog(QDialog):
         add_layout.addWidget(self.chk_all)
         add_layout.addLayout(add_buttons)
 
-        self.problems = QLabel()
+        self.problems = plain(QLabel())
         self.problems.setWordWrap(True)
         self.problems.setStyleSheet(_ERROR_STYLE)
-        self.notice = QLabel()
+        self.notice = plain(QLabel())
         self.notice.setWordWrap(True)
         self.notice.setEnabled(False)
         self.buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
@@ -421,7 +422,7 @@ class AssignDialog(QDialog):
         for row in self.controller.rows_of(candidate.table, candidate.fid):
             item = QListWidgetItem(rows.describe(row))
             item.setData(Qt.ItemDataRole.UserRole, row["_fid"])
-            item.setToolTip(row.get("bestammelsekod") or "")
+            item.setToolTip(as_text(row.get("bestammelsekod") or ""))
             self.rows_list.addItem(item)
         if candidate is not None:  # rubrikerna i ytlistan visar antal och beteckning
             index = self.area_combo.currentIndex()

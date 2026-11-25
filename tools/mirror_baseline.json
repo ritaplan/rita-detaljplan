@@ -12,16 +12,16 @@
   "lines": 4
  },
  "core/ngp_client.py": {
-  "fingerprint": "2a0faf95434b1c25",
-  "lines": 215
+  "fingerprint": "6a1e12d6949e80f5",
+  "lines": 223
  },
  "gui/about_dialog.py": {
   "fingerprint": "e3b0c44298fc1c14",
   "lines": 0
  },
  "gui/delivery_dialog.py": {
-  "fingerprint": "bd04f7fdb90f4f97",
-  "lines": 2
+  "fingerprint": "6e6f9f7aa0d9c3d5",
+  "lines": 3
  },
  "gui/import_dialog.py": {
   "fingerprint": "2563f543ba93f045",
@@ -36,7 +36,7 @@
   "lines": 0
  },
  "gui/settings_dialog.py": {
-  "fingerprint": "086bf6335c809e23",
+  "fingerprint": "a65846773728e1e6",
   "lines": 153
  }
 }

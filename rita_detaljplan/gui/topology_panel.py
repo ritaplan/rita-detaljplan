@@ -23,6 +23,7 @@ from ..core import topology, validation
 from ..core.topology import Change
 from ..core.validation import EMPTY_AREA_KIND, ERROR, WARNING, Issue
 from .plan_switcher import build_plan_switcher
+from .richtext import as_text, plain
 from .validation_dialog import COLORS, MARKS
 
 CHANGE_KIND, FINDING_KIND, HEADER_KIND = "change", "finding", "header"
@@ -49,6 +50,7 @@ class _Notice(QLabel):
 
     def __init__(self):
         super().__init__()
+        plain(self)
         self.setWordWrap(True)
         self.setVisible(False)
 
@@ -258,7 +260,7 @@ class TopologyPanel(QWidget):
         item.setCheckState(Qt.CheckState.Checked if tier == topology.TIER_AUTO else Qt.CheckState.Unchecked)
         item.setForeground(QBrush(COLORS[WARNING]))
         item.setData(Qt.ItemDataRole.UserRole, (CHANGE_KIND, index))
-        item.setToolTip("\n".join(self._detail(c) for c in group))
+        item.setToolTip(as_text("\n".join(self._detail(c) for c in group)))
         self.list.addItem(item)
 
     @staticmethod

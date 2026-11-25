@@ -7,6 +7,7 @@ from qgis.PyQt.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox
                                  QWidget)
 
 from ..core import codelists, mosaic, storage
+from .richtext import as_text, plain
 
 
 class MosaicDialog(QDialog):
@@ -31,7 +32,7 @@ class MosaicDialog(QDialog):
         for name in sorted(self._connections):
             self.connection.addItem(name, name)
         self.schema = QComboBox()
-        self.error = QLabel()
+        self.error = plain(QLabel())
         self.error.setWordWrap(True)
         self.error.setStyleSheet("color: #b3261e;")
         self.status_box = QWidget()
@@ -104,7 +105,7 @@ class MosaicDialog(QDialog):
             except storage.PostgisError as exc:
                 self.error.setText(f"Planerna i schemat {schema} kan inte visas som mosaik: det saknar planernas tabeller "
                                    "eller är skapat med en äldre version av pluginet.")
-                self.error.setToolTip(str(exc))
+                self.error.setToolTip(as_text(exc))
         order = {status: i for i, status in enumerate(codelists.PLANSTATUS)}
         for status in sorted(counts, key=lambda s: (order.get(s, len(order)), s)):
             check = QCheckBox(f"{mosaic.status_label(status)} ({counts[status]})")

@@ -10,6 +10,7 @@ from qgis.PyQt.QtWidgets import QDialog, QDialogButtonBox, QFormLayout, QLabel, 
 from ..core import storage
 from ..core.plan_overview import PlanRow
 from .database_target import DatabaseTarget
+from .richtext import plain
 
 ICONS = Path(__file__).resolve().parent.parent / "icons"
 
@@ -36,12 +37,12 @@ class CopyPlanDialog(QDialog):
         self.plan_id = QLineEdit()
         self.plan_id.setToolTip("Den nya planens identifierare inom schemat (måste vara unik där). Gemener a–z, siffror och "
                                 "understreck.")
-        self.info = QLabel()
+        self.info = plain(QLabel())
         self.info.setWordWrap(True)
 
         form = QFormLayout()
         names = ", ".join(row.beteckning or row.plan_id for row in rows[:6]) + (" …" if len(rows) > 6 else "")
-        form.addRow("Kopierar", QLabel(names))
+        form.addRow("Kopierar", plain(QLabel(names)))
         self.target.add_rows(form)
         if len(rows) == 1:
             form.addRow("Nytt plan-id", self.plan_id)

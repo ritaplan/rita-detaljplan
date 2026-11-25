@@ -24,6 +24,7 @@ from ..core import ngp_match
 from ..core.plan_overview import PlanRow
 from .copy_plan_dialog import CopyPlanDialog
 from .import_plan_dialog import JSON, ImportPlanDialog
+from .richtext import as_text, plain
 
 ICONS = Path(__file__).resolve().parent.parent / "icons"
 ALL = ""  # filtervärde för "alla"
@@ -96,6 +97,7 @@ class Banner(QLabel):
     def __init__(self, colour: str):
         super().__init__()
         shade = QColor(colour)
+        plain(self)
         self.setWordWrap(True)
         self.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         self.setStyleSheet(f"border-left: 4px solid {colour}; padding: 6px 10px; "
@@ -266,8 +268,8 @@ class DatabaseManagerDialog(QDialog):
 
         self.error = Banner("#b3261e")  # vad som gick fel, eller hoppades över
         self.notice = Banner("#1b7f3b")  # vad som just gjordes (import, export, kopiering …)
-        self.count = QLabel()
-        self.hint = QLabel()
+        self.count = plain(QLabel())
+        self.hint = plain(QLabel())
         self.hint.setWordWrap(True)
 
         # öppna: knapparna längst ned, med utcheckning som det vanliga valet
@@ -448,7 +450,7 @@ class DatabaseManagerDialog(QDialog):
                 if field == "genomforandetid":
                     item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
                 if field == "syfte" and text:
-                    item.setToolTip(text)
+                    item.setToolTip(as_text(text))
                 if field == "utcheckad" and row.locked:
                     item.setIcon(padlock)
                 if field == "skrivskydd" and row.protected:
@@ -459,9 +461,9 @@ class DatabaseManagerDialog(QDialog):
             items[0].setData(row, ROW_ROLE)
             self._set_ngp_item(items[NGP_COLUMN], row)
             if row.lock is not None:
-                items[COLUMN_FIELDS.index("utcheckad")].setToolTip(f"Utcheckad av {row.lock.describe()}")
+                items[COLUMN_FIELDS.index("utcheckad")].setToolTip(as_text(f"Utcheckad av {row.lock.describe()}"))
             if row.protection is not None:
-                items[COLUMN_FIELDS.index("skrivskydd")].setToolTip(f"Skrivskyddad av {row.protection.describe()}")
+                items[COLUMN_FIELDS.index("skrivskydd")].setToolTip(as_text(f"Skrivskyddad av {row.protection.describe()}"))
             self.model.appendRow(items)
         self._fill_filters()
         self.table.setSortingEnabled(True)
@@ -488,7 +490,7 @@ class DatabaseManagerDialog(QDialog):
             return
         kind, tip = state
         item.setIcon(self._clouds[kind])
-        item.setToolTip(tip)
+        item.setToolTip(as_text(tip))
         item.setData(NGP_ORDER[kind], SORT_ROLE)
 
     def _show_ngp(self) -> None:
@@ -736,6 +738,7 @@ class DatabaseManagerDialog(QDialog):
         box = QMessageBox(QMessageBox.Icon.Warning, "Ta bort plan",
                           f"Ta bort {'planen' if len(rows) == 1 else f'{len(rows)} planer'} ur databasen?\n\n{names}{more}\n\n"
                           "Det går inte att ångra.", parent=self)
+        plain(box)
         backup = QCheckBox("Spara en säkerhetskopia (GeoPackage) först")
         backup.setChecked(True)
         box.setCheckBox(backup)
@@ -783,9 +786,10 @@ class DatabaseManagerDialog(QDialog):
         """Frågar efter ett skäl till skyddet (valfritt). None om man ångrar sig."""
         names = ", ".join(row.beteckning or row.plan_id for row in rows[:6]) + (f" och {len(rows) - 6} till" if len(rows) > 6 else "")
         reason, accepted = QInputDialog.getText(
-            self, "Skrivskydda", f"Skrivskydda {'planen' if len(rows) == 1 else f'{len(rows)} planer'} ({names})?\n\n"
-            "Planerna kan sedan öppnas, exporteras och kopieras, men inte checkas ut, ändras eller tas bort förrän "
-            "skyddet bryts.\n\nSkäl (valfritt, visas för den som försöker redigera planen):")
+            self, "Skrivskydda", as_text(
+                f"Skrivskydda {'planen' if len(rows) == 1 else f'{len(rows)} planer'} ({names})?\n\n"
+                "Planerna kan sedan öppnas, exporteras och kopieras, men inte checkas ut, ändras eller tas bort förrän "
+                "skyddet bryts.\n\nSkäl (valfritt, visas för den som försöker redigera planen):"))
         return reason.strip() if accepted else None
 
     def _protect_plans(self) -> None:
@@ -816,8 +820,9 @@ class DatabaseManagerDialog(QDialog):
         who = "\n".join(f"  {row.beteckning or row.plan_id}: {row.protection.describe()}" for row in rows[:12])
         more = f"\n  … och {len(rows) - 12} till" if len(rows) > 12 else ""
         answer = QMessageBox.question(
-            self, "Bryt skrivskydd", f"Bryta skrivskyddet på:\n\n{who}{more}\n\nPlanerna kan då checkas ut, ändras och tas "
-            "bort igen. Gör det bara om planerna verkligen ska ändras.",
+            self, "Bryt skrivskydd", as_text(
+                f"Bryta skrivskyddet på:\n\n{who}{more}\n\nPlanerna kan då checkas ut, ändras och tas bort igen. Gör det "
+                "bara om planerna verkligen ska ändras."),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
         return answer == QMessageBox.StandardButton.Yes
 
@@ -841,8 +846,9 @@ class DatabaseManagerDialog(QDialog):
     def _confirm_break_locks(self, rows: list[PlanRow]) -> bool:
         who = "\n".join(f"  {row.beteckning or row.plan_id}: {row.lock.describe()}" for row in rows)
         answer = QMessageBox.question(
-            self, "Bryt lås", f"Bryta utcheckningen av:\n\n{who}\n\nDen som har planen utcheckad kan då inte längre checka "
-            "in sina ändringar. Gör det bara om utcheckningen är övergiven.",
+            self, "Bryt lås", as_text(
+                f"Bryta utcheckningen av:\n\n{who}\n\nDen som har planen utcheckad kan då inte längre checka in sina "
+                "ändringar. Gör det bara om utcheckningen är övergiven."),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
         return answer == QMessageBox.StandardButton.Yes
 

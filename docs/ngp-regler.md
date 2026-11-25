@@ -1,12 +1,14 @@
 # Regler från Lantmäteriets vägledning (underlag för validering och export)
 
 Källa: *Vägledning till Nationell informationsspecifikation Detaljplan* och specifikationen v4.1.
-Gäller steg 3 (validering) och steg 4 (export). "Stoppar" = leveransen stoppas av NGP, "Varnar" = varning.
+Reglerna följs av kontrollen och exporten. "Stoppar" = leveransen stoppas av NGP, "Varnar" = varning.
 
 ## Geometri
 - **Inga multigeometrier i leveransen** (DP-0004, DP-0018, stoppar). `plangeometri` och `bestammelsegeometri`
   är listor: exportera varje del av ett multipart-objekt som en egen post. GeoPackage-lagren är Multi* och det är
-  exportens uppgift att dela upp dem.
+  exportens uppgift att dela upp dem. Lantmäteriets allmänna geometrischema (`geometri-2.0`, gemensamt för flera
+  datamängder) tillåter `multiyta` och andra flerdelade typer, så en fil kan klara schemakontrollen men ändå stoppas av
+  reglerna för detaljplan.
 - Bestämmelsegeometrier ska ligga innanför och tillsammans täcka hela planområdet, med 10 cm tolerans åt båda håll
   (DP-0002, DP-0003, stoppar). Undantag: allmän plats med enskilt huvudmannaskap.
 - Gränslinjer får inte korsa sig själva (DP-Krav-0018, stoppar).

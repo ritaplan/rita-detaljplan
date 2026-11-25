@@ -150,10 +150,11 @@ def export_plan(plan: PostgisStorage, path: Path) -> Path:
 
 def unique_export_paths(folder: Path, plans: list[PostgisStorage], suffix: str = ".gpkg") -> list[tuple[PostgisStorage, Path]]:
     """Filnamn i ``folder`` för planerna: planens id och ``suffix``. Heter två planer i olika scheman lika får de schemat
-    som prefix."""
+    som prefix. Namnen kommer ur databasen och görs ofarliga (``storage.file_name``), så att filen alltid hamnar i
+    ``folder``."""
     plan_ids = [plan.plan_id for plan in plans]
-    return [(plan, Path(folder) / ((plan.plan_id if plan_ids.count(plan.plan_id) == 1
-                                    else f"{plan.schema}_{plan.plan_id}") + suffix)) for plan in plans]
+    return [(plan, Path(folder) / (storage.file_name(plan.plan_id if plan_ids.count(plan.plan_id) == 1
+                                                     else f"{plan.schema}_{plan.plan_id}") + suffix)) for plan in plans]
 
 
 def copy_plan(source: PostgisStorage, connection_name: str, schema: str, plan_id: str, connection=None) -> Imported:
@@ -179,7 +180,7 @@ def delete_sql(schema: str, plan_id: str) -> str:
              f"RAISE EXCEPTION '{PROTECTED_MESSAGE}'; END IF;"]
     parts += [f'DELETE FROM {quote(schema)}.{quote(layer_def.name)} WHERE "plan" = {plan};' for layer_def in model.LAYERS]
     parts.append(f'DELETE FROM {meta} WHERE "plan" = {plan};')
-    return "DO $dp$ BEGIN " + " ".join(parts) + " END $dp$"
+    return storage.do_block(" ".join(parts))
 
 
 def delete_plan(plan: PostgisStorage) -> None:

@@ -482,7 +482,8 @@ class LabelTests(RenderCase):
             settings = labeling.settings()
             props = settings.dataDefinedProperties()
             self.assertTrue(props.isActive(rotation), table)
-            self.assertEqual(props.property(rotation).field(), "label_rot")
+            # en yta med lutningspil får en egen vinkel (se SlopeArrowTests), alla andra den lagrade
+            self.assertIn('ELSE "label_rot" END', props.property(rotation).expressionString(), table)
         for table in ("egenskap_linje", "egenskap_punkt"):
             labeling = self.layers[table].labeling()
             settings = labeling.settings()
@@ -530,12 +531,16 @@ class LabelTests(RenderCase):
 
     def test_the_property_label_is_wrapped_to_the_area_or_to_the_text_box_the_user_made(self):
         from qgis.core import QgsPalLayerSettings
+        wrap = QgsPalLayerSettings.Property.AutoWrapLength
         prop = self.settings("egenskap_yta")
-        expression = prop.dataDefinedProperties().property(QgsPalLayerSettings.Property.AutoWrapLength).expressionString()
+        props = prop.dataDefinedProperties()  # mellanleden i variabler: temporära PyQGIS-objekt kraschar
+        expression = props.property(wrap).expressionString()
         self.assertIn('"label_w"', expression, "en omformad textruta styr bredden")
         self.assertIn("bounds_width($geometry)", expression, "annars ytans bredd")
         self.assertTrue(prop.useMaxLineLengthForAutoWrap)
-        use = self.settings("anvandning_yta").dataDefinedProperties().property(QgsPalLayerSettings.Property.AutoWrapLength)
+        use_settings = self.settings("anvandning_yta")
+        use_props = use_settings.dataDefinedProperties()
+        use = use_props.property(wrap)
         self.assertTrue(use.isActive(), "användningens text radbryts om användaren omformat textrutan")
         self.assertIn('"label_w"', use.expressionString())
         self.assertNotIn("bounds_width", use.expressionString(), "men aldrig efter ytans bredd")

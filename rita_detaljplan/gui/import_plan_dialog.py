@@ -17,6 +17,7 @@ from .. import json_transfer
 from ..core import geopackage, storage, transfer
 from .database_target import DatabaseTarget
 from .kommun_combo import KommunCombo
+from .richtext import plain
 
 ICONS = Path(__file__).resolve().parent.parent / "icons"
 GEOPACKAGE, JSON = "geopackage", "json"  # vilken sorts fil som valts
@@ -64,7 +65,7 @@ class ImportPlanDialog(QDialog):
         delivery_form.addRow("Kommun", self.kommun)
         delivery_form.addRow("Koordinatsystem", self.crs)
         self.delivery_box.setVisible(False)
-        self.info = QLabel()
+        self.info = plain(QLabel())
         self.info.setWordWrap(True)
 
         form = QFormLayout()

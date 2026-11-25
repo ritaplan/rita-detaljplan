@@ -26,6 +26,13 @@ def label(text: str = "", name: str = "", wrap: bool = False, rich: bool = False
     return widget
 
 
+def tip_text(text: str) -> str:
+    """Verktygstips tolkas som formaterad text om det ser ut så. Text ur dokumentet och plankartan visas bokstavligt."""
+    if "<" not in text and "&" not in text:
+        return text
+    return f'<qt><span style="white-space: pre-wrap;">{html.escape(text, quote=False)}</span></qt>'
+
+
 def button(text: str, kind: str = "", tip: str = "") -> QPushButton:
     widget = QPushButton(text)
     if kind:
@@ -365,6 +372,7 @@ class Toast(QLabel):
     def __init__(self, parent: QWidget):
         super().__init__(parent)
         self.setObjectName("toast")
+        self.setTextFormat(Qt.TextFormat.PlainText)
         self.setWordWrap(True)
         self.setMaximumWidth(560)
         self.hide()

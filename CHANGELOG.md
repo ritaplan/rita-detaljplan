@@ -2,10 +2,29 @@
 
 Formatet följer [Keep a Changelog](https://keepachangelog.com/sv/1.1.0/), versionsnumren [Semantic Versioning](https://semver.org/lang/sv/).
 
+## [Kommande]
+
+### Säkerhet
+
+- **Namn ur databasen kan inte längre styra var filer hamnar.** Ett plan-id eller schemanamn med till exempel `..\`
+  kunde få en export, en säkerhetskopia eller en utcheckad kopia att skrivas utanför den valda mappen. Kräver att någon
+  redan kan skriva i databasen. Fil för fil: `core/storage.py` (`file_name`), `core/transfer.py`, `core/checkout.py`.
+- **Text ur databasen och filer visas som den är.** Skälet till ett skrivskydd, användarnamn, syften och varningar kunde
+  tolkas som formaterad text, så att en bildfil som texten pekade på lästes in. Fil för fil: `gui/richtext.py`
+  (`plain`, `as_text`), `gui/messages.py` och dialogerna, `planbeskrivning/pbapp/`.
+- **Tecknen `$dp$` i ett skäl till skrivskydd** får inte längre skrivskyddet att misslyckas (`storage.do_block`).
+
+### Dokumentation
+
+- Säkerhetsbeskrivningen är uppdaterad till den här versionen: sökningen mot NGP, databashanteraren och det rättade
+  lösenordsfelet från 0.1.86 (spara om äldre projektfiler och byt lösenord).
+- Rättat i texterna: 3D stöds, NGP tar inte emot multigeometrier i en detaljplan trots att det allmänna geometrischemat
+  tillåter dem, och README tar upp databashanteraren, planmosaiken, importen, topologikontrollen och Exportera PDF.
+
 ## [0.1.91] – import av flerdelade ytor och varning för olika värden på samma mark
 
 - **Import av leverans: ytor, linjer och punkter i flera delar går att läsa.** En *multiyta*, *multilinje* eller
-  *multipunkt* (giltiga i NGP:s schema, och vanliga i filer från ArcMap) hoppades över, så till exempel en naturyta i två
+  *multipunkt* (förekommer i filer från till exempel ArcMap, men tas inte emot av NGP i en detaljplan) hoppades över, så till exempel en naturyta i två
   delar saknades. Varningen för en geometri som inte går att läsa säger nu vilken bestämmelse det gäller och vilken typ den
   har.
 - **Import av leverans varnar för olika värden på samma mark.** Två bestämmelser av samma slag (samma katalogpost och samma

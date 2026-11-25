@@ -20,6 +20,7 @@ from ..core import layout_export
 from ..core import legend_layout as ll
 from .legend_settings_dialog import LegendSettingsDialog
 from .messages import push
+from .richtext import plain
 
 ICONS = Path(__file__).resolve().parent.parent / "icons"
 TITLE = "Rita Detaljplan"
@@ -162,8 +163,8 @@ class LayoutLegendTool:
         """Visar kontrollens fynd i klartext (en ruta, eftersom det kan vara flera rader)."""
         icon = QMessageBox.Icon.Critical if not report.ok else (QMessageBox.Icon.Warning if any(
             f.level == "varning" for f in report.findings) else QMessageBox.Icon.Information)
-        QMessageBox(icon, TITLE, report.text(), QMessageBox.StandardButton.Ok,
-                    designer.window() if hasattr(designer, "window") else None).exec()
+        plain(QMessageBox(icon, TITLE, report.text(), QMessageBox.StandardButton.Ok,
+                          designer.window() if hasattr(designer, "window") else None)).exec()
 
     def export_pdf(self, designer):
         """Exporterar layouten som PDF (vektor, utan georeferens) och kontrollerar filen. Returnerar kontrollen, eller None

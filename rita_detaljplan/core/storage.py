@@ -67,6 +67,26 @@ def is_valid_plan_id(name: str) -> bool:
     return _is_valid_identifier(name)
 
 
+_NOT_IN_FILE_NAME = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
+
+
+def file_name(text: str) -> str:
+    """Namn ur databasen eller QGIS (schema, plan-id, anslutning) som del av ett filnamn: tecken som byter mapp eller inte
+    får stå i ett filnamn blir understreck. Pluginet skapar bara scheman och plan-id med a–z, siffror och understreck, men
+    den som kan skriva i databasen kan lägga in andra."""
+    return _NOT_IN_FILE_NAME.sub("_", str(text)).strip(" .") or "plan"
+
+
+def do_block(body: str) -> str:
+    """PL/pgSQL-satserna ``body`` som ett ``DO``-block, alltså i en transaktion. Dollarcitatet väljs så att det inte
+    förekommer i innehållet, till exempel i ett skäl till skrivskydd."""
+    tag, n = "dp", 0
+    while f"${tag}$" in body:
+        n += 1
+        tag = f"dp{n}"
+    return f"DO ${tag}$ BEGIN {body} END ${tag}$"
+
+
 def quote(identifier: str) -> str:
     return '"' + identifier.replace('"', '""') + '"'
 

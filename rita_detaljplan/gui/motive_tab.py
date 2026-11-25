@@ -7,6 +7,7 @@ from qgis.PyQt.QtCore import Qt, pyqtSignal
 from qgis.PyQt.QtWidgets import QLabel, QListWidget, QListWidgetItem, QPlainTextEdit, QVBoxLayout, QWidget
 
 from ..core import catalog as cat
+from .richtext import plain
 
 _OK, _MISSING = "#1b7f3b", "#b00020"
 _REQUIRED_BG = "#fff3cd"  # gult: motivet krävs (laga kraft) och saknas
@@ -35,7 +36,7 @@ class MotiveTab(QWidget):
         self.summary.setStyleSheet("font-weight: bold;")
         self.list = QListWidget()
         self.list.setWordWrap(True)
-        self.where = QLabel()
+        self.where = plain(QLabel())
         self.where.setWordWrap(True)
         self.editor = QPlainTextEdit()
         self.editor.setPlaceholderText("Motiv för den markerade planbestämmelsen")

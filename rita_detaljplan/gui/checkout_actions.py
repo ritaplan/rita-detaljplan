@@ -11,6 +11,7 @@ from qgis.PyQt.QtWidgets import QApplication, QMessageBox
 from ..controller import PlanController
 from ..core import checkout as co
 from ..core.storage import PostgisError
+from .richtext import plain
 
 CHECK_IN, DISCARD, CANCEL = "in", "discard", "cancel"
 
@@ -33,7 +34,7 @@ class CheckoutActions:
 
     # -- frågor (byts ut i tester) -----------------------------------------------------------------
     def _ask_yes_no(self, title: str, text: str, yes: str = "Ja", no: str = "Avbryt") -> bool:
-        box = QMessageBox(self.parent)
+        box = plain(QMessageBox(self.parent))
         box.setWindowTitle(title)
         box.setText(text)
         yes_button = box.addButton(yes, QMessageBox.ButtonRole.AcceptRole)
@@ -44,7 +45,7 @@ class CheckoutActions:
     def _ask_break_lock(self, lock: Optional[co.Lock]) -> bool:
         """Planen är utcheckad av någon annan. Returnerar True om låset ska brytas."""
         who = lock.describe() if lock is not None else "någon annan"
-        box = QMessageBox(self.parent)
+        box = plain(QMessageBox(self.parent))
         box.setIcon(QMessageBox.Icon.Warning)
         box.setWindowTitle("Planen är utcheckad")
         box.setText(f"Planen är utcheckad av {who}.")
