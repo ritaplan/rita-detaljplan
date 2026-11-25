@@ -116,6 +116,100 @@ class ParseTests(unittest.TestCase):
         self.assertEqual(plan.areas, [])
         self.assertTrue(any("hoppades över" in w for w in plan.warnings))
 
+    def multi(self, kind, geometry_type, coordinates):
+        return {"geometri": {"typ": kind, "position": {"type": geometry_type, "coordinates": coordinates}}}
+
+    def property_feature(self, geometry, ref="DP_KM_E1", values=(), oid="aaaaaaaa-1", text="Största byggnadsarea"):
+        return {"type": "Feature", "geometry": None, "properties": {
+            "feature:typ": "egenskapsbestämmelse", "objektidentitet": oid, "planbestammelsekatalogreferens": ref,
+            "bestammelseformulering": text, "bestammelsegeometri": [geometry], "bestammelsevarde": list(values)}}
+
+    @staticmethod
+    def number(value, name="area"):
+        return {"datatyp": "decimaltal", "beskrivning": name, "variabelvarde": value, "vardetyp": "max", "enhet": "procent"}
+
+    @staticmethod
+    def word(value, name="typ"):
+        return {"datatyp": "text", "beskrivning": name, "variabelvarde": value}
+
+    def test_a_use_in_two_parts_is_read_as_one_area_in_two_parts(self):
+        use = use_feature()
+        use["properties"]["bestammelsegeometri"] = [self.multi("multiyta", "MultiPolygon", [[SQUARE], [OTHER_SQUARE]])]
+        plan = im.parse(collection(use))
+        self.assertEqual(plan.warnings, [])
+        (area,) = plan.areas
+        self.assertEqual((area.table, len(area.geometry.asMultiPolygon())), ("anvandning_yta", 2))
+        self.assertAlmostEqual(area.geometry.area(), 200.0)
+
+    def test_a_hole_in_a_part_of_a_multi_area_is_kept(self):
+        hole = [[2, 2], [2, 4], [4, 4], [4, 2], [2, 2]]
+        use = use_feature()
+        use["properties"]["bestammelsegeometri"] = [self.multi("multiyta", "MultiPolygon", [[SQUARE, hole], [OTHER_SQUARE]])]
+        self.assertAlmostEqual(im.parse(collection(use)).areas[0].geometry.area(), 196.0)
+
+    def test_multi_properties_go_to_the_layer_of_their_kind(self):
+        area = self.property_feature(self.multi("multiyta", "MultiPolygon", [[SQUARE], [OTHER_SQUARE]]))
+        line = self.property_feature(self.multi("multilinje", "MultiLineString", [LINE, [[0, 5], [10, 5]]]), ref="L", oid="b")
+        point = self.property_feature(self.multi("multipunkt", "MultiPoint", [[1, 1], [2, 2]]), ref="P", oid="c")
+        plan = im.parse(collection(area, line, point))
+        self.assertEqual(plan.warnings, [])
+        self.assertEqual(sorted(a.table for a in plan.areas), ["egenskap_linje", "egenskap_punkt", "egenskap_yta"])
+        by_table = {a.table: a.geometry for a in plan.areas}
+        self.assertEqual(len(by_table["egenskap_linje"].asMultiPolyline()), 2)
+        self.assertEqual(len(by_table["egenskap_punkt"].asMultiPoint()), 2)
+
+    def test_the_height_of_a_multi_area_is_read_like_that_of_a_single_one(self):
+        raised = [[[[x, y, 12.5] for x, y in SQUARE]], [[[x, y, 12.5] for x, y in OTHER_SQUARE]]]
+        feature = self.property_feature(self.multi("multiyta", "MultiPolygon", raised))
+        from rita_detaljplan.core import vertical
+        feature["properties"]["vertikalAvgransning"] = vertical.UPWARD
+        extent = im.parse(collection(feature)).areas[0].provisions[0].extent
+        self.assertEqual((extent.lower, extent.upper), (None, 12.5))
+
+    def test_a_skipped_provision_is_named_in_the_warning(self):
+        broken = self.property_feature(self.multi("kurva", "Curve", []), oid="1234abcd-9999", text="Markreservat")
+        (warning,) = im.parse(collection(broken)).warnings
+        for part in ("Markreservat", "1234abcd", "kurva", "hoppades över"):
+            self.assertIn(part, warning)
+
+    def test_different_values_on_the_same_ground_are_warned_about_once(self):
+        whole = self.property_feature(polygon(SQUARE), values=[self.number("25.0")], oid="1eddc2a4", text="Area 25 %")
+        part = self.property_feature(polygon([[0, 0], [5, 0], [5, 10], [0, 10], [0, 0]]), values=[self.number("30.0")],
+                                     oid="178da349", text="Area 30 %")
+        other = self.property_feature(polygon([[5, 0], [10, 0], [10, 10], [5, 10], [5, 0]]), values=[self.number("30.0")],
+                                      oid="cea39e7b", text="Area 30 %")
+        warnings = im.parse(collection(whole, part, other)).warnings
+        self.assertEqual(len(warnings), 1, warnings)
+        for text in ("Olika värden", "100 m²", "Area 25 %", "1eddc2a4", "Area 30 %", "178da349"):
+            self.assertIn(text, warnings[0])
+
+    def test_neighbours_the_same_value_and_different_subjects_are_not_warned_about(self):
+        left, right = polygon(SQUARE), polygon([[10, 0], [20, 0], [20, 10], [10, 10], [10, 0]])
+        neighbours = [self.property_feature(left, values=[self.number("25")], oid="a"),
+                      self.property_feature(right, values=[self.number("30")], oid="b")]
+        self.assertEqual(im.parse(collection(*neighbours)).warnings, [], "delar bara en gräns")
+        same = [self.property_feature(left, values=[self.number("30")], oid="a"),
+                self.property_feature(left, values=[self.number("30.0")], oid="b")]
+        self.assertEqual(im.parse(collection(*same)).warnings, [], "samma värde")
+        subjects = [self.property_feature(left, values=[self.word("huvudbyggnad"), self.number("8")], oid="a"),
+                    self.property_feature(left, values=[self.word("komplementbyggnad"), self.number("5")], oid="b")]
+        self.assertEqual(im.parse(collection(*subjects)).warnings, [], "olika saker regleras")
+        kinds = [self.property_feature(left, ref="E", values=[self.number("30")], oid="a"),
+                 self.property_feature(left, ref="H", values=[self.number("8")], oid="b")]
+        self.assertEqual(im.parse(collection(*kinds)).warnings, [], "olika bestämmelser")
+
+    def test_heights_that_do_not_meet_are_not_in_conflict(self):
+        low = [[[x, y, 3.0] for x, y in SQUARE]]
+        high = [[[x, y, 6.0] for x, y in SQUARE]]
+        from rita_detaljplan.core import vertical
+        below = self.property_feature({"geometri": {"typ": "yta", "position": {"type": "Polygon", "coordinates": low}}},
+                                      values=[self.number("25")], oid="a")
+        below["properties"]["vertikalAvgransning"] = vertical.UPWARD  # upp till 3 m
+        above = self.property_feature({"geometri": {"typ": "yta", "position": {"type": "Polygon", "coordinates": high}}},
+                                      values=[self.number("30")], oid="b")
+        above["properties"]["vertikalAvgransning"] = vertical.DOWNWARD  # från 6 m
+        self.assertEqual(im.parse(collection(below, above)).warnings, [])
+
     def test_only_the_first_decision_is_imported_and_extra_ones_warn(self):
         decisions = [{"diarienummerKommun": "KS 1"}, {"diarienummerKommun": "KS 2"}]
         with_plan = {**PLAN_FEATURE, "properties": {**PLAN_FEATURE["properties"], "beslutsinformation": decisions}}

@@ -17,6 +17,7 @@ from typing import Any, Optional
 
 from qgis.core import QgsGeometry, QgsPointXY
 
+from . import bestammelse as bm
 from . import catalog as cat
 from . import vertical
 
@@ -78,6 +79,18 @@ def _part_geometry(position: dict) -> Optional[QgsGeometry]:
         coordinates = position.get("coordinates") or []
         return QgsGeometry.fromPointXY(QgsPointXY(float(coordinates[0]), float(coordinates[1]))) \
             if len(coordinates) >= 2 else None
+    # flerdelade (multiyta, multilinje, multipunkt i NGP:s schema): delarna blir en flerdelad geometri
+    if kind == "MultiPolygon":
+        polygons = [[_points(ring) for ring in polygon] for polygon in position.get("coordinates") or []]
+        polygons = [polygon for polygon in polygons if polygon and polygon[0]]
+        return QgsGeometry.fromMultiPolygonXY(polygons) if polygons else None
+    if kind == "MultiLineString":
+        lines = [_points(line) for line in position.get("coordinates") or []]
+        lines = [line for line in lines if len(line) >= 2]
+        return QgsGeometry.fromMultiPolylineXY(lines) if lines else None
+    if kind == "MultiPoint":
+        points = _points([c for c in position.get("coordinates") or [] if len(c) >= 2])
+        return QgsGeometry.fromMultiPointXY(points) if points else None
     return None
 
 
@@ -92,8 +105,11 @@ class _Part:
 
 
 def _height_of(position: dict) -> Optional[float]:
-    """Höjdvärdet på en yta (tredje koordinaten på första punkten), om ytan har ett."""
-    for ring in position.get("coordinates") or []:
+    """Höjdvärdet på en yta (tredje koordinaten på första punkten), om ytan har ett. En flerdelad ytas första del räknas."""
+    coordinates = position.get("coordinates") or []
+    if position.get("type") == "MultiPolygon":
+        coordinates = coordinates[0] if coordinates else []
+    for ring in coordinates:
         for point in ring:
             return vertical.number(point[2]) if len(point) > 2 else None
     return None
@@ -112,7 +128,7 @@ def _part(description: dict) -> Optional[_Part]:
     flat = _part_geometry(position)
     if flat is None or flat.isEmpty():
         return None
-    return _Part(flat, height=_height_of(position) if position.get("type") == "Polygon" else None)
+    return _Part(flat, height=_height_of(position) if position.get("type") in ("Polygon", "MultiPolygon") else None)
 
 
 def build_geometry(descriptions: list[dict]) -> Optional[QgsGeometry]:
@@ -178,8 +194,81 @@ def _table(properties: dict, descriptions: list[dict]) -> Optional[str]:
     if is_use:
         return cat.USE_LAYER
     kind = ((descriptions or [{}])[0].get("geometri") or {}).get("typ")
-    return {"yta": "egenskap_yta", "kropp": "egenskap_yta", "linje": "egenskap_linje",
-            "punkt": "egenskap_punkt"}.get(kind)
+    return {"yta": "egenskap_yta", "multiyta": "egenskap_yta", "kropp": "egenskap_yta", "linje": "egenskap_linje",
+            "multilinje": "egenskap_linje", "punkt": "egenskap_punkt", "multipunkt": "egenskap_punkt"}.get(kind)
+
+
+# -- olika värden på samma mark ------------------------------------------------------------------
+AREA_TABLES = (cat.USE_LAYER, "egenskap_yta")
+OVERLAP_TOLERANCE_M2 = 1.0  # mindre överlapp än så är grannytor som delar en gräns
+
+
+@dataclass
+class _Placed:
+    """En bestämmelse med sin yta, så som den står i leveransen."""
+    properties: dict
+    geometry: QgsGeometry
+    extent: vertical.Extent
+
+
+def _describe(properties: dict) -> str:
+    """Bestämmelsen i en varning: formuleringen (kortad) och objektets identitet, så att den går att hitta i källan."""
+    text = (properties.get("bestammelseformulering") or "utan formulering").strip()
+    text = text if len(text) <= 70 else text[:67].rstrip() + "…"
+    identity = str(properties.get("objektidentitet") or "")[:8]
+    return f"”{text}”" + (f" (objekt {identity})" if identity else "")
+
+
+def _values_of(properties: dict) -> tuple[tuple, tuple]:
+    """(textvärdena, talen) i bestämmelsevärdet. Textvärdena säger vad som regleras (huvudbyggnad eller komplementbyggnad),
+    talen hur mycket."""
+    texts, numbers = [], []
+    for value in properties.get("bestammelsevarde") or []:
+        if not isinstance(value, dict):
+            continue
+        name, text = str(value.get("beskrivning") or ""), str(value.get("variabelvarde") or "").strip()
+        if value.get("datatyp") == "decimaltal":
+            number = bm.normalize_decimal(text)
+            numbers.append((name, float(number) if number is not None else text, str(value.get("enhet") or "")))
+        else:
+            texts.append((name, text))
+    return tuple(texts), tuple(numbers)
+
+
+def _share_height(a: vertical.Extent, b: vertical.Extent) -> bool:
+    """Om två höjdavgränsningar har något gemensamt (en utan avgränsning har det med allt)."""
+    below = a.upper is not None and b.lower is not None and a.upper <= b.lower
+    above = b.upper is not None and a.lower is not None and b.upper <= a.lower
+    return not (below or above)
+
+
+def conflicting_values(placed: list) -> list[str]:
+    """Varningar för bestämmelser av samma slag som anger olika värden på samma mark, till exempel byggnadsarea 25 % och
+    30 %: samma katalogreferens och samma textvärden men olika tal, ytor som överlappar (mer än
+    ``OVERLAP_TOLERANCE_M2``) och höjder som möts. Oftast är en yta fel i källan. En varning per par av värden, med den
+    sammanlagda överlappningen."""
+    groups: dict[tuple, list] = {}
+    for item in placed:
+        texts, numbers = _values_of(item.properties)
+        if numbers:
+            key = (item.properties.get("planbestammelsekatalogreferens"), texts)
+            groups.setdefault(key, []).append((numbers, item))
+    found: dict[tuple, list] = {}  # (grupp, värdepar) -> [sammanlagd area, den ena, den andra]
+    for key, members in groups.items():
+        for i, (first_numbers, first) in enumerate(members):
+            for second_numbers, second in members[i + 1:]:
+                if first_numbers == second_numbers or not _share_height(first.extent, second.extent):
+                    continue
+                if not first.geometry.boundingBox().intersects(second.geometry.boundingBox()):
+                    continue
+                area = first.geometry.intersection(second.geometry).area()
+                if area <= OVERLAP_TOLERANCE_M2:
+                    continue
+                pair = (key, frozenset((first_numbers, second_numbers)))
+                entry = found.setdefault(pair, [0.0, first, second])
+                entry[0] += area
+    return [f"Olika värden gäller samma mark ({area:.0f} m²): {_describe(first.properties)} och "
+            f"{_describe(second.properties)}. Kontrollera ytorna i källan." for area, first, second in found.values()]
 
 
 # -- beslut och dokument ------------------------------------------------------------------------
@@ -264,6 +353,7 @@ def parse(collection: dict) -> ImportedPlan:
 
     grouped: dict[tuple, ImportedArea] = {}
     order: list[tuple] = []
+    placed: list[_Placed] = []  # ytorna, för kontrollen av olika värden på samma mark
     for feature in features:
         properties = feature.get("properties") or {}
         if properties.get("feature:typ") not in (USE_TYPE, PROPERTY_TYPE):
@@ -272,8 +362,13 @@ def parse(collection: dict) -> ImportedPlan:
         table = _table(properties, descriptions)
         geometry, extent, notes = build_area(descriptions, properties.get("vertikalAvgransning"))
         if table is None or geometry is None or geometry.isEmpty():
-            plan.warnings.append("En bestämmelse utan giltig geometri hoppades över.")
+            kinds = ", ".join(sorted({str((d.get("geometri") or {}).get("typ") or "okänd") for d in descriptions
+                                      if isinstance(d, dict)})) or "saknas"
+            plan.warnings.append(f"Bestämmelsen {_describe(properties)} har en geometri som pluginet inte kan läsa "
+                                 f"(typ: {kinds}) och hoppades över.")
             continue
+        if table in AREA_TABLES:
+            placed.append(_Placed(properties, geometry, extent))
         plan.warnings += [note for note in notes if note not in plan.warnings]
         key = (table, geometry.asWkt(3))  # ytan i planet: bestämmelser med olika höjd delar yta, höjden ligger på raden
         if key not in grouped:
@@ -284,4 +379,5 @@ def parse(collection: dict) -> ImportedPlan:
             area.sekundar = True
         area.provisions.append(_provision(properties, extent))
     plan.areas = [grouped[key] for key in order]
+    plan.warnings += conflicting_values(placed)
     return plan

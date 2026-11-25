@@ -2,6 +2,17 @@
 
 Formatet följer [Keep a Changelog](https://keepachangelog.com/sv/1.1.0/), versionsnumren [Semantic Versioning](https://semver.org/lang/sv/).
 
+## [Kommande]
+
+- **Import av leverans: ytor, linjer och punkter i flera delar går att läsa.** En *multiyta*, *multilinje* eller
+  *multipunkt* (giltiga i NGP:s schema, och vanliga i filer från ArcMap) hoppades över, så till exempel en naturyta i två
+  delar saknades. Varningen för en geometri som inte går att läsa säger nu vilken bestämmelse det gäller och vilken typ den
+  har.
+- **Import av leverans varnar för olika värden på samma mark.** Två bestämmelser av samma slag (samma katalogpost och samma
+  textvärden) med olika tal, till exempel byggnadsarea 25 % och 30 %, på överlappande ytor ger en varning med
+  formuleringarna, objektens identiteter och den överlappande ytan. Oftast är en yta fel i källan. Fil för fil:
+  `core/import_ngp.py`.
+
 ## [0.1.90] – lutningspil för största och minsta lutning
 
 - **Största och minsta lutning ritas som en pil med lutningsförhållandet ovanför.** Bestämmelserna hade ingen symbol på

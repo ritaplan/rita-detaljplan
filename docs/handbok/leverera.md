@@ -89,6 +89,14 @@ Planområdet, användnings- och egenskapsytorna med bestämmelser, beslutsinform
 Bestämmelser som inte finns i den laddade planbestämmelsekatalogen kan inte läsas in. Ytan skapas ändå, men utan just
 den bestämmelsen, och meddelandefältet listar vad som hoppades över.
 
+Ytor, linjer och punkter i flera delar (*multiyta*, *multilinje* och *multipunkt*) läses in. En geometri som pluginet
+inte kan läsa hoppas över, och varningen säger vilken bestämmelse det var (formuleringen och objektets identitet).
+
+Anger två bestämmelser av samma slag **olika värden på samma mark**, till exempel största byggnadsarea 25 % och 30 %,
+varnar importen med formuleringarna, objektens identiteter och hur stor ytan är. Båda läses in: oftast är en av ytorna fel
+i programmet filen kommer ifrån, och ska rättas där. Höjdavgränsningar som inte möts räknas inte, och bestämmelser som
+reglerar olika saker (huvudbyggnad och komplementbyggnad) inte heller.
+
 ## Nästa steg
 
 - [Teckenförklaring och plankarta](teckenforklaring.md)
