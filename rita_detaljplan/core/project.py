@@ -325,7 +325,8 @@ def upgrade_symbology(project: QgsProject) -> bool:
     stale = [layer for table, layer in layers.items() if layer is not None
              and not (symbology.has_outlines_last(layer.renderer()) and symbology.labels_in_millimeters(layer)
                       and not symbology.has_fragile_dashes(layer.renderer())
-                      and symbology.has_fixed_label_position(layer, table) and symbology.has_slope_arrow(layer, table))]
+                      and symbology.has_fixed_label_position(layer, table) and symbology.has_slope_arrow(layer, table)
+                      and symbology.has_labels_per_part(layer, table))]
     for table in ("egenskap_yta", "egenskap_linje"):
         layer = find_layer(project, table)
         if layer is not None and layer not in stale and not symbology.has_current_symbol_class(layer, table):

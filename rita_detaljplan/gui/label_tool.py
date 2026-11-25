@@ -219,6 +219,10 @@ class LabelTool(QgsMapTool):
         elif shift:  # skift på en redan markerad text avmarkerar den
             self.selected = [label for label in self.selected if label.key != hit.key]
             self._mode = None
+        else:  # en yta i flera delar har en text per del: tar man tag i en annan av dem är det den som ska följa med. Samma
+            # text (den ligger på den markerade) behålls: den markerade vet var den står nu, kartan kan vara på väg att ritas om.
+            self.selected = [hit if label.key == hit.key and not label.rect.intersects(hit.rect) else label
+                             for label in self.selected]
         self._show_selection()
 
     def _rotated_angle(self, point: QgsPointXY, shift: bool) -> Optional[float]:

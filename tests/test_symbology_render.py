@@ -470,6 +470,145 @@ class FixedLabelPositionTests(RenderCase):
 
 
 @unittest.skipUnless(HAVE_QGIS, "QGIS Python behövs")
+class MultiPartLabelTests(RenderCase):
+    """En yta i flera delar (en bestämmelse på flera skilda ytor) får beteckningen på varje del."""
+    PARTS = "MultiPolygon(((0 0, 40 0, 40 100, 0 100, 0 0)),((60 0, 100 0, 100 100, 60 100, 60 0)))"
+    PLAN_AREA = "MultiPolygon(((-30 -30, 130 -30, 130 130, -30 130, -30 -30)))"
+
+    def render_job(self, tables, size=480):
+        restyle(QgsProject.instance(), 1000)
+        settings = QgsMapSettings()
+        settings.setLayers(self.in_map_order(tables))
+        settings.setDestinationCrs(QgsCoordinateReferenceSystem("EPSG:3006"))
+        settings.setExtent(QgsRectangle(-10, -10, 110, 110))  # 4 bildpunkter per meter
+        settings.setOutputSize(QSize(size, size))
+        settings.setBackgroundColor(QColor(255, 255, 255))
+        job = QgsMapRendererParallelJob(settings)
+        loop = QEventLoop()
+        job.finished.connect(loop.quit)
+        QTimer.singleShot(20000, loop.quit)
+        job.start()
+        loop.exec()
+        self.assertFalse(job.isActive(), "renderingen blev inte klar")
+        return job
+
+    def texts(self, tables=("anvandning_yta", "egenskap_yta", "egenskap_linje")):
+        results = self.render_job(list(tables)).takeLabelingResults()
+        return sorted((label.labelText, round(label.labelRect.center().x()), round(label.labelRect.center().y()))
+                      for label in results.allLabels())
+
+    def evaluate(self, expression, wkt, **attrs):
+        from qgis.core import QgsExpressionContext, QgsExpressionContextUtils
+        layer = self.layers["egenskap_yta"]
+        feature = self.add("egenskap_yta", wkt, **attrs)
+        context = QgsExpressionContext(QgsExpressionContextUtils.globalProjectLayerScopes(layer))
+        context.setFeature(feature)
+        parsed = QgsExpression(expression)
+        value = parsed.evaluate(context)
+        self.assertFalse(parsed.hasEvalError(), parsed.evalErrorString())
+        return value
+
+    def test_every_part_of_a_use_and_of_a_property_gets_the_designation(self):
+        self.add("detaljplan", self.PLAN_AREA)
+        self.add("anvandning_yta", self.PARTS, beteckning="B")
+        self.add("egenskap_yta", "MultiPolygon(((5 5, 35 5, 35 25, 5 25, 5 5)),((65 5, 95 5, 95 25, 65 25, 65 5)))",
+                 beteckning="e1")
+        self.assertEqual(self.texts(), [("B", 20, 50), ("B", 80, 50), ("e₁", 20, 15), ("e₁", 80, 15)])
+
+    def test_an_area_in_one_part_gets_one_text(self):
+        self.add("detaljplan", self.PLAN_AREA)
+        self.add("anvandning_yta", "MultiPolygon(((0 0, 40 0, 40 100, 0 100, 0 0)))", beteckning="B")
+        self.assertEqual(self.texts(), [("B", 20, 50)])
+
+    def test_a_text_moved_by_hand_replaces_the_text_of_the_nearest_part_only(self):
+        self.add("detaljplan", self.PLAN_AREA)
+        self.add("anvandning_yta", self.PARTS, beteckning="B", label_x=90.0, label_y=80.0)  # i den högra delen
+        self.assertEqual(self.texts(), [("B", 20, 50), ("B", 90, 80)])
+
+    def test_a_text_moved_outside_the_area_belongs_to_the_nearest_part(self):
+        self.add("detaljplan", self.PLAN_AREA)
+        self.add("anvandning_yta", self.PARTS, beteckning="B", label_x=-5.0, label_y=80.0)  # utanför den vänstra
+        self.assertEqual(self.texts(), [("B", -5, 80), ("B", 80, 50)])
+
+    def test_every_part_of_a_property_line_gets_the_designation(self):
+        self.add("detaljplan", self.PLAN_AREA)
+        self.add("egenskap_linje", "MultiLineString((5 50, 35 50),(65 50, 95 50))", beteckning="m1")
+        self.assertEqual([(text, x) for text, x, _y in self.texts()], [("m₁", 20), ("m₁", 80)])
+
+    def test_a_moved_text_of_a_line_in_several_parts_ends_up_at_the_new_place(self):
+        self.add("detaljplan", self.PLAN_AREA)
+        self.add("egenskap_linje", "MultiLineString((5 50, 35 50),(65 50, 95 50))", beteckning="m1", label_x=80.0,
+                 label_y=80.0)
+        found = self.texts()
+        self.assertTrue(found, "texten ritas")
+        self.assertEqual({(x, y) for _text, x, y in found}, {(80, 80)}, found)
+
+    def test_the_leader_line_goes_into_the_part_nearest_to_the_moved_text(self):
+        from qgis.core import QgsGeometry
+        from rita_detaljplan.core import symbology
+        big = "((0 0, 60 0, 60 60, 0 60, 0 0))"  # ytans innersta punkt ligger i den stora delen
+        small = "((80 0, 90 0, 90 10, 80 10, 80 0))"
+        line = self.evaluate(symbology._leader_geometry(3.5, 3.5, 0.4), f"MultiPolygon({big},{small})",
+                             beteckning="e1", label_x=110.0, label_y=5.0)
+        start = QgsGeometry.fromPointXY(line.asPolyline()[0])
+        self.assertTrue(QgsGeometry.fromWkt(f"Polygon{small}").contains(start), line.asWkt(1))
+
+    def test_a_property_is_wrapped_to_fit_the_narrowest_part(self):
+        from qgis.core import QgsPalLayerSettings
+        settings = self.layers["egenskap_yta"].labeling().settings()
+        props = settings.dataDefinedProperties()
+        wrap = props.property(QgsPalLayerSettings.Property.AutoWrapLength).expressionString()
+        wide = "((0 0, 400 0, 400 20, 0 20, 0 0))"
+        narrow = "((500 0, 540 0, 540 20, 500 20, 500 0))"
+        both = self.evaluate(wrap, f"MultiPolygon({wide},{narrow})", beteckning="e1")
+        alone = self.evaluate(wrap, f"MultiPolygon({narrow})", beteckning="e1")
+        self.assertEqual(both, alone)
+        self.assertLess(both, self.evaluate(wrap, f"MultiPolygon({wide})", beteckning="e1"))
+
+    def test_every_part_with_a_slope_gets_its_own_arrow(self):
+        self.add("detaljplan", self.PLAN_AREA)
+        self.add("egenskap_yta", self.PARTS, beteckning="1:20", symbol="Största/minsta lutning", bestammelser=1)
+        restyle(QgsProject.instance(), 1000)
+        self.layers["egenskap_yta"].setLabelsEnabled(False)  # bara pilen: testmiljön har inga typsnitt
+        image = self.render_job(["egenskap_yta"]).renderedImage()
+
+        def dark(x_from, x_to):  # mörka bildpunkter i mitten av en del, långt från dess kanter
+            return sum(1 for x in range((x_from + 10) * 4, (x_to + 10) * 4) for y in range(160, 320)
+                       if image.pixelColor(x, y).red() < 200)
+
+        self.assertGreater(dark(8, 32), 20, "pilen i den vänstra delen")
+        self.assertGreater(dark(68, 92), 20, "pilen i den högra delen")
+        self.assertEqual(dark(44, 56), 0, "ingen pil mellan delarna")
+
+    def test_a_project_saved_with_one_text_for_all_parts_is_restyled_once_when_it_is_opened(self):
+        from qgis.core import QgsReadWriteContext, QgsVectorLayerSimpleLabeling, QgsAbstractVectorLayerLabeling
+        from qgis.PyQt.QtXml import QDomDocument
+        from rita_detaljplan.core import symbology
+        restyle(QgsProject.instance(), 1000)
+        self.assertFalse(upgrade_symbology(QgsProject.instance()), "en ny plan har redan text på varje del")
+        for table in ("anvandning_yta", "egenskap_yta", "egenskap_linje"):
+            layer = self.layers[table]
+            # sparat och inläst igen (som i en projektfil) ska inställningen finnas kvar
+            document = QDomDocument("labeling")
+            labeling = layer.labeling()
+            element = labeling.save(document, QgsReadWriteContext())
+            document.appendChild(element)
+            layer.setLabeling(QgsAbstractVectorLayerLabeling.create(element, QgsReadWriteContext()))
+            self.assertTrue(symbology.has_labels_per_part(layer, table), table)
+            settings = layer.labeling().settings()  # så som en äldre version sparade texterna
+            if table == "egenskap_linje":
+                settings.labelPerPart = False
+            else:
+                settings.geometryGenerator = ('make_point(coalesce("label_x", x(centroid($geometry))), '
+                                              'coalesce("label_y", y(centroid($geometry))))')
+            layer.setLabeling(QgsVectorLayerSimpleLabeling(settings))
+            self.assertFalse(symbology.has_labels_per_part(layer, table), table)
+            self.assertTrue(upgrade_symbology(QgsProject.instance()), f"{table} ritas om")
+            self.assertTrue(symbology.has_labels_per_part(self.layers[table], table), table)
+            self.assertFalse(upgrade_symbology(QgsProject.instance()), "bara en gång")
+
+
+@unittest.skipUnless(HAVE_QGIS, "QGIS Python behövs")
 class LabelTests(RenderCase):
     def settings(self, table):
         return self.layers[table].labeling().settings()
@@ -536,7 +675,7 @@ class LabelTests(RenderCase):
         props = prop.dataDefinedProperties()  # mellanleden i variabler: temporära PyQGIS-objekt kraschar
         expression = props.property(wrap).expressionString()
         self.assertIn('"label_w"', expression, "en omformad textruta styr bredden")
-        self.assertIn("bounds_width($geometry)", expression, "annars ytans bredd")
+        self.assertIn("bounds_width(@element)", expression, "annars ytans bredd (den smalaste delens)")
         self.assertTrue(prop.useMaxLineLengthForAutoWrap)
         use_settings = self.settings("anvandning_yta")
         use_props = use_settings.dataDefinedProperties()

@@ -4,6 +4,16 @@ Formatet följer [Keep a Changelog](https://keepachangelog.com/sv/1.1.0/), versi
 
 ## [Kommande]
 
+### Texter på kartan
+
+- **Beteckningen skrivs på varje del av en yta i flera delar.** Förut fick bara en av delarna texten, till exempel efter
+  import av en leverans med en naturyta i två delar. Lutningspilen ritas under varje text och ledlinjen går in i den del som
+  ligger närmast. Flyttar du en text för hand gäller flytten den närmaste delen; textrutans bredd och vinkel gäller alla
+  delar. Linjer i flera delar får också text på varje del. Sparade projekt ritas om när de öppnas. Fil för fil:
+  `core/symbology.py`, `core/project.py`, `gui/label_tool.py`.
+- **Kortare väntan vid omritning.** QGIS tolkar symbolernas uttryck på nytt vid varje omritning, och tiden för det
+  fördubblas för varje nivå som `with_variable` nästlas. Ledlinjens och lutningspilens uttryck har nu färre nivåer.
+
 ### Säkerhet
 
 - **Namn ur databasen kan inte längre styra var filer hamnar.** Ett plan-id eller schemanamn med till exempel `..\`

@@ -227,6 +227,14 @@ Det markerade lagret blir aktivt, så att du direkt kan flytta, redigera brytpun
 Tryck **Delete** för att återställa automatisk placering, form och vågrät vinkel, och **Esc** för att avmarkera. Textstorleken ändras inte här,
 utan styrs av referensskalan (se [Planens uppgifter](planens-uppgifter.md#referensskala)).
 
+En yta i flera delar (en bestämmelse som gäller flera skilda ytor, till exempel efter en import) har en text på **varje
+del**:
+
+- Ytan har bara ett sparat textläge. Flyttar du en av texterna gäller flytten den del som ligger närmast det nya läget.
+  Flyttar du sedan texten på en annan del går den första tillbaka till sin automatiska plats.
+- Textrutans bredd och vinkeln gäller texterna på alla delar.
+- En linje i flera delar har också en text på varje del, men flyttar du den samlas texten på det nya läget.
+
 **Dölj texter** (A med ett rött streck) stänger tillfälligt av beteckningarna på kartan när de är i vägen.
 Klicka igen för att visa dem.
 

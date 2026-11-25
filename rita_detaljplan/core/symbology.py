@@ -314,17 +314,31 @@ PROPERTY_TEXT_MM = 3.5  # egenskapsbestämmelsernas: tydligt mindre än användn
 CHAR_WIDTH = 0.62  # ungefärlig medelbredd på ett tecken i fet stil, i delar av textstorleken (för radbrytning)
 
 
-# Ytans textpunkt: tyngdpunkten om den ligger i ytan, annars en punkt inne i ytan. Räknas på hela ytans geometri.
-_AREA_ANCHOR = "CASE WHEN intersects(centroid($geometry), $geometry) THEN centroid($geometry) ELSE point_on_surface($geometry) END"
+# Ytans delar. De flesta ytor har en; en bestämmelse som gäller flera skilda ytor har flera, och varje del får sin text.
+_PARTS = "geometries_to_array($geometry)"
+# Texten på en del (@element): där användaren flyttat den (@own = ``label_x``/``label_y``), annars delens textpunkt, som är
+# tyngdpunkten om den ligger i delen och annars en punkt inne i den. Ytan har bara ett sparat textläge, så en flyttad text
+# ersätter texten på den del som ligger närmast det nya läget; andra delar behåller sin.
+_TEXT_POINT = ("CASE WHEN distance(@element, @own) <= distance($geometry, @own) + 0.001 THEN @own "
+               "WHEN intersects(centroid(@element), @element) THEN centroid(@element) "
+               "ELSE point_on_surface(@element) END")
+
+
+def _in_each_part(expression: str) -> str:
+    """Uttrycket en gång för varje del av ytan (``@element`` är delen, ``@own`` det flyttade textläget eller tomt), samlat
+    till en geometri. Samma uttryck för en och flera delar: QGIS tolkar uttryckens text på nytt vid varje omritning, så
+    de ska vara så korta det går."""
+    return ("with_variable('own', make_point(\"label_x\", \"label_y\"), "
+            f"collect_geometries(array_foreach({_PARTS}, {expression})))")
 
 
 def _place_at_point(settings: QgsPalLayerSettings) -> None:
     """Ytans text står på en fast punkt: det läge användaren flyttat den till (``label_x``/``label_y``), annars ytans textpunkt
-    (``_AREA_ANCHOR``). Punkten är etikettens egen geometri (en geometrigenerator), inte ett datadefinierat läge: QGIS
-    struntar i ett datadefinierat läge som ligger utanför det synliga kartutsnittet och lägger då texten på ytans automatiska
-    plats, så en text som flyttats för hand hoppade när man zoomade in. Texten är centrerad på punkten."""
-    settings.geometryGenerator = (f'make_point(coalesce("label_x", x({_AREA_ANCHOR})), '
-                                  f'coalesce("label_y", y({_AREA_ANCHOR})))')
+    (``_TEXT_POINT``). En yta i flera delar får en text på varje del. Punkten är etikettens egen geometri (en
+    geometrigenerator), inte ett datadefinierat läge: QGIS struntar i ett datadefinierat läge som ligger utanför det synliga
+    kartutsnittet och lägger då texten på ytans automatiska plats, så en text som flyttats för hand hoppade när man zoomade
+    in. Texten är centrerad på punkten."""
+    settings.geometryGenerator = _in_each_part(_TEXT_POINT)
     settings.geometryGeneratorType = Qgis.GeometryType.Point
     settings.geometryGeneratorEnabled = True
 
@@ -353,10 +367,11 @@ def _rotate_by_field(settings: QgsPalLayerSettings) -> None:
 
 def _wrap_by_width(settings: QgsPalLayerSettings, size: float, fit_area: bool = True) -> None:
     """Texten radbryts efter textrutans bredd (``label_w``) om användaren omformat den. Annars radbryts den så att den
-    ryms i ytan (``fit_area``), eller inte alls. ``size`` = textstorleken i kartans enheter. Bara ord bryts, aldrig
-    bokstäver."""
+    ryms i ytan (``fit_area``), eller inte alls. En yta i flera delar får samma radbrytning på alla delar, så att texten
+    ryms i den smalaste. ``size`` = textstorleken i kartans enheter. Bara ord bryts, aldrig bokstäver."""
     per_char = size * CHAR_WIDTH
-    otherwise = f"max(3, floor(bounds_width($geometry) * 0.9 / {per_char}))" if fit_area else "0"  # 0 = ingen radbrytning
+    width = f"array_min(array_foreach({_PARTS}, bounds_width(@element)))"
+    otherwise = f"max(3, floor({width} * 0.9 / {per_char}))" if fit_area else "0"  # 0 = ingen radbrytning
     props = settings.dataDefinedProperties()
     props.setProperty(QgsPalLayerSettings.Property.AutoWrapLength, QgsProperty.fromExpression(
         f'CASE WHEN "label_w" IS NOT NULL THEN max(1, floor("label_w" / {per_char})) ELSE {otherwise} END'))
@@ -380,21 +395,17 @@ def _slope_text_angle() -> str:
 
 def _slope_arrow_geometry(size: float, minimum: float, gap: float) -> str:
     """Lutningspilen som linje (ett uttryck för en geometrigenerator): under ytans text, lika lång som texten (minst
-    ``minimum``) och riktad åt det håll textens vinkel (``label_rot``) anger, vågrätt åt höger när den inte vridits. Tom för
-    ytor utan symbolen. Pilen ligger på det håll som marken stiger uppåt (BFS 2020:6, 7.2 och 7.13). ``size``, ``minimum``
-    och ``gap`` är i kartans enheter."""
-    centre = (f'make_point(coalesce("label_x", x({_AREA_ANCHOR})), coalesce("label_y", y({_AREA_ANCHOR})))')
+    ``minimum``) och riktad åt det håll textens vinkel (``label_rot``) anger, vågrätt åt höger när den inte vridits. En yta
+    i flera delar får en pil under texten på varje del. Tom för ytor utan symbolen. Pilen ligger på det håll som marken
+    stiger uppåt (BFS 2020:6, 7.2 och 7.13). ``size``, ``minimum`` och ``gap`` är i kartans enheter."""
     length = f"max({minimum}, length(coalesce(\"beteckning\", '')) * {size * CHAR_WIDTH})"
     below = f"{size * TEXT_HEIGHT} + {gap}"  # från textens mitt till pilen
-    return (f"CASE WHEN {_has_symbol(SLOPE_SYMBOL)} THEN "
-            f"with_variable('c', {centre}, "
-            f"with_variable('t', radians(coalesce(\"label_rot\", 0)), "  # pilens riktning
-            f"with_variable('f', radians({_slope_text_angle()}), "  # textens vinkel
-            f"with_variable('m', make_point(x(@c) - sin(@f) * ({below}), y(@c) - cos(@f) * ({below})), "
-            f"with_variable('h', {length} / 2, "
-            "make_line(make_point(x(@m) - cos(@t) * @h, y(@m) + sin(@t) * @h), "
-            "make_point(x(@m) + cos(@t) * @h, y(@m) - sin(@t) * @h))))))) "
-            f"ELSE {_EMPTY} END")
+
+    middle = f"project({_TEXT_POINT}, {below}, radians({_slope_text_angle()}) + pi())"  # rakt under den vridna texten
+    along = "radians(coalesce(\"label_rot\", 0) + 90)"  # pilens riktning, som azimut (medurs från norr)
+    half = f"{length} / 2"
+    arrow = f"with_variable('m', {middle}, make_line(project(@m, -{half}, {along}), project(@m, {half}, {along})))"
+    return f"CASE WHEN {_has_symbol(SLOPE_SYMBOL)} THEN {_in_each_part(arrow)} ELSE {_EMPTY} END"
 
 
 def _slope_arrow_layer(reference_scale: float, size_mm: float):
@@ -431,22 +442,25 @@ def _leader_geometry(inset: float, size: float, gap: float) -> str:
     från en punkt ``inset`` (kartans enheter) innanför ytans gräns, rakt mot textens läge (dock aldrig längre in än ytans
     mitt), och slutar ``gap`` utanför textrutan så att den inte går genom texten. Tom när texten inte flyttats eller ligger
     inne i ytan. ``size`` är textstorleken i kartans enheter. Textrutans mått uppskattas ur textens längd (eller textrutans
-    bredd, ``label_w``).
+    bredd, ``label_w``). Har ytan flera delar går linjen till den del som ligger närmast texten.
 
     Ledlinjen är ett linjeskikt i ytans symbol, inte en callout: en callout ritas inte för en text som har en egen punkt som
     geometri (se ``_place_at_point``)."""
     half_width = ("coalesce(\"label_w\", length(coalesce(\"beteckning\", '')) * " + str(size * CHAR_WIDTH) + ") / 2")
-    direction = "azimuth(@lp, @a)"
+    text_at = 'make_point("label_x", "label_y")'  # upprepas hellre än läggs i en variabel, se nedan
+    direction = f"azimuth({text_at}, @a)"
     exit_distance = (f"min(({half_width}) / max(abs(sin({direction})), 0.001), "
                      f"{size * TEXT_HEIGHT} / max(abs(cos({direction})), 0.001)) + {gap}")
-    return ("CASE WHEN \"label_x\" IS NULL OR \"label_y\" IS NULL THEN " + _EMPTY + " ELSE "
-            "with_variable('lp', make_point(\"label_x\", \"label_y\"), "
-            "CASE WHEN intersects($geometry, @lp) THEN " + _EMPTY + " ELSE "
-            "with_variable('gr', closest_point($geometry, @lp), "
-            "with_variable('in', coalesce(pole_of_inaccessibility($geometry, 0.1), @gr), "
-            f"with_variable('a', line_interpolate_point(make_line(@gr, @in), min({inset}, distance(@gr, @in))), "
-            f"make_line(@a, line_interpolate_point(make_line(@lp, @a), min({exit_distance}, distance(@lp, @a))))"
-            ")))END)END")
+    nearest_part = f"array_first(array_filter({_PARTS}, distance(@element, @gr) < 0.001))"
+    # @gr = ytans närmaste punkt, @a = punkten inne i den delen där linjen slutar. Bara två variabler: QGIS tolkningstid
+    # fördubblas för varje nivå som with_variable nästlas, och uttrycket tolkas på nytt vid varje omritning.
+    end = (f"end_point(line_substring(make_line(@gr, coalesce(pole_of_inaccessibility({nearest_part}, 0.1), @gr)), "
+           f"0, {inset}))")
+    return ("CASE WHEN \"label_x\" IS NULL OR \"label_y\" IS NULL THEN " + _EMPTY +
+            f" WHEN intersects($geometry, {text_at}) THEN {_EMPTY} ELSE "
+            f"with_variable('gr', closest_point($geometry, {text_at}), with_variable('a', {end}, "
+            f"make_line(@a, line_interpolate_point(make_line({text_at}, @a), "
+            f"min({exit_distance}, distance({text_at}, @a)))))) END")
 
 
 def _leader_layer(reference_scale: float, size_mm: float):
@@ -505,6 +519,7 @@ def _labeling(reference_scale: float = 1000, *, bold: bool = True, is_use: bool 
         settings.obstacleSettings().setIsObstacle(False)
         return QgsVectorLayerSimpleLabeling(settings)
     if is_line:
+        settings.labelPerPart = True  # en linje i flera delar får text på varje del (ytorna: se _place_at_point)
         settings.placement = Qgis.LabelPlacement.Line
         settings.priority = 3
         settings.obstacleSettings().setIsObstacle(False)
@@ -571,6 +586,18 @@ def has_fixed_label_position(layer: QgsVectorLayer, table: str) -> bool:
     settings = labeling.settings() if labeling is not None and hasattr(labeling, "settings") else None
     return settings is None or (settings.placement == Qgis.LabelPlacement.OverPoint and settings.geometryGeneratorEnabled
                                 and "label_x" in settings.geometryGenerator)
+
+
+def has_labels_per_part(layer: QgsVectorLayer, table: str) -> bool:
+    """Om en yta eller linje i flera delar får text på varje del (ett projekt som sparats av en äldre version skrev bara
+    texten på en av delarna)."""
+    if table not in ("anvandning_yta", "egenskap_yta", "egenskap_linje"):
+        return True
+    labeling = layer.labeling()
+    settings = labeling.settings() if labeling is not None and hasattr(labeling, "settings") else None
+    if settings is None:
+        return True
+    return settings.labelPerPart if table == "egenskap_linje" else _PARTS in settings.geometryGenerator
 
 
 def has_fragile_dashes(renderer) -> bool:

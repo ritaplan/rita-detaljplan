@@ -344,8 +344,7 @@ class LabelPlacementTests(RenderCase):
                 self.assertTrue(props.isActive(QgsPalLayerSettings.Property.PositionX), table)
             else:  # en ytas text står på en fast punkt: det flyttade läget, annars ytans textpunkt
                 self.assertTrue(settings.geometryGeneratorEnabled, table)
-                self.assertIn('coalesce("label_x"', settings.geometryGenerator, table)
-                self.assertIn('coalesce("label_y"', settings.geometryGenerator, table)
+                self.assertIn('make_point("label_x", "label_y")', settings.geometryGenerator, table)
                 self.assertFalse(props.isActive(QgsPalLayerSettings.Property.PositionX), table)
 
     def label_pixels(self, **attrs):
@@ -519,6 +518,16 @@ class LabelToolTests(LabelToolCase):
         self.drag((25, 50), (30, 30))
         self.assertEqual(len(self.tool.selected), 1)
         self.assertAlmostEqual(self.tool.selected[0].rect.center().y(), 30.0)
+
+    def test_in_an_area_with_several_parts_the_text_you_drag_is_the_one_that_moves(self):
+        other = self.ref("anvandning_yta", self.uses[0], QgsRectangle(20, 75, 30, 85))  # samma yta, texten på en annan del
+        self.labels.append(other)
+        self.drag((25, 50), (25, 50))  # den första texten är markerad
+        self.drag((25, 80), (30, 70))  # den andra dras
+        feature = self.layers["anvandning_yta"].getFeature(self.left_label.fid)
+        self.assertAlmostEqual(feature["label_x"], 30.0)
+        self.assertAlmostEqual(feature["label_y"], 70.0)
+        self.assertEqual(len(self.tool.selected), 1)
 
     def test_every_selected_text_moves_the_same_distance(self):
         self.drag((10, 40), (90, 60))
