@@ -2,7 +2,7 @@
 
 Formatet följer [Keep a Changelog](https://keepachangelog.com/sv/1.1.0/), versionsnumren [Semantic Versioning](https://semver.org/lang/sv/).
 
-## [Kommande]
+## [0.1.91] – import av flerdelade ytor och varning för olika värden på samma mark
 
 - **Import av leverans: ytor, linjer och punkter i flera delar går att läsa.** En *multiyta*, *multilinje* eller
   *multipunkt* (giltiga i NGP:s schema, och vanliga i filer från ArcMap) hoppades över, så till exempel en naturyta i två
