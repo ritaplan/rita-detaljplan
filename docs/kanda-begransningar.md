@@ -20,7 +20,9 @@ Pluginet har automatiska tester (se [Utveckling](utveckling.md)), men flera dela
   ett ögonblick: det sparas inte i planen.
 - **PostGIS.** Att skapa och öppna planer i en databas och att **checka ut och checka in** är testat mot en
   låtsasdatabas och prövat mot en riktig PostGIS-databas, men inte i alla tänkbara miljöer och upplägg. Prova
-  först på en testplan och gör säkerhetskopia av schemat innan du checkar in en viktig plan.
+  först på en testplan och gör säkerhetskopia av schemat innan du checkar in en viktig plan. Behörigheterna för delade
+  scheman är provade mot PostgreSQL 18 med roller utan egen inloggning (`SET ROLE`), inte med riktiga användarkonton i
+  QGIS.
 - **Layoutdesignern.** Knapparna för teckenförklaring i layoutläget har testats med en låtsasdesigner, inte i alla
   QGIS-versioner. Rapportera om verktygsfältet eller menyposten saknas hos dig.
 - **QGIS-version och system.** Testat med QGIS 4.2.2 på Windows och på Fedora Linux 45 (Workstation Edition). Andra versioner

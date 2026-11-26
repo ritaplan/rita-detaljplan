@@ -20,7 +20,8 @@ Handboken går igenom arbetet steg för steg, i den ordning du normalt gör det.
 8. [Tagga planbeskrivning](handbok/tagga-planbeskrivning.md) – tagga planbeskrivningen enligt BFS 2020:8
 9. [Arkivpaket](handbok/arkivpaket.md) – förbered planen för långtidsbevarande
 10. [Lagring, databaser och flera planer](handbok/lagring.md) – GeoPackage, PostGIS och utcheckning
-11. [Under huven](handbok/teknik.md) – datamodellen, databasen, utcheckningen och leveransen tekniskt
+11. [Sätta upp en databas](handbok/databas.md) – för databasansvariga: schema, rättigheter och användare
+12. [Under huven](handbok/teknik.md) – datamodellen, databasen, utcheckningen och leveransen tekniskt
 
 ## Arbetsgången i korthet
 

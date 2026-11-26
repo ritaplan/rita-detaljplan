@@ -27,6 +27,12 @@ SWEREF 99-zoner använder du olika scheman för dem.
 
 Projektfilen (`.qgz`) sparas i en mapp och pekar på databasen.
 
+## Rättigheter i databasen
+
+Databasen avgör vad du får göra. I ett schema som redan har pluginets tabeller räcker det att kunna läsa och skriva. Hur
+databasen sätts upp, vilka rättigheter som krävs och vad felmeddelandena betyder står i
+[Sätta upp en databas](databas.md), för den som ansvarar för databasen.
+
 ## Öppna en plan
 
 Klicka på **Öppna** i verktygsfältet. Finns det databasanslutningar får du välja fil eller databas.

@@ -4,6 +4,18 @@ Formatet följer [Keep a Changelog](https://keepachangelog.com/sv/1.1.0/), versi
 
 ## [Kommande]
 
+### Databas
+
+- **Flera användare kan dela ett schema.** Förut försökte pluginet skapa index och sätta kommentarer varje gång en plan
+  lades till, vilket bara ägaren av tabellerna får göra: andra användare kunde inte skapa, importera eller kopiera planer
+  i schemat. Nu skapas bara det som saknas, så i ett schema som har tabellerna räcker det att läsa och skriva. Rätt att
+  skapa tabeller behövs inte.
+- **En uppgradering av schemat går helt eller inte alls.** Försökte någon annan än ägaren kunde en halv uppgradering göra
+  att inte heller ägaren kunde uppgradera. Pluginet säger nu vem som behöver göra det.
+- Handboken beskriver vilka rättigheter som krävs och hur databasansvarig sätter upp ett schema åt användare som inte får
+  skapa något. Provat mot PostgreSQL 18 med en ägare och en användare med läs- och skrivrätt.
+- Fil för fil: `core/storage.py` (`existing_relations`, `ensure_schema`, `run_upgrade`, `may_write`).
+
 ### Texter på kartan
 
 - **Beteckningen skrivs på varje del av en yta i flera delar.** Förut fick bara en av delarna texten, till exempel efter

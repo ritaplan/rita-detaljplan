@@ -166,20 +166,21 @@ din plans rader, trots att tabellen innehåller flera planer.
 Pluginet använder en av **QGIS sparade PostgreSQL-anslutningar**. Inloggningen sköts av QGIS, och pluginet sparar
 inga lösenord.
 
-Databasen måste ha tillägget PostGIS (`CREATE EXTENSION postgis`). Användaren behöver kunna skapa tabeller i schemat
-första gången, och sedan läsa, skriva och ta bort rader i schemats tabeller. Rätt att skapa nya scheman i databasen
-behövs bara om schemat inte finns: har du fått ett eget schema av kommunen (rätten CREATE på schemat) räcker det.
+Databasen måste ha tillägget PostGIS (`CREATE EXTENSION postgis`). Vilka rättigheter som krävs står i
+[Lagring](lagring.md#rättigheter-i-databasen). Rätt att skapa något behövs bara för att skapa schemat och dess tabeller;
+i ett schema som har tabellerna räcker det att läsa och skriva.
 
 ### När en plan skapas
 
 1. Pluginet kontrollerar att databasen har PostGIS.
 2. Finns schemat redan kontrolleras att det har samma koordinatsystem och att plan-id:t är ledigt. Ett schema med en
-   äldre schemaversion uppgraderas.
-3. Pluginet frågar databasen om rättigheterna (`has_database_privilege`, `has_schema_privilege`) och förklarar vad som
-   saknas innan något skapas.
-4. Tabellerna skapas om de saknas (`CREATE … IF NOT EXISTS`), och schemat bara om det inte finns: PostgreSQL kräver
-   rätt att skapa scheman i databasen även för `CREATE SCHEMA IF NOT EXISTS` på ett schema som finns. Misslyckas det
-   för ett schema som pluginet själv skapade tas det halvfärdiga schemat bort igen; ett schema som fanns rörs aldrig.
+   äldre schemaversion uppgraderas, i ett enda block: går det inte (bara ägaren får ändra tabellerna) är schemat som förut.
+3. Pluginet läser ur systemkatalogen vad som redan finns i schemat, och frågar om rättigheterna
+   (`has_database_privilege`, `has_schema_privilege`, `has_table_privilege`) för att kunna förklara vad som saknas.
+4. **Bara det som saknas skapas**, och schemat bara om det inte finns. PostgreSQL kräver ägarskap av tabellen för
+   `CREATE INDEX` och `COMMENT`, och rätt att skapa för `CREATE … IF NOT EXISTS`, även när objektet redan finns.
+   Misslyckas det för ett schema som pluginet själv skapade tas det halvfärdiga schemat bort igen; ett schema som fanns
+   rörs aldrig.
 5. Planens metadata skrivs till `dp_meta`.
 
 ### Lägga till lager själv

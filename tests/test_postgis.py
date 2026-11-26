@@ -50,6 +50,8 @@ class FakeConnection:
         self.plan_identities = {}  # schema -> rader [plan, objektidentitet] (planområdenas id, som NGP känner dem)
         self.may_create_schemas = True  # rätten CREATE på databasen
         self.may_create_tables = True  # rätten CREATE på scheman som finns
+        self.may_write_rows = True  # rätten att läsa och lägga till rader i ett schema med planer
+        self.relations = {}  # schema -> {tabell eller index: om användaren får ändra den}, som systemkatalogen svarar
 
     def uri(self):
         return "dbname='planer' host=localhost port=5432 user='eric' sslmode=disable"
@@ -69,6 +71,11 @@ class FakeConnection:
         match = re.search(r"pg_namespace WHERE nspname = '([^']*)'", sql)
         if match:  # schema_exists
             return [[1]] if match.group(1) in self.schemas else []
+        match = re.match(r"SELECT c\.relname, pg_has_role.* WHERE n\.nspname = '([^']*)'", sql)
+        if match:  # existing_relations
+            return [[name, owned] for name, owned in self.relations.get(match.group(1), {}).items()]
+        if sql.startswith("SELECT has_schema_privilege(n.oid"):  # may_write
+            return [[self.may_write_rows]]
         if sql.startswith("SELECT has_database_privilege"):
             return [[self.may_create_schemas]]
         if sql.startswith("SELECT has_schema_privilege"):
@@ -347,6 +354,65 @@ class CreateTests(unittest.TestCase):
         with self.assertRaisesRegex(storage.PostgisError, "syntaxfel"):
             self.create(conn, plan_id="dp_2")
         self.assertFalse(any(s.startswith("DROP SCHEMA") for s in conn.sql))
+
+    def full_schema(self, owned: bool, may_create_tables: bool = False):
+        """Ett schema som en annan användare redan lagt en plan i, med alla tabeller och index."""
+        conn = FakeConnection()
+        self.create(conn, plan_id="dp_1")
+        names = [re.search(r'(?:TABLE|INDEX) IF NOT EXISTS (?:"dp_test"\.)?"(\w+)"', s).group(1)
+                 for s in storage.ensure_schema("dp_test", 3006, create_schema=False)
+                 if s.startswith("CREATE")]
+        conn.relations["dp_test"] = {name: owned for name in [*names, f"{model.META_TABLE}_fid_seq"]}
+        conn.may_create_tables = may_create_tables
+        conn.sql.clear()
+        return conn
+
+    def test_a_plan_in_a_complete_schema_needs_only_the_right_to_write(self):
+        conn = self.full_schema(owned=False)
+        self.create(conn, plan_id="dp_2")
+        self.assertFalse([s for s in conn.sql if s.startswith(("CREATE", "COMMENT", "ALTER"))],
+                         "bara ägaren får köra dem, även med IF NOT EXISTS")
+        self.assertIn("dp_2", conn.plan_meta["dp_test"])
+
+    def test_only_what_is_missing_is_created_and_never_an_index_on_someone_elses_table(self):
+        conn = self.full_schema(owned=False, may_create_tables=True)
+        del conn.relations["dp_test"]["egenskap_punkt"], conn.relations["dp_test"]["egenskap_punkt_plan_idx"]
+        del conn.relations["dp_test"]["egenskap_punkt_geom_idx"], conn.relations["dp_test"]["detaljplan_plan_idx"]
+        self.create(conn, plan_id="dp_2")
+        made = [s for s in conn.sql if s.startswith(("CREATE", "COMMENT"))]
+        self.assertEqual(len(made), 4, made)  # den saknade tabellen med två index och kommentar
+        self.assertTrue(all('"egenskap_punkt"' in s for s in made), made)
+
+    def test_the_owner_gets_a_missing_index_back(self):
+        conn = self.full_schema(owned=True, may_create_tables=True)
+        del conn.relations["dp_test"]["detaljplan_plan_idx"]
+        self.create(conn, plan_id="dp_2")
+        made = [s for s in conn.sql if s.startswith(("CREATE", "COMMENT"))]
+        self.assertEqual(len(made), 1, made)
+        self.assertIn('"detaljplan_plan_idx"', made[0])
+
+    def test_something_missing_that_the_user_may_not_add_is_explained(self):
+        conn = self.full_schema(owned=False)
+        del conn.relations["dp_test"]["egenskap_punkt"]
+        with self.assertRaisesRegex(storage.PostgisError, "äger tabellerna"):
+            self.create(conn, plan_id="dp_2")
+        self.assertFalse([s for s in conn.sql if s.startswith(("CREATE", "INSERT"))])
+
+    def test_without_the_right_to_write_in_a_schema_with_plans_it_is_explained(self):
+        conn = self.full_schema(owned=False)
+        conn.may_write_rows = False
+        with self.assertRaisesRegex(storage.PostgisError, "rätt att lägga till planer"):
+            self.create(conn, plan_id="dp_2")
+        self.assertFalse([s for s in conn.sql if s.startswith(("CREATE", "INSERT"))])
+
+    def test_an_upgrade_is_one_block_and_a_refusal_says_who_can_do_it(self):
+        conn = FakeConnection(fail_on='ALTER TABLE "dp_test"."bestammelse"')
+        conn.schema_meta["dp_test"] = {"schema_version": "9", "epsg": "3006"}
+        with self.assertRaisesRegex(storage.PostgisError, "äger tabellerna"):
+            storage.PostgisStorage("db", "dp_test", "dp_1", conn).upgrade()
+        changes = [s for s in conn.sql if "ALTER TABLE" in s or "CREATE TABLE" in s]
+        self.assertEqual(len(changes), 1, "allt eller inget: en annan användare får inte lämna en egen tabell efter sig")
+        self.assertTrue(changes[0].startswith("DO $dp$ BEGIN CREATE TABLE") and changes[0].endswith("END $dp$"))
 
     def test_the_connection_error_is_wrapped_for_the_user(self):
         conn = FakeConnection()
