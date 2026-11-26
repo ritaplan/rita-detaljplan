@@ -2,7 +2,7 @@
 
 Formatet följer [Keep a Changelog](https://keepachangelog.com/sv/1.1.0/), versionsnumren [Semantic Versioning](https://semver.org/lang/sv/).
 
-## [Kommande]
+## [0.1.92] – flera användare i samma databas, text på varje del av en yta och säkerhetsrättningar
 
 ### Databas
 
